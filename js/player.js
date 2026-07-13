@@ -28,8 +28,10 @@ window.Game = window.Game || {};
       this.lives = 3;
       this.hotbarIndex = 0; // 0=ladder 1=torch 2=bridge
 
+      this.equipped = 'hand'; // 'hand' | 'pickaxe' | 'sword'
+
       this.inventory = {
-        materials: { wood: 0, stick: 0, stone: 0, coal: 0, iron: 0, diamond: 0 },
+        materials: { dirt: 0, wood: 0, stick: 0, stone: 0, coal: 0, iron: 0, diamond: 0 },
         pickaxeTier: 'none',
         swordTier: 'none',
         placeables: { ladder: 0, torch: 0, bridge: 0 },
@@ -37,6 +39,31 @@ window.Game = window.Game || {};
     }
 
     get toolTier() { return this.inventory.pickaxeTier; }
+
+    canEquip(kind) {
+      if (kind === 'hand') return true;
+      if (kind === 'pickaxe') return this.inventory.pickaxeTier !== 'none';
+      if (kind === 'sword') return this.inventory.swordTier !== 'none';
+      return false;
+    }
+
+    setEquip(kind) {
+      if (this.canEquip(kind)) this.equipped = kind;
+    }
+
+    cycleEquip() {
+      const order = ['hand', 'pickaxe', 'sword'];
+      let idx = order.indexOf(this.equipped);
+      for (let i = 0; i < order.length; i++) {
+        idx = (idx + 1) % order.length;
+        if (this.canEquip(order[idx])) { this.equipped = order[idx]; break; }
+      }
+    }
+
+    // 採掘に使えるツール等級（素手を選んでいる場合は常に'none'）
+    get effectiveToolTier() {
+      return this.equipped === 'pickaxe' ? this.inventory.pickaxeTier : 'none';
+    }
 
     addMaterial(key, n) {
       if (!key) return;

@@ -24,6 +24,7 @@ window.Game = window.Game || {};
     TORCH: 16,
     BRIDGE: 17,
     CLOUD: 18,
+    DIRT_BLOCK: 19,
   };
 
   // tool tiers: null(素手) < 'wood' < 'stone' < 'iron'
@@ -32,8 +33,8 @@ window.Game = window.Game || {};
   // 各タイルの属性テーブル
   const INFO = {};
   INFO[TILE.EMPTY]       = { solid: false };
-  INFO[TILE.GRASS]       = { solid: true, breakable: true, requiredTool: 'none', drop: null, becomesOnBreak: TILE.EMPTY, sprite: 'grass' };
-  INFO[TILE.DIRT]        = { solid: true, breakable: true, requiredTool: 'none', drop: null, becomesOnBreak: TILE.EMPTY, sprite: 'dirt' };
+  INFO[TILE.GRASS]       = { solid: true, breakable: true, requiredTool: 'none', drop: 'dirt', becomesOnBreak: TILE.EMPTY, sprite: 'grass' };
+  INFO[TILE.DIRT]        = { solid: true, breakable: true, requiredTool: 'none', drop: 'dirt', becomesOnBreak: TILE.EMPTY, sprite: 'dirt' };
   INFO[TILE.STONE]       = { solid: true, breakable: true, requiredTool: 'wood', drop: 'stone', becomesOnBreak: TILE.EMPTY, sprite: 'stone' };
   INFO[TILE.COAL_ORE]    = { solid: true, breakable: true, requiredTool: 'wood', drop: 'coal', becomesOnBreak: TILE.EMPTY, sprite: 'coalOre' };
   INFO[TILE.IRON_ORE]    = { solid: true, breakable: true, requiredTool: 'stone', drop: 'iron', becomesOnBreak: TILE.EMPTY, sprite: 'ironOre' };
@@ -50,6 +51,7 @@ window.Game = window.Game || {};
   INFO[TILE.TORCH]       = { solid: false, breakable: true, requiredTool: 'none', placeable: true, sprite: 'torch', light: true };
   INFO[TILE.BRIDGE]      = { solid: true, breakable: true, requiredTool: 'wood', placeable: true, sprite: 'bridge' };
   INFO[TILE.CLOUD]       = { solid: true, breakable: false, sprite: 'cloud', thin: true };
+  INFO[TILE.DIRT_BLOCK]  = { solid: true, breakable: true, requiredTool: 'none', placeable: true, sprite: 'dirt' };
 
   function canBreak(tileType, toolTier) {
     const info = INFO[tileType];

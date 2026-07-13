@@ -200,22 +200,26 @@ window.Game = window.Game || {};
     _tryMine() {
       this.player.mineTimer = 0.22;
       const { tx, ty } = this.player.targetTile(this.level, this.input);
-      // 剣で攻撃（正面に敵がいれば優先）
-      if (this.player.inventory.swordTier !== 'none') {
+
+      // 剣を装備している場合は攻撃のみ（採掘はしない）
+      if (this.player.equipped === 'sword') {
+        if (this.player.inventory.swordTier === 'none') return;
         const box = this._facingBox();
         const allEnemies = this.boss ? [...this.enemies, this.boss] : this.enemies;
         const target = allEnemies.find(en => en.alive && Game.overlapRect(box, en.rect()));
         if (target) {
           target.hit(target.type === 'boss' && this.player.inventory.swordTier === 'diamond');
           if (!target.alive) { this.player.coins += target.type === 'boss' ? 10 : 2; this.emit('hud'); }
-          return;
         }
+        return;
       }
+
+      // 素手 / ツルハシ装備時は採掘のみ（effectiveToolTierで採掘可否が決まる）
       if (ty < 0 || ty >= this.level.height || tx < 0 || tx >= this.level.width) return;
       const t = this.level.grid[ty][tx];
       const info = Game.TileInfo[t];
       if (!info || !info.breakable) return;
-      if (!Game.canBreakTile(t, this.player.toolTier)) {
+      if (!Game.canBreakTile(t, this.player.effectiveToolTier)) {
         this.emit('popup', { x: tx * TILE_SIZE, y: ty * TILE_SIZE, fail: true });
         return;
       }
@@ -225,8 +229,12 @@ window.Game = window.Game || {};
       }
       this.level.grid[ty][tx] = info.becomesOnBreak != null ? info.becomesOnBreak : Game.TILE.EMPTY;
       if (info.placeable) {
-        // 設置物を回収
-        const map = { [Game.TILE.LADDER]: 'ladder', [Game.TILE.TORCH]: 'torch', [Game.TILE.BRIDGE]: 'bridge' };
+        // 設置物(ラダー/たいまつ/足場ブロック)を回収
+        const map = {
+          [Game.TILE.LADDER]: 'ladder',
+          [Game.TILE.TORCH]: 'torch',
+          [Game.TILE.BRIDGE]: 'bridge',
+        };
         const key = map[t];
         if (key) this.player.inventory.placeables[key] += 1;
       } else if (info.drop) {
@@ -320,6 +328,24 @@ window.Game = window.Game || {};
       const frames = Game.Sprites.player;
       const grid = !p.onGround && !p.climbing ? frames.jump : (Math.abs(p.vx) > 5 ? (p.animFrame ? frames.walk : frames.stand) : frames.stand);
       Game.Sprites.drawGrid(ctx, px, p.y, 36, grid, p.facing < 0);
+      this._renderHeldItem(ctx, px, p.y);
+    }
+
+    _renderHeldItem(ctx, px, py) {
+      const p = this.player;
+      let icon = null;
+      if (p.equipped === 'pickaxe' && p.inventory.pickaxeTier !== 'none') {
+        icon = { wood: 'pickaxeWood', stone: 'pickaxeStone', iron: 'pickaxeIron' }[p.inventory.pickaxeTier];
+      } else if (p.equipped === 'sword' && p.inventory.swordTier !== 'none') {
+        icon = p.inventory.swordTier === 'diamond' ? 'swordDiamond' : 'sword';
+      }
+      if (!icon) return;
+      const grid = Game.Sprites.ICONS[icon];
+      if (!grid) return;
+      const size = 20;
+      const handX = p.facing > 0 ? px + 26 : px - 4;
+      const handY = py + 12;
+      Game.Sprites.drawGrid(ctx, handX, handY, size, grid, p.facing < 0);
     }
 
     _renderDarkness(ctx, startCol, offsetX) {

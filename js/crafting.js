@@ -5,6 +5,7 @@ window.Game = window.Game || {};
 
 (function () {
   const MATERIALS = [
+    { key: 'dirt', label: '土', icon: 'dirtMat' },
     { key: 'wood', label: '木材', icon: 'wood' },
     { key: 'stick', label: '木の枝', icon: 'stick' },
     { key: 'stone', label: '石', icon: 'stoneMat' },
@@ -34,10 +35,13 @@ window.Game = window.Game || {};
     { id: 'torch', key: '6', name: 'たいまつ ×3', type: 'placeable', item: 'torch', give: 3,
       cost: { coal: 1, stick: 1 }, icon: 'torchIcon',
       desc: '暗闇を照らす' },
-    { id: 'bridge', key: '7', name: '足場ブロック ×3', type: 'placeable', item: 'bridge', give: 3,
+    { id: 'bridge', key: '7', name: '足場ブロック(石) ×3', type: 'placeable', item: 'bridge', give: 3,
       cost: { stone: 2 }, icon: 'bridgeIcon',
-      desc: '穴や溶岩をふさげる' },
-    { id: 'swordDiamond', key: '8', name: 'ダイヤの剣', type: 'sword', tier: 'diamond',
+      desc: '穴や溶岩をふさげる（頑丈）' },
+    { id: 'bridgeDirt', key: '8', name: '足場ブロック(土) ×3', type: 'placeable', item: 'bridge', give: 3,
+      cost: { dirt: 3 }, icon: 'bridgeIcon',
+      desc: '穴をふさげる（土を再利用）' },
+    { id: 'swordDiamond', key: '9', name: 'ダイヤの剣', type: 'sword', tier: 'diamond',
       cost: { diamond: 2, stick: 1 }, icon: 'sword',
       desc: 'ボスを一撃で倒せる！', requireToolTier: 'stone' },
   ];
