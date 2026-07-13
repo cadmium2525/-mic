@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>マリオクラフト - Mario x Minecraft</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="rotate-hint">
+    <div class="rotate-card">
+      <div class="rotate-icon">📱↻</div>
+      <p>横向き（ランドスケープ）にすると<br>画面が広く使えて遊びやすくなります</p>
+      <button id="btn-dismiss-rotate" class="pixel-btn small">このまま続ける</button>
+    </div>
+  </div>
+
+  <div id="game-wrap">
+    <h1 id="game-title">MARIO<span>CRAFT</span></h1>
+
+    <div id="topbar">
+      <div id="hud">
+        <div class="hud-box">W<span id="hud-world">1-1</span></div>
+        <div class="hud-box">💰<span id="hud-coin">0</span></div>
+        <div class="hud-box">❤<span id="hud-life">3</span></div>
+        <div class="hud-box">⛏<span id="hud-tool">手</span></div>
+        <div class="hud-box">⚔<span id="hud-sword">なし</span></div>
+      </div>
+      <div id="quick-actions">
+        <button id="btn-quick-craft" class="icon-btn" aria-label="クラフト">⚒</button>
+        <button id="btn-quick-pause" class="icon-btn" aria-label="ポーズ">❚❚</button>
+      </div>
+    </div>
+
+    <div id="canvas-holder">
+      <canvas id="game-canvas" width="800" height="480"></canvas>
+
+      <div id="hotbar">
+        <div class="hotbar-slot active" data-slot="1"><span class="key">1</span><span class="label">ラダー</span><span class="count" id="count-ladder">0</span></div>
+        <div class="hotbar-slot" data-slot="2"><span class="key">2</span><span class="label">たいまつ</span><span class="count" id="count-torch">0</span></div>
+        <div class="hotbar-slot" data-slot="3"><span class="key">3</span><span class="label">足場</span><span class="count" id="count-bridge">0</span></div>
+      </div>
+
+      <div id="touch-controls" aria-hidden="true">
+        <div id="tc-dpad">
+          <button class="tc-btn" id="tc-up" aria-label="上">▲</button>
+          <button class="tc-btn" id="tc-left" aria-label="左">◀</button>
+          <button class="tc-btn" id="tc-right" aria-label="右">▶</button>
+          <button class="tc-btn" id="tc-down" aria-label="下">▼</button>
+        </div>
+        <div id="tc-actions">
+          <button class="tc-btn tc-round" id="tc-place">設置<br><small>Z</small></button>
+          <button class="tc-btn tc-round tc-jump" id="tc-jump">JUMP</button>
+          <button class="tc-btn tc-round" id="tc-mine">採掘<br><small>X</small></button>
+        </div>
+      </div>
+
+      <div id="overlay-title" class="overlay">
+        <h2>マリオクラフト</h2>
+        <p>横スクロール×採掘×クラフトの冒険</p>
+        <button id="btn-start" class="pixel-btn">ゲームスタート</button>
+        <button id="btn-howto" class="pixel-btn">あそびかた</button>
+      </div>
+
+      <div id="overlay-howto" class="overlay hidden">
+        <h2>あそびかた</h2>
+        <div class="howto-grid">
+          <div><b>移動</b>画面左のパッド / ← →</div>
+          <div><b>ジャンプ</b>右下のJUMP / Space</div>
+          <div><b>採掘・攻撃</b>採掘ボタン / X</div>
+          <div><b>足元を採掘</b>下+採掘 / ↓+X</div>
+          <div><b>設置</b>設置ボタン / Z</div>
+          <div><b>設置アイテム選択</b>下のバー / 1 2 3</div>
+          <div><b>クラフト</b>⚒ボタン / C</div>
+          <div><b>敵をふむ</b>踏みつけ撃破</div>
+        </div>
+        <p class="howto-note">木・葉・草ブロックは素手で採掘可。石や鉱石は対応するツルハシが必要！<br>ブロックを崩して素材を集め、クラフトメニューで道具を作ろう。</p>
+        <button id="btn-back" class="pixel-btn">もどる</button>
+      </div>
+
+      <div id="overlay-craft" class="overlay hidden">
+        <h2>クラフト</h2>
+        <div id="materials-row"></div>
+        <div id="recipe-list"></div>
+        <p class="howto-note">タップ、または数字キーで作成できます。⚒ / Cでとじる。</p>
+      </div>
+
+      <div id="overlay-pause" class="overlay hidden">
+        <h2>ポーズ</h2>
+        <button id="btn-resume" class="pixel-btn">再開</button>
+        <button id="btn-retry" class="pixel-btn">やり直す</button>
+      </div>
+
+      <div id="overlay-clear" class="overlay hidden">
+        <h2 id="clear-title">STAGE CLEAR!</h2>
+        <p id="clear-text"></p>
+        <button id="btn-next" class="pixel-btn">次へ</button>
+      </div>
+
+      <div id="overlay-gameover" class="overlay hidden">
+        <h2>GAME OVER</h2>
+        <button id="btn-gameover-retry" class="pixel-btn">もう一度</button>
+      </div>
+    </div>
+
+    <p id="footer-note">Super Mario × Minecraft ファンゲーム（非公式・同人制作） / World 1 (1-1〜1-4) 収録</p>
+  </div>
+
+  <script src="js/sprites.js"></script>
+  <script src="js/tiles.js"></script>
+  <script src="js/levels.js"></script>
+  <script src="js/crafting.js"></script>
+  <script src="js/entities.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
