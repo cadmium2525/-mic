@@ -1,4 +1,0 @@
-[
-  { "type": "slime", "sprite": "enemy_slime", "width": 14, "height": 12, "speed": 22, "hp": 1, "dropCoin": 1, "flies": false },
-  { "type": "bat",   "sprite": "enemy_bat",   "width": 14, "height": 10, "speed": 30, "hp": 1, "dropCoin": 1, "flies": true }
-]
