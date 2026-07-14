@@ -1,0 +1,32 @@
+[
+  {
+    "id": "torch",
+    "name": "松明",
+    "inputs": [ { "item": "wood", "amount": 1 }, { "item": "coal", "amount": 1 } ],
+    "output": { "item": "torch", "amount": 1 }
+  },
+  {
+    "id": "footstep",
+    "name": "石の足場",
+    "inputs": [ { "item": "wood", "amount": 1 }, { "item": "stone", "amount": 1 } ],
+    "output": { "item": "footstep", "amount": 1 }
+  },
+  {
+    "id": "pickaxe",
+    "name": "ツルハシ",
+    "inputs": [ { "item": "wood", "amount": 2 }, { "item": "iron", "amount": 1 } ],
+    "output": { "item": "pickaxe", "isTool": true }
+  },
+  {
+    "id": "key",
+    "name": "鍵",
+    "inputs": [ { "item": "key_shard", "amount": 3 } ],
+    "output": { "item": "key", "isTool": true }
+  },
+  {
+    "id": "bomb",
+    "name": "爆弾",
+    "inputs": [ { "item": "gunpowder", "amount": 1 }, { "item": "stone", "amount": 1 } ],
+    "output": { "item": "bomb", "amount": 1 }
+  }
+]

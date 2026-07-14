@@ -1,0 +1,15 @@
+{
+  "wood":        { "name": "木材",       "sprite": "item_wood" },
+  "stone":       { "name": "石",         "sprite": "item_stone" },
+  "coal":        { "name": "石炭",       "sprite": "item_coal" },
+  "iron":        { "name": "鉄鉱石",     "sprite": "item_iron" },
+  "mushroom":    { "name": "キノコ",     "sprite": "item_mushroom" },
+  "gunpowder":   { "name": "火薬",       "sprite": "item_gunpowder" },
+  "key_shard":   { "name": "鍵の欠片",   "sprite": "item_key_shard" },
+  "key":         { "name": "鍵",         "sprite": "item_key", "isTool": true },
+  "torch":       { "name": "松明",       "sprite": "tile_torch", "placeable": true, "tileChar": "t" },
+  "footstep":    { "name": "石の足場",   "sprite": "tile_footstep", "placeable": true, "tileChar": "f" },
+  "pickaxe":     { "name": "ツルハシ",   "sprite": "item_iron", "isTool": true },
+  "bomb":        { "name": "爆弾",       "sprite": "item_gunpowder" },
+  "coin":        { "name": "コイン",     "sprite": "coin" }
+}
