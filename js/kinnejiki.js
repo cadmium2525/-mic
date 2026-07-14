@@ -1,0 +1,565 @@
+// =====================================================
+// kinnejiki.js
+// 「金ネジキ」レンタルバトルファクトリーモード
+// ・育成モードを介さず、あらかじめ用意されたレンタルモンスターから
+//   6体提示→3体選出でパーティを組み、7戦1セット×7セット＝49連勝を目指す
+// ・1勝ごとに相手モンスター1体と手持ち1体を交換できる
+// ・3セット目・7セット目のクリア後（＝各セットの7戦目）にネジキ役が登場
+// ・セットが進むほど相手のステータス・AIレベル・装備が強化される
+// ・既存の masmon_battle.js の3vs3バトルエンジンをそのまま再利用する
+//   （MASMON_BATTLE_STATE.kinNejiki フラグで金ネジキ実行中を識別）
+// Firebase Realtime Database: kinnejiki_ranking/{playerId} = { name, bestWins, bestCleared, updatedAt }
+// =====================================================
+
+const KIN_NEJIKI_STATE = {
+    active: false,
+    set: 1,            // 1〜7
+    battleInSet: 1,     // 1〜7（7戦目が各セットのボス戦）
+    totalWins: 0,       // 0〜49
+    playerParty: [],    // 選出した3体（レンタルモンスターオブジェクト）
+    offer: [],          // 現在提示中の6体（パーティ選出画面用）
+    selectedIdx: [],    // offer内で選択中のインデックス（最大3）
+    pendingSwap: null   // 直前の勝利で交換対象になる相手チーム情報
+};
+
+// --- セット番号からAIレベル（1〜4）を算出 ---
+function kinNejikiAiLevelForSet(setNumber) {
+    if (setNumber <= 2) return 1;
+    if (setNumber <= 4) return 2;
+    if (setNumber <= 6) return 3;
+    return 4; // 7セット目（最終ネジキ含む）
+}
+
+// --- セット番号に応じた装備の段階的抽選 ---
+// セット1〜2：ノーマル産ステータス装備中心 / セット3〜5：ハード産＋一部特殊効果 / セット6〜7：特殊効果中心
+// オーラ連動装備は全セット共通で一定確率で混在する
+function kinNejikiRollEquipmentForSet(setNumber) {
+    if (Math.random() < 0.15) {
+        const auraPool = Object.values(EQUIPMENT_DB).filter(e => e.type === 'auraStat2');
+        if (auraPool.length > 0) return buildEquipmentInstanceFromBase(auraPool[Math.floor(Math.random() * auraPool.length)]);
+    }
+
+    // 装備なし（未装備）の余地も一定確率で残す
+    if (Math.random() < 0.15) return null;
+
+    let pool;
+    if (setNumber <= 2) {
+        pool = Object.values(EQUIPMENT_DB).filter(e => e.mode === 'normal' && e.type === 'stat');
+    } else if (setNumber <= 5) {
+        pool = (Math.random() < 0.3)
+            ? Object.values(EQUIPMENT_DB).filter(e => e.type === 'special')
+            : Object.values(EQUIPMENT_DB).filter(e => e.mode === 'hard' && e.type === 'stat');
+    } else {
+        pool = Object.values(EQUIPMENT_DB).filter(e => e.type === 'special');
+    }
+    if (!pool || pool.length === 0) {
+        pool = Object.values(EQUIPMENT_DB).filter(e => e.type === 'stat');
+    }
+
+    const base = pool[Math.floor(Math.random() * pool.length)];
+    return buildEquipmentInstanceFromBase(base);
+}
+
+// --- 指定種族のレンタルモンスターを1体生成する ---
+// ・技構成：種族固有技候補（KIN_NEJIKI_SKILL_POOL）からランダムに最大4つ
+// ・ステータス：種族ベース値に個体差(±8%)とセット進行によるスケールを掛ける
+function generateKinNejikiRentalMonster(speciesId, setNumber) {
+    const tmpl = MONSTER_TEMPLATES[speciesId];
+    if (!tmpl) return null;
+    const skillPool = KIN_NEJIKI_SKILL_POOL[speciesId] || [];
+    const shuffledSkills = [...skillPool].sort(() => Math.random() - 0.5);
+    const chosenSkills = shuffledSkills.slice(0, Math.min(4, shuffledSkills.length));
+
+    const individualVariance = () => 0.92 + Math.random() * 0.16; // ±8%の個体差
+    const setScale = 1 + (Math.max(0, setNumber - 1) * 0.06); // セットが進むごとに約6%ずつ強化
+
+    const rawStats = {
+        maxLife: Math.round(tmpl.stats.maxLife * individualVariance() * setScale),
+        pow: Math.round(tmpl.stats.pow * individualVariance() * setScale),
+        int: Math.round(tmpl.stats.int * individualVariance() * setScale),
+        hit: Math.round(tmpl.stats.hit * individualVariance() * setScale),
+        spd: Math.round(tmpl.stats.spd * individualVariance() * setScale),
+        def: Math.round(tmpl.stats.def * individualVariance() * setScale),
+        gutsSpeed: tmpl.stats.gutsSpeed
+    };
+    rawStats.life = rawStats.maxLife;
+
+    return {
+        name: tmpl.name,
+        monsterBaseName: tmpl.name,
+        emoji: tmpl.emoji,
+        speciesId: speciesId,
+        aura: null,
+        isAwakened: false,
+        statusEffect: null,
+        difficulty: 'kinnejiki',
+        stats: rawStats,
+        skills: chosenSkills,
+        skillEnhancements: {},
+        equip: kinNejikiRollEquipmentForSet(setNumber),
+        ownerName: 'レンタルモンスター'
+    };
+}
+
+// --- 12種族プールから重複なく6体（各異なる種族）のレンタル候補を生成 ---
+function generateKinNejikiOffer(setNumber) {
+    const shuffledSpecies = [...KIN_NEJIKI_SPECIES_POOL].sort(() => Math.random() - 0.5);
+    const chosenSpecies = shuffledSpecies.slice(0, 6);
+    return chosenSpecies.map(sp => generateKinNejikiRentalMonster(sp, setNumber));
+}
+
+// --- 対戦相手チーム（3体）を生成。ネジキ戦の場合は専用ボス＋帯同2体を返す ---
+function generateKinNejikiOpponentTeam(setNumber, isNejiki) {
+    if (isNejiki) {
+        const bossKey = (setNumber === 3) ? 'set3' : 'set7';
+        const bossDef = KIN_NEJIKI_BOSSES[bossKey];
+        const bossUnit = {
+            name: bossDef.name,
+            monsterBaseName: bossDef.templateId ? (MONSTER_TEMPLATES[bossDef.templateId] || {}).name || bossDef.name : bossDef.name,
+            emoji: bossDef.emoji,
+            speciesId: bossDef.templateId,
+            aura: null,
+            isAwakened: false,
+            statusEffect: null,
+            difficulty: 'kinnejiki',
+            stats: { ...bossDef.statsBase, life: bossDef.statsBase.maxLife },
+            skills: [...bossDef.skills],
+            skillEnhancements: {},
+            equip: kinNejikiRollEquipmentForSet(7),
+            ownerName: bossDef.title
+        };
+        const escorts = generateKinNejikiOffer(7).slice(0, 2);
+        escorts.forEach(m => { if (m) m.ownerName = bossDef.title; });
+        return [bossUnit, ...escorts.filter(Boolean)];
+    }
+
+    const team = generateKinNejikiOffer(setNumber).slice(0, 3);
+    team.forEach(m => { if (m) m.ownerName = `レンタル使い（第${setNumber}セット）`; });
+    return team;
+}
+
+// =====================================================
+// 敵AIロジック（アイテムは使わず、技選択と交代のみ金ネジキ専用に判定する）
+// =====================================================
+
+// --- 敵の技選択（アイテムAI runEnemyItemAI とは別に、金ネジキ戦のみ masmon_battle.js から呼ばれる） ---
+function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel) {
+    if (!affordableSkills || affordableSkills.length === 0) return null;
+
+    if (aiLevel <= 1) {
+        return affordableSkills[Math.floor(Math.random() * affordableSkills.length)].key;
+    }
+
+    // 簡易ダメージ見積り（乱数・クリティカル・装備効果等は考慮しない目安値）
+    const dmgMultiplier = (typeof MASMON_BATTLE_DAMAGE_MULTIPLIER === 'number') ? MASMON_BATTLE_DAMAGE_MULTIPLIER : 0.2;
+    const estimate = (skInfo) => {
+        if (skInfo.type !== 'pow' && skInfo.type !== 'int') return 0;
+        const atk = skInfo.type === 'pow' ? e.stats.pow : e.stats.int;
+        const def = p.stats.def * 1.5;
+        const raw = atk * skInfo.force - def * 0.35;
+        return Math.max(1, raw) * dmgMultiplier;
+    };
+    const withEstimate = affordableSkills.map(s => ({ ...s, estDmg: estimate(s.info) }));
+
+    // レベル4（ネジキ級）：確殺が狙えるなら最大火力、そうでなければ制圧（ガッツダウン／状態異常）を優先
+    if (aiLevel >= 4) {
+        const lethal = withEstimate.filter(s => s.estDmg >= p.stats.life);
+        if (lethal.length > 0) {
+            lethal.sort((a, b) => b.estDmg - a.estDmg);
+            return lethal[0].key;
+        }
+        if (p.guts >= 55) {
+            const control = withEstimate.filter(s => (s.info.gutsDown || 0) >= 20);
+            if (control.length > 0) {
+                control.sort((a, b) => (b.info.gutsDown || 0) - (a.info.gutsDown || 0));
+                return control[0].key;
+            }
+        }
+        withEstimate.sort((a, b) => b.estDmg - a.estDmg);
+        return withEstimate[0].key;
+    }
+
+    // レベル3：確殺があれば最大火力、なければ上位技からランダム（読み合いの余地を残す）
+    if (aiLevel >= 3) {
+        const lethal = withEstimate.filter(s => s.estDmg >= p.stats.life);
+        if (lethal.length > 0) {
+            lethal.sort((a, b) => b.estDmg - a.estDmg);
+            return lethal[0].key;
+        }
+        withEstimate.sort((a, b) => b.estDmg - a.estDmg);
+        const top = withEstimate.slice(0, Math.min(2, withEstimate.length));
+        return top[Math.floor(Math.random() * top.length)].key;
+    }
+
+    // レベル2：ガッツが十分溜まっていれば大技、そうでなければ低コスト技で手数を稼ぐ
+    if (e.guts >= 70) {
+        withEstimate.sort((a, b) => b.estDmg - a.estDmg);
+        return withEstimate[0].key;
+    }
+    withEstimate.sort((a, b) => a.info.cost - b.info.cost);
+    return withEstimate[0].key;
+}
+
+// --- 敵の自動交代判定（AIレベル3以上のみ、executeMasmonEnemyTurn冒頭から呼ばれる） ---
+function maybeExecuteKinNejikiEnemySwitch() {
+    if (MASMON_BATTLE_STATE.mode !== 'cpu_team') return false;
+    const team = MASMON_BATTLE_STATE.enemyTeam;
+    const idx = MASMON_BATTLE_STATE.enemyActiveIdx;
+    const active = team[idx];
+    if (!active || active.stats.life <= 0) return false;
+
+    const lifeRatio = active.stats.life / active.stats.maxLife;
+    if (lifeRatio > 0.3) return false; // 3割より多く残っている間は交代を検討しない
+
+    const candidates = team
+        .map((unit, i) => ({ i, unit }))
+        .filter(({ i, unit }) => i !== idx && unit.stats.life > 0);
+    if (candidates.length === 0) return false;
+
+    // 温存判断が外れることもある（毎回必ず交代すると読みやすくなりすぎるため）
+    if (Math.random() > 0.8) return false;
+
+    candidates.sort((a, b) => b.unit.stats.life - a.unit.stats.life);
+    const chosen = candidates[0];
+
+    MASMON_BATTLE_STATE.enemyActiveIdx = chosen.i;
+    const ownerLabel = MASMON_BATTLE_STATE.opponentOwnerName || '相手';
+    addLog(`💦 ${active.name} は苦しい状況と判断し、${ownerLabel}は【${chosen.unit.name}】に交代した！`);
+    showEffect('🔄 相手交代！ 🔄');
+
+    const newUnit = chosen.unit;
+    const enemyMetaOwner = (MASMON_BATTLE_STATE.enemyMeta[chosen.i] || {}).ownerName || '相手ブリーダー';
+    document.getElementById('enemy-name').textContent = `${newUnit.name}（${enemyMetaOwner}）`;
+    renderMonsterVisual(document.getElementById('battle-enemy-icon'), newUnit.monsterBaseName, newUnit.emoji, newUnit.isAwakened);
+    document.getElementById('battle-enemy-type').textContent = newUnit.name;
+    renderAuraBadge('enemy-aura-badge', newUnit.aura);
+    return true;
+}
+
+// =====================================================
+// 画面遷移・進行制御
+// =====================================================
+
+// --- タイトルから「金ネジキ」の説明画面へ ---
+function startKinNejikiEntry() {
+    changeScreen('screen-kinnejiki-title');
+}
+
+// --- ランを開始し、最初の6体提示を生成 ---
+function beginKinNejikiRun() {
+    KIN_NEJIKI_STATE.active = true;
+    KIN_NEJIKI_STATE.set = 1;
+    KIN_NEJIKI_STATE.battleInSet = 1;
+    KIN_NEJIKI_STATE.totalWins = 0;
+    KIN_NEJIKI_STATE.playerParty = [];
+    KIN_NEJIKI_STATE.selectedIdx = [];
+    KIN_NEJIKI_STATE.offer = generateKinNejikiOffer(1);
+    renderKinNejikiSelectScreen();
+    changeScreen('screen-kinnejiki-select');
+}
+
+// --- パーティ選出画面（6体提示→タップで最大3体選択）の描画 ---
+function renderKinNejikiSelectScreen() {
+    const container = document.getElementById('kinnejiki-offer-container');
+    if (!container) return;
+    container.innerHTML = '';
+
+    KIN_NEJIKI_STATE.offer.forEach((m, idx) => {
+        if (!m) return;
+        const isSelected = KIN_NEJIKI_STATE.selectedIdx.includes(idx);
+        const card = document.createElement('div');
+        card.className = `bg-[#2a1b15] border rounded-xl p-2.5 cursor-pointer active:scale-[0.98] transition-all ${isSelected ? 'border-amber-400 shadow-[0_0_6px_2px_rgba(251,191,36,0.4)]' : 'border-amber-900/50'}`;
+        card.onclick = () => toggleKinNejikiSelect(idx);
+
+        const skillNames = m.skills.map(sk => (SKILLS_DB[sk] ? SKILLS_DB[sk].name : sk)).join('、');
+        const equipText = m.equip ? getEquipmentDisplayName(m.equip) : '未装備';
+
+        card.innerHTML = `
+            <div class="flex items-center space-x-2">
+                <div class="w-10 h-10 flex items-center justify-center text-2xl flex-shrink-0 bg-[#1a120b] rounded-full border border-amber-900/40">${m.emoji}</div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-xs font-bold text-amber-200">${m.name} ${isSelected ? '✅' : ''}</div>
+                    <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def}</div>
+                    <div class="text-[9px] text-gray-500 mt-0.5">技: ${skillNames}</div>
+                    <div class="text-[9px] text-purple-300 mt-0.5">装備: ${equipText}</div>
+                </div>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+
+    const confirmBtn = document.getElementById('kinnejiki-confirm-party-btn');
+    if (confirmBtn) {
+        const count = KIN_NEJIKI_STATE.selectedIdx.length;
+        confirmBtn.disabled = count !== 3;
+        confirmBtn.textContent = count === 3 ? 'このパーティで挑戦開始！' : `パーティを選択中 (${count}/3)`;
+        confirmBtn.classList.toggle('opacity-50', count !== 3);
+    }
+}
+
+function toggleKinNejikiSelect(idx) {
+    const pos = KIN_NEJIKI_STATE.selectedIdx.indexOf(idx);
+    if (pos >= 0) {
+        KIN_NEJIKI_STATE.selectedIdx.splice(pos, 1);
+    } else {
+        if (KIN_NEJIKI_STATE.selectedIdx.length >= 3) {
+            showToast('パーティは3体までです。');
+            return;
+        }
+        KIN_NEJIKI_STATE.selectedIdx.push(idx);
+    }
+    renderKinNejikiSelectScreen();
+}
+
+function confirmKinNejikiParty() {
+    if (KIN_NEJIKI_STATE.selectedIdx.length !== 3) return;
+    KIN_NEJIKI_STATE.playerParty = KIN_NEJIKI_STATE.selectedIdx.map(idx => JSON.parse(JSON.stringify(KIN_NEJIKI_STATE.offer[idx])));
+    advanceToNextKinNejikiBattle();
+}
+
+// --- 次のバトル（現在の set / battleInSet に対応する相手）を組み立てて開始 ---
+function advanceToNextKinNejikiBattle() {
+    const set = KIN_NEJIKI_STATE.set;
+    const battleInSet = KIN_NEJIKI_STATE.battleInSet;
+    const isNejiki = battleInSet === 7 && (set === 3 || set === 7);
+    const aiLevel = kinNejikiAiLevelForSet(set);
+
+    const opponentTeam = generateKinNejikiOpponentTeam(set, isNejiki);
+    const totalBattleNumber = (set - 1) * 7 + battleInSet;
+
+    const floorLabel = isNejiki
+        ? `⚔️ 第${set}セット・ネジキ戦（通算${totalBattleNumber}戦目）`
+        : `⚔️ 第${set}セット ${battleInSet}戦目（通算${totalBattleNumber}戦目）`;
+
+    startKinNejikiBattleEngine(opponentTeam, floorLabel, isNejiki, aiLevel);
+}
+
+// --- 既存の masmon_battle.js エンジン（3vs3対応）へ状態をセットしてバトル画面へ ---
+function startKinNejikiBattleEngine(opponentTeamRaw, floorText, isNejiki, aiLevel) {
+    MASMON_BATTLE_STATE.mode = 'cpu_team';
+    MASMON_BATTLE_STATE.playerTeam = KIN_NEJIKI_STATE.playerParty.map(m => convertMasmonToBattleUnit(m, m.equip || null));
+    MASMON_BATTLE_STATE.enemyTeam = opponentTeamRaw.map(m => convertMasmonToBattleUnit(m, m.equip || null));
+    MASMON_BATTLE_STATE.playerMeta = [...KIN_NEJIKI_STATE.playerParty];
+    MASMON_BATTLE_STATE.enemyMeta = [...opponentTeamRaw];
+    MASMON_BATTLE_STATE.playerActiveIdx = 0;
+    MASMON_BATTLE_STATE.enemyActiveIdx = 0;
+    // 金ネジキはレンタル制のため対戦アイテムの持ち込みは無し
+    MASMON_BATTLE_STATE.playerItems = { mango: 0, kuri: 0, toro: 0 };
+    MASMON_BATTLE_STATE.playerItemsInitial = { ...MASMON_BATTLE_STATE.playerItems };
+    MASMON_BATTLE_STATE.enemyItems = { mango: 0, kuri: 0, toro: 0 };
+    MASMON_BATTLE_STATE.opponentOwnerName = (opponentTeamRaw[0] || {}).ownerName || 'レンタル使い';
+    MASMON_BATTLE_STATE.kinNejiki = {
+        inRun: true,
+        set: KIN_NEJIKI_STATE.set,
+        battleIndex: KIN_NEJIKI_STATE.battleInSet,
+        isNejiki: !!isNejiki,
+        aiLevel: aiLevel
+    };
+
+    startMasmonBattleCommon(floorText);
+}
+
+// --- バトル終了後の分岐（masmon_battle.js の handleMasmonBattleWin/Lose から呼ばれる） ---
+function kinNejikiHandleBattleEnd(isWin) {
+    if (!isWin) {
+        kinNejikiFinishRun(false);
+        return;
+    }
+
+    KIN_NEJIKI_STATE.totalWins++;
+    KIN_NEJIKI_STATE.pendingSwap = {
+        defeatedTeam: [...MASMON_BATTLE_STATE.enemyMeta],
+        wasNejiki: !!(MASMON_BATTLE_STATE.kinNejiki && MASMON_BATTLE_STATE.kinNejiki.isNejiki)
+    };
+
+    if (KIN_NEJIKI_STATE.totalWins >= 49) {
+        kinNejikiFinishRun(true);
+        return;
+    }
+
+    renderKinNejikiSwapScreen();
+    changeScreen('screen-kinnejiki-swap');
+}
+
+// =====================================================
+// 勝利後の交換画面（1勝ごとに相手モンスター1体と手持ち1体を交換できる）
+// =====================================================
+let kinNejikiSwapMineIdx = null;
+let kinNejikiSwapTheirsIdx = null;
+
+function renderKinNejikiSwapScreen() {
+    kinNejikiSwapMineIdx = null;
+    kinNejikiSwapTheirsIdx = null;
+    renderKinNejikiSwapLists();
+}
+
+function renderKinNejikiSwapLists() {
+    const mineContainer = document.getElementById('kinnejiki-swap-mine-container');
+    const theirsContainer = document.getElementById('kinnejiki-swap-theirs-container');
+    if (!mineContainer || !theirsContainer) return;
+
+    const renderList = (container, list, selectedIdx, onClick) => {
+        container.innerHTML = '';
+        list.forEach((m, idx) => {
+            if (!m) return;
+            const isSelected = idx === selectedIdx;
+            const card = document.createElement('div');
+            card.className = `bg-[#2a1b15] border rounded-xl p-2 cursor-pointer active:scale-[0.98] transition-all ${isSelected ? 'border-emerald-400 shadow-[0_0_6px_2px_rgba(52,211,153,0.4)]' : 'border-amber-900/50'}`;
+            card.onclick = () => onClick(idx);
+            const skillNames = (m.skills || []).map(sk => (SKILLS_DB[sk] ? SKILLS_DB[sk].name : sk)).join('、');
+            card.innerHTML = `
+                <div class="text-xs font-bold text-amber-200">${m.emoji} ${m.name}</div>
+                <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def}</div>
+                <div class="text-[9px] text-gray-500 mt-0.5">技: ${skillNames}</div>
+            `;
+            container.appendChild(card);
+        });
+    };
+
+    renderList(mineContainer, KIN_NEJIKI_STATE.playerParty, kinNejikiSwapMineIdx, (idx) => { kinNejikiSwapMineIdx = idx; renderKinNejikiSwapLists(); });
+    renderList(theirsContainer, KIN_NEJIKI_STATE.pendingSwap.defeatedTeam, kinNejikiSwapTheirsIdx, (idx) => { kinNejikiSwapTheirsIdx = idx; renderKinNejikiSwapLists(); });
+
+    const btn = document.getElementById('kinnejiki-confirm-swap-btn');
+    if (btn) btn.disabled = (kinNejikiSwapMineIdx === null || kinNejikiSwapTheirsIdx === null);
+}
+
+function confirmKinNejikiSwap() {
+    if (kinNejikiSwapMineIdx === null || kinNejikiSwapTheirsIdx === null) return;
+    const theirs = KIN_NEJIKI_STATE.pendingSwap.defeatedTeam[kinNejikiSwapTheirsIdx];
+    const cloned = JSON.parse(JSON.stringify(theirs));
+    cloned.stats.life = cloned.stats.maxLife; // 交換直後は全回復した状態で仲間になる
+    cloned.ownerName = 'あなた';
+    KIN_NEJIKI_STATE.playerParty[kinNejikiSwapMineIdx] = cloned;
+    showToast(`【${cloned.name}】を仲間に迎え入れた！`);
+    proceedAfterKinNejikiSwap();
+}
+
+function skipKinNejikiSwap() {
+    proceedAfterKinNejikiSwap();
+}
+
+function proceedAfterKinNejikiSwap() {
+    // 原作のレンタル制に準拠し、自分の手持ちは毎戦フルライフの状態で次のバトルへ持ち越す
+    KIN_NEJIKI_STATE.playerParty.forEach(m => { m.stats.life = m.stats.maxLife; });
+    KIN_NEJIKI_STATE.pendingSwap = null;
+
+    if (KIN_NEJIKI_STATE.battleInSet >= 7) {
+        KIN_NEJIKI_STATE.battleInSet = 1;
+        KIN_NEJIKI_STATE.set++;
+    } else {
+        KIN_NEJIKI_STATE.battleInSet++;
+    }
+
+    advanceToNextKinNejikiBattle();
+}
+
+// =====================================================
+// ラン終了・ランキング
+// =====================================================
+function kinNejikiFinishRun(cleared) {
+    KIN_NEJIKI_STATE.active = false;
+    const finalWins = KIN_NEJIKI_STATE.totalWins;
+    saveKinNejikiRanking(finalWins, cleared);
+    renderKinNejikiResultScreen(finalWins, cleared);
+    changeScreen('screen-kinnejiki-result');
+}
+
+async function saveKinNejikiRanking(wins, cleared) {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return;
+    const pid = getMyPlayerId();
+    const name = (typeof GAME_STATE !== 'undefined' && GAME_STATE.playerName) ? GAME_STATE.playerName : 'ブリーダー';
+    try {
+        const ref = firebaseDb.ref(`kinnejiki_ranking/${pid}`);
+        const snap = await ref.once('value');
+        const current = snap.val();
+        const best = current ? (current.bestWins || 0) : 0;
+        if (!current || wins > best) {
+            await ref.set({
+                name,
+                bestWins: Math.max(wins, best),
+                bestCleared: !!(cleared || (current && current.bestCleared)),
+                updatedAt: Date.now()
+            });
+        }
+    } catch (e) {
+        console.error('[金ネジキ] ランキング保存エラー:', e);
+    }
+}
+
+async function fetchKinNejikiRanking(limit = 100) {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return [];
+    try {
+        const snap = await firebaseDb.ref('kinnejiki_ranking').orderByChild('bestWins').limitToLast(limit).once('value');
+        const list = [];
+        snap.forEach(child => list.push({ id: child.key, ...child.val() }));
+        list.sort((a, b) => (b.bestWins || 0) - (a.bestWins || 0));
+        return list;
+    } catch (e) {
+        console.error('[金ネジキ] ランキング取得エラー:', e);
+        return [];
+    }
+}
+
+function renderKinNejikiResultScreen(wins, cleared) {
+    const badge = document.getElementById('kinnejiki-result-badge');
+    const title = document.getElementById('kinnejiki-result-title');
+    const detail = document.getElementById('kinnejiki-result-detail');
+    if (!badge || !title || !detail) return;
+
+    if (cleared) {
+        badge.textContent = '👑';
+        title.textContent = '金ネジキ制覇！';
+        title.className = 'text-2xl font-black text-amber-400 pixel-font';
+    } else {
+        badge.textContent = '🏳️';
+        title.textContent = 'CHALLENGE OVER';
+        title.className = 'text-2xl font-black text-gray-300 pixel-font';
+    }
+
+    const setsCleared = Math.floor(wins / 7);
+    detail.innerHTML = `
+        <div class="text-xs text-purple-300 font-bold border-b border-purple-800 pb-1 mb-1">挑戦結果</div>
+        <div class="flex justify-between text-xs"><span class="text-gray-400">通算勝利数:</span><span class="text-white font-bold">${wins} / 49</span></div>
+        <div class="flex justify-between text-xs"><span class="text-gray-400">突破セット数:</span><span class="text-white font-bold">${setsCleared} / 7</span></div>
+    `;
+}
+
+async function showKinNejikiRankingScreen() {
+    changeScreen('screen-kinnejiki-ranking');
+    const listEl = document.getElementById('kinnejiki-ranking-list');
+    if (!listEl) return;
+    listEl.innerHTML = '<div class="text-center text-gray-500 text-xs py-8">読み込み中...</div>';
+
+    if (typeof initFirebase !== 'function' || !initFirebase()) {
+        listEl.innerHTML = '<div class="text-center text-gray-500 text-xs py-8 leading-relaxed">Firebase未設定のため<br>ランキングを表示できません。</div>';
+        return;
+    }
+
+    const ranking = await fetchKinNejikiRanking(100);
+    if (ranking.length === 0) {
+        listEl.innerHTML = '<div class="text-center text-gray-500 text-xs py-8">まだ挑戦記録がありません。</div>';
+        return;
+    }
+    const myId = getMyPlayerId();
+    const rankIcons = ['\u{1F947}', '\u{1F948}', '\u{1F949}'];
+    listEl.innerHTML = ranking.map((entry, i) => {
+        const rankIcon = rankIcons[i] !== undefined ? rankIcons[i] : ((i + 1) + '位');
+        const isMe = entry.id === myId;
+        const safeName = (entry.name || 'ブリーダー').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return `
+            <div class="bg-[#2a1b15] border ${isMe ? 'border-amber-500' : 'border-amber-900/50'} rounded-xl p-2.5 flex items-center space-x-2">
+                <div class="text-sm w-9 text-center flex-shrink-0 font-bold">${rankIcon}</div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-xs font-bold ${isMe ? 'text-amber-300' : 'text-white'} truncate">${safeName}${isMe ? '（あなた）' : ''}</div>
+                </div>
+                <div class="text-right flex-shrink-0">
+                    <div class="text-sm font-black text-amber-400 pixel-font">${entry.bestWins || 0}勝${entry.bestCleared ? ' 👑' : ''}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function returnToTitleFromKinNejiki() {
+    changeScreen('screen-title');
+}
