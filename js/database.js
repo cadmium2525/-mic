@@ -31,42 +31,42 @@ const MONSTER_TEMPLATES = {
         name: 'モッチー',
         emoji: '🍪',
         desc: '丸くて愛らしいが、バランスの取れた優秀な能力と強力なガッツ回復力を持つ。',
-        stats: { maxLife: 220, life: 220, pow: 61, int: 51, hit: 55, spd: 45, def: 40, gutsSpeed: 16 }
+        stats: { maxLife: 220, life: 220, pow: 71, int: 61, hit: 55, spd: 45, def: 40, gutsSpeed: 16 }
     },
     suezo: {
         id: 'suezo',
         name: 'スエゾー',
         emoji: '👁️',
         desc: '単眼の奇妙なモンスター。かしこさと命中が非常に高く、トリッキーな技が得意。',
-        stats: { maxLife: 180, life: 180, pow: 30, int: 92, hit: 65, spd: 40, def: 30, gutsSpeed: 14 }
+        stats: { maxLife: 180, life: 180, pow: 35, int: 102, hit: 65, spd: 40, def: 30, gutsSpeed: 14 }
     },
     dino: {
         id: 'dino',
         name: 'ディノ',
         emoji: '🦖',
         desc: '恐竜のような獰猛な外見。ちからと丈夫さに優れ、大ダメージを与える大技を放つ。',
-        stats: { maxLife: 250, life: 250, pow: 92, int: 25, hit: 45, spd: 35, def: 50, gutsSpeed: 12 }
+        stats: { maxLife: 250, life: 250, pow: 102, int: 35, hit: 45, spd: 35, def: 50, gutsSpeed: 12 }
     },
     monolith: {
         id: 'monolith',
         name: 'モノリス',
         emoji: '🗿',
         desc: '古代より佇む謎の岩石生命体。動きは鈍く回避は苦手だが、岩の肉体は並外れた丈夫さを誇り、ちから・かしこさ両面の技を使いこなす。',
-        stats: { maxLife: 235, life: 235, pow: 64, int: 60, hit: 42, spd: 26, def: 62, gutsSpeed: 13 }
+        stats: { maxLife: 235, life: 235, pow: 74, int: 70, hit: 42, spd: 26, def: 62, gutsSpeed: 13 }
     },
     plant: {
         id: 'plant',
         name: 'プラント',
         emoji: '🌸',
         desc: '花を戴く植物系のモンスター。ちからはやや低めだが、驚異的な生命力を持ち、多彩なかしこさ技で相手を翻弄する。',
-        stats: { maxLife: 260, life: 260, pow: 32, int: 84, hit: 46, spd: 32, def: 46, gutsSpeed: 14 }
+        stats: { maxLife: 260, life: 260, pow: 42, int: 94, hit: 46, spd: 32, def: 46, gutsSpeed: 14 }
     },
     kyubi: {
         id: 'kyubi',
         name: 'キュービ',
         emoji: '🦊',
         desc: '妖しい九尾を操る霊獣。ライフと丈夫さは低めだが、卓越したかしこさと俊敏さを併せ持ち、幻惑と防御術で戦況を操る。',
-        stats: { maxLife: 190, life: 190, pow: 28, int: 94, hit: 50, spd: 55, def: 28, gutsSpeed: 15 }
+        stats: { maxLife: 190, life: 190, pow: 38, int: 104, hit: 50, spd: 55, def: 28, gutsSpeed: 15 }
     },
     // =====================================================
     // 「ガッツファクトリー」レンタルバトル用に新規プレイアブル化した種族
@@ -77,42 +77,42 @@ const MONSTER_TEMPLATES = {
         name: 'ハム',
         emoji: '🐇',
         desc: '素早い身のこなしのウサギ型モンスター。命中と回避に優れ、格闘技主体の接近戦を得意とするが、ライフと丈夫さはやや低め。',
-        stats: { maxLife: 175, life: 175, pow: 80, int: 30, hit: 58, spd: 58, def: 26, gutsSpeed: 15 }
+        stats: { maxLife: 175, life: 175, pow: 90, int: 40, hit: 58, spd: 58, def: 26, gutsSpeed: 15 }
     },
     arrowhead: {
         id: 'arrowhead',
         name: 'アローヘッド',
         emoji: '🦀',
         desc: '硬い甲殻を持つ蟹型モンスター。丈夫さと回避に優れ、ガッツ回復もそこそこ速いが、命中はやや低め。',
-        stats: { maxLife: 215, life: 215, pow: 82, int: 30, hit: 32, spd: 40, def: 56, gutsSpeed: 14 }
+        stats: { maxLife: 215, life: 215, pow: 92, int: 40, hit: 32, spd: 40, def: 56, gutsSpeed: 14 }
     },
     nendoro: {
         id: 'nendoro',
         name: 'ネンドロ',
         emoji: '👤',
         desc: 'プロレスラーのような屈強な粘土質モンスター。ライフ・ちから・回避のすべてが高水準で、格闘技の連打で押し切る。かしこさは低い。',
-        stats: { maxLife: 250, life: 250, pow: 90, int: 18, hit: 44, spd: 52, def: 42, gutsSpeed: 13 }
+        stats: { maxLife: 250, life: 250, pow: 100, int: 18, hit: 44, spd: 52, def: 42, gutsSpeed: 13 }
     },
     henger: {
         id: 'henger',
         name: 'ヘンガー',
         emoji: '🤖',
         desc: '機械仕掛けの人造モンスター。ちから・かしこさ・命中のバランスに優れ、レーザーや光線技を得意とするが丈夫さはやや低め。',
-        stats: { maxLife: 195, life: 195, pow: 70, int: 66, hit: 48, spd: 38, def: 30, gutsSpeed: 14 }
+        stats: { maxLife: 195, life: 195, pow: 80, int: 76, hit: 48, spd: 38, def: 30, gutsSpeed: 14 }
     },
     durahan: {
         id: 'durahan',
         name: 'デュラハン',
         emoji: '🛡️',
         desc: '甲冑を纏う騎士型モンスター。ちからと丈夫さが非常に高く重厚な一撃を得意とするが、ガッツ回復と回避に難がある。',
-        stats: { maxLife: 235, life: 235, pow: 94, int: 36, hit: 40, spd: 18, def: 60, gutsSpeed: 11 }
+        stats: { maxLife: 235, life: 235, pow: 104, int: 46, hit: 40, spd: 18, def: 60, gutsSpeed: 11 }
     },
     golem: {
         id: 'golem',
         name: 'ゴーレム',
         emoji: '🗿',
         desc: '岩石の巨体を持つゴーレム型モンスター。ちからと丈夫さは最高クラスだが、命中と回避が低く動きは非常に鈍い。',
-        stats: { maxLife: 230, life: 230, pow: 98, int: 16, hit: 32, spd: 14, def: 58, gutsSpeed: 11 }
+        stats: { maxLife: 230, life: 230, pow: 108, int: 16, hit: 32, spd: 14, def: 58, gutsSpeed: 11 }
     }
 };
 

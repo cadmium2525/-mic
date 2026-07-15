@@ -59,3 +59,63 @@ function getMyPlayerId() {
     }
     return pid;
 }
+
+// =====================================================
+// アカウント管理モーダル
+// キャッシュ削除等でIDが失われるとPvPレートランキングの実績を
+// 引き継げなくなるため、IDの確認・手動での復帰手段を提供する。
+// =====================================================
+
+// --- モーダルを開く：現在のIDを表示欄にセットする ---
+function openAccountModal() {
+    const idDisplay = document.getElementById('account-my-id-display');
+    if (idDisplay) idDisplay.value = getMyPlayerId();
+    const restoreInput = document.getElementById('account-restore-id-input');
+    if (restoreInput) restoreInput.value = '';
+    document.getElementById('account-modal').classList.remove('hidden');
+}
+
+function closeAccountModal() {
+    document.getElementById('account-modal').classList.add('hidden');
+}
+
+// --- 現在のIDをクリップボードへコピー ---
+function copyMyPlayerId() {
+    const id = getMyPlayerId();
+    const fallbackCopy = () => {
+        const idDisplay = document.getElementById('account-my-id-display');
+        if (idDisplay) {
+            idDisplay.select();
+            idDisplay.setSelectionRange(0, 99999);
+        }
+        showToast('コピーできませんでした。表示欄を長押しして手動でコピーしてください。');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(id).then(() => {
+            showToast('IDをコピーしました！');
+        }).catch(fallbackCopy);
+    } else {
+        fallbackCopy();
+    }
+}
+
+// --- 入力されたIDに切り替えて復帰する（別端末・再インストール後など） ---
+function restoreMyPlayerId() {
+    const input = document.getElementById('account-restore-id-input');
+    const newId = (input ? input.value : '').trim();
+    if (!newId) {
+        showToast('復帰するIDを入力してください。');
+        return;
+    }
+    if (newId === getMyPlayerId()) {
+        showToast('現在のIDと同じです。');
+        return;
+    }
+    if (!confirm('現在のこの端末のIDを上書きして、入力したIDに復帰します。よろしいですか？')) return;
+
+    localStorage.setItem('mfload_player_id', newId);
+    const idDisplay = document.getElementById('account-my-id-display');
+    if (idDisplay) idDisplay.value = getMyPlayerId();
+    if (input) input.value = '';
+    showToast('アカウントIDを復帰しました！');
+}

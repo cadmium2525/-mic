@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>モンスターブリーダー：ガッツロード</title>
+    <title>モンスターブリーダー：ガッツファクトリー</title>
 
     <!-- ==================== PWA 設定 ==================== -->
     <link rel="manifest" href="manifest.webmanifest">
     <meta name="theme-color" content="#1a120b">
-    <meta name="description" content="30階の栄光を目指す、モンスター育成＆バトルRPG「モンスターファーム ガッツロード」">
+    <meta name="description" content="最上位ブリーダーの栄光を目指す">
 
     <!-- ホーム画面追加時のアイコン（iOS Safari） -->
     <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -53,9 +53,9 @@
                 <div class="mt-4">
                     <p class="text-amber-400 text-xs font-bold tracking-widest uppercase mb-1">Legend of Breeder</p>
                     <h1 class="text-3xl font-extrabold text-[#f5f2eb] tracking-wider pixel-font border-b-4 border-amber-500 pb-2">
-                        モンスターファーム<br><span class="text-amber-500">ガッツロード</span>
+                        モンスターファーム<br><span class="text-amber-500">ガッツファクトリー</span>
                     </h1>
-                    <p class="text-[10px] text-gray-400 mt-2">～ レンタルモンスターバトル ～</p>
+                    <p class="text-[10px] text-gray-400 mt-2">～ ブリーダーの頂点を目指して ～</p>
                 </div>
 
                 <div class="space-y-2 mt-2">
@@ -76,6 +76,10 @@
                     <button onclick="showPvpRanking()" class="w-full py-2.5 bg-[#1a120b] hover:bg-[#2a1b15] text-sky-400 font-bold rounded-xl text-sm shadow border border-sky-800 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
                         <i class="fa-solid fa-trophy"></i>
                         <span>PvPレートランキング</span>
+                    </button>
+                    <button onclick="openAccountModal()" class="w-full py-2.5 bg-[#1a120b] hover:bg-[#2a1b15] text-emerald-400 font-bold rounded-xl text-sm shadow border border-emerald-800 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-user-shield"></i>
+                        <span>アカウント管理</span>
                     </button>
                     <p class="text-[10px] text-gray-400">※育成不要！毎回その場で選ぶレンタルモンスターで戦おう！</p>
                 </div>
@@ -614,6 +618,43 @@
             </button>
         </div>
     </div>
+
+    <!-- アカウント管理モーダル（端末固有IDの表示・別端末IDでの復帰） -->
+    <div id="account-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeAccountModal()">
+        <div class="bg-[#2a1b15] w-full max-w-xs p-4 rounded-2xl border-2 border-emerald-600 space-y-3 shadow-2xl" onclick="event.stopPropagation()">
+            <h4 class="text-base font-black text-white pixel-font flex items-center space-x-2 border-b border-emerald-800 pb-2">
+                <i class="fa-solid fa-user-shield text-emerald-400"></i>
+                <span>アカウント管理</span>
+            </h4>
+
+            <div>
+                <p class="text-[10px] text-gray-400 mb-1">現在のアカウントID（PvPレートやランキングはこのIDに紐づいています）</p>
+                <div class="flex space-x-1.5">
+                    <input type="text" id="account-my-id-display" readonly
+                        class="flex-1 min-w-0 bg-[#150b07] border border-emerald-800 text-emerald-300 text-[11px] font-mono rounded-lg px-2 py-2 focus:outline-none">
+                    <button onclick="copyMyPlayerId()" class="shrink-0 px-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-lg text-[11px] transition-all active:scale-95">
+                        コピー
+                    </button>
+                </div>
+                <p class="text-[9px] text-amber-400 mt-1.5 leading-relaxed">⚠️ このIDはブラウザに保存されています。キャッシュ・データを消去すると引き継げなくなるので、控えておくことをおすすめします。</p>
+            </div>
+
+            <div class="border-t border-emerald-900 pt-3">
+                <p class="text-[10px] text-gray-400 mb-1">以前のIDで復帰する（別端末や再インストール後など）</p>
+                <input type="text" id="account-restore-id-input" placeholder="p_ から始まるIDを入力"
+                    class="w-full bg-[#150b07] border border-emerald-800 text-white text-[11px] font-mono rounded-lg px-2 py-2 focus:outline-none focus:border-emerald-500 placeholder-gray-600">
+                <button onclick="restoreMyPlayerId()" class="w-full mt-2 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs shadow transition-all active:scale-95">
+                    このIDで復帰する
+                </button>
+                <p class="text-[9px] text-gray-500 mt-1.5 leading-relaxed">※復帰すると現在のこの端末のIDは上書きされ、入力したIDのランキング・レート・対戦履歴を引き継ぎます。</p>
+            </div>
+
+            <button onclick="closeAccountModal()" class="w-full py-2 bg-[#1a120b] hover:bg-[#150b07] text-gray-300 font-bold rounded-xl text-xs transition-all border border-gray-700">
+                閉じる
+            </button>
+        </div>
+    </div>
+
 
     <!-- ==================== SCRIPT / ゲームロジック ==================== -->
     <script src="js/database.js"></script>
