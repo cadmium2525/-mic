@@ -333,22 +333,18 @@ const AudioManager = (() => {
     // ---------------------------------------------------
     const SCREEN_BGM_MAP = {
         'screen-title': 'title',
-        'screen-aura-ritual': 'title',
-        'screen-adventure': 'adventure',
-        'screen-training': 'adventure',
-        'screen-bag': 'adventure',
-        'screen-compass-select': 'adventure',
-        'screen-event': 'adventure',
         'screen-battle': 'battle',
-        'screen-ranking': 'title',
-        'screen-masmon-list': 'title',
-        'screen-equipment-list': 'title',
-        'screen-masmon-team-select': 'title',
-        'screen-masmon-item-select': 'title',
         'screen-masmon-realtime-keyword': 'title',
         'screen-masmon-realtime-waiting': 'title',
         'screen-masmon-realtime-matched': 'battle',
+        'screen-masmon-battle-result': 'title',
         'screen-pvp-ranking': 'title',
+        'screen-pvp-rental-select': 'title',
+        'screen-kinnejiki-title': 'title',
+        'screen-kinnejiki-select': 'title',
+        'screen-kinnejiki-swap': 'title',
+        'screen-kinnejiki-result': 'title',
+        'screen-kinnejiki-ranking': 'title',
     };
 
     function onScreenChange(screenId) {

@@ -83,7 +83,7 @@ async function initializeRealtimeBattleState() {
         if (!roomData || !roomData.player1 || !roomData.player2) {
             showToast('対戦相手の情報が取得できませんでした。');
             resetRealtimeBattleClientState();
-            showMasmonList();
+            returnToPvpEntry();
             return;
         }
 
@@ -244,19 +244,10 @@ function attachRealtimeBattleListeners() {
         REALTIME_BATTLE.seenLogKeys[snap.key] = true;
         const entry = snap.val();
         if (entry && entry.text) {
-            addLog(entry.text);
-            // HIT/回避/クリティカルなど、育成中のバトルと同じ演出をログ内容から再現する
-            triggerRealtimeCombatEffects(entry);
-            // 根性の発動は状態を持続保存しないため、ログのタイミングで一時演出を出す（育成中のバトルと同じ表現）
-            if (entry.text.includes('根性が発動') && REALTIME_BATTLE.cachedState) {
-                const meNow = getRealtimeActiveUnit(REALTIME_BATTLE.cachedState, REALTIME_BATTLE.mySlot);
-                const oppNow = getRealtimeActiveUnit(REALTIME_BATTLE.cachedState, REALTIME_BATTLE.oppSlot);
-                if (meNow && entry.text.includes(meNow.name)) {
-                    triggerRealtimeTemporaryStatusEffect("根性", 'player-status-effect-display');
-                } else if (oppNow && entry.text.includes(oppNow.name)) {
-                    triggerRealtimeTemporaryStatusEffect("根性", 'enemy-status-effect-display');
-                }
-            }
+            // 複数のログが一度に届いた場合も、CPU戦と同じテンポで1件ずつ間を空けて表示する
+            if (!REALTIME_BATTLE.logRevealQueue) REALTIME_BATTLE.logRevealQueue = [];
+            REALTIME_BATTLE.logRevealQueue.push(entry);
+            processRealtimeLogQueue();
         }
     });
 
@@ -490,7 +481,44 @@ function triggerRealtimeCombatEffects(entry) {
     }
 }
 
-// 根性などの一時的な状態変化の点滅表示（育成中のバトルと同じ演出）
+// -----------------------------------------------------
+// ログの「間」を空けた順次表示（テンポ改善：CPU戦のBATTLE_STEP_DELAYと足並みを揃える）
+// Firebase側で複数件のログが一度に書き込まれても、ここで1件ずつ間隔を空けて見せることで
+// 何が起きたか視覚的に追えるようにする。
+// -----------------------------------------------------
+function processRealtimeLogQueue() {
+    if (REALTIME_BATTLE.isRevealingLog) return;
+    if (!REALTIME_BATTLE.logRevealQueue || REALTIME_BATTLE.logRevealQueue.length === 0) return;
+
+    REALTIME_BATTLE.isRevealingLog = true;
+
+    function revealNext() {
+        if (!REALTIME_BATTLE.active || !REALTIME_BATTLE.logRevealQueue || REALTIME_BATTLE.logRevealQueue.length === 0) {
+            REALTIME_BATTLE.isRevealingLog = false;
+            return;
+        }
+        const entry = REALTIME_BATTLE.logRevealQueue.shift();
+        addLog(entry.text);
+        // HIT/回避/クリティカルなど、CPU戦と同じ演出をログ内容から再現する
+        triggerRealtimeCombatEffects(entry);
+        // 根性の発動は状態を持続保存しないため、ログのタイミングで一時演出を出す（CPU戦と同じ表現）
+        if (entry.text.includes('根性が発動') && REALTIME_BATTLE.cachedState) {
+            const meNow = getRealtimeActiveUnit(REALTIME_BATTLE.cachedState, REALTIME_BATTLE.mySlot);
+            const oppNow = getRealtimeActiveUnit(REALTIME_BATTLE.cachedState, REALTIME_BATTLE.oppSlot);
+            if (meNow && entry.text.includes(meNow.name)) {
+                triggerRealtimeTemporaryStatusEffect("根性", 'player-status-effect-display');
+            } else if (oppNow && entry.text.includes(oppNow.name)) {
+                triggerRealtimeTemporaryStatusEffect("根性", 'enemy-status-effect-display');
+            }
+        }
+        const delay = (typeof BATTLE_STEP_DELAY !== 'undefined') ? BATTLE_STEP_DELAY.perExtraLog : 550;
+        setTimeout(revealNext, delay);
+    }
+
+    revealNext();
+}
+
+
 // elId: 表示先要素（味方='player-status-effect-display' / 相手='enemy-status-effect-display'）
 function triggerRealtimeTemporaryStatusEffect(effectName, elId = 'player-status-effect-display') {
     const el = document.getElementById(elId);
@@ -1327,6 +1355,8 @@ function resetRealtimeBattleClientState() {
     REALTIME_BATTLE.cachedState = null;
     REALTIME_BATTLE.actionInProgress = false;
     REALTIME_BATTLE.seenLogKeys = {};
+    REALTIME_BATTLE.logRevealQueue = [];
+    REALTIME_BATTLE.isRevealingLog = false;
 
     document.getElementById('battle-endturn-controls').classList.remove('hidden');
     document.getElementById('realtime-surrender-btn').classList.add('hidden');

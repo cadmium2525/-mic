@@ -1,13 +1,13 @@
 // =====================================================
 // kinnejiki.js
-// 「金ネジキ」レンタルバトルファクトリーモード
+// 「ガッツファクトリー」レンタルモンスターバトルモード
 // ・育成モードを介さず、あらかじめ用意されたレンタルモンスターから
 //   6体提示→3体選出でパーティを組み、7戦1セット×7セット＝49連勝を目指す
 // ・1勝ごとに相手モンスター1体と手持ち1体を交換できる
-// ・3セット目・7セット目のクリア後（＝各セットの7戦目）にネジキ役が登場
+// ・3セット目・7セット目のクリア後（＝各セットの7戦目）にファクトリーヘッドが登場
 // ・セットが進むほど相手のステータス・AIレベル・装備が強化される
 // ・既存の masmon_battle.js の3vs3バトルエンジンをそのまま再利用する
-//   （MASMON_BATTLE_STATE.kinNejiki フラグで金ネジキ実行中を識別）
+//   （MASMON_BATTLE_STATE.kinNejiki フラグでガッツファクトリー実行中を識別）
 // Firebase Realtime Database: kinnejiki_ranking/{playerId} = { name, bestWins, bestCleared, updatedAt }
 // =====================================================
 
@@ -22,12 +22,87 @@ const KIN_NEJIKI_STATE = {
     pendingSwap: null   // 直前の勝利で交換対象になる相手チーム情報
 };
 
+// =====================================================
+// 途中セーブ（一時中断・再開専用。コンティニューとしては使えない）
+// ・任意のタイミング（勝利後の交換画面）でセーブ可能
+// ・再開後に敗北した場合は、そのセーブデータを削除する
+// ・クリア（49勝達成）時も削除する
+// =====================================================
+const KIN_NEJIKI_SUSPEND_KEY = 'mfload_kinnejiki_suspend_v1';
+
+function hasKinNejikiSuspendSave() {
+    try {
+        return !!localStorage.getItem(KIN_NEJIKI_SUSPEND_KEY);
+    } catch (e) {
+        return false;
+    }
+}
+
+function saveKinNejikiSuspend() {
+    if (!KIN_NEJIKI_STATE.active) {
+        showToast('挑戦中のみ一時セーブできます。');
+        return;
+    }
+    try {
+        const payload = {
+            set: KIN_NEJIKI_STATE.set,
+            battleInSet: KIN_NEJIKI_STATE.battleInSet,
+            totalWins: KIN_NEJIKI_STATE.totalWins,
+            playerParty: KIN_NEJIKI_STATE.playerParty,
+            savedAt: Date.now()
+        };
+        localStorage.setItem(KIN_NEJIKI_SUSPEND_KEY, JSON.stringify(payload));
+        KIN_NEJIKI_STATE.active = false;
+        showToast('一時セーブしました。タイトルに戻ります。');
+        setTimeout(() => changeScreen('screen-title'), 800);
+    } catch (e) {
+        console.error('[ガッツファクトリー] 一時セーブエラー:', e);
+        showToast('一時セーブに失敗しました。');
+    }
+}
+
+function clearKinNejikiSuspendSave() {
+    try {
+        localStorage.removeItem(KIN_NEJIKI_SUSPEND_KEY);
+    } catch (e) { /* ignore */ }
+}
+
+// タイトル→説明画面に入るタイミングで「続きから再開する」ボタンの表示を切り替える
+function updateKinNejikiResumeButtonVisibility() {
+    const btn = document.getElementById('kinnejiki-resume-btn');
+    if (btn) btn.classList.toggle('hidden', !hasKinNejikiSuspendSave());
+}
+
+function resumeKinNejikiRun() {
+    let saved = null;
+    try {
+        const raw = localStorage.getItem(KIN_NEJIKI_SUSPEND_KEY);
+        if (raw) saved = JSON.parse(raw);
+    } catch (e) {
+        saved = null;
+    }
+    if (!saved) {
+        showToast('一時セーブデータが見つかりませんでした。');
+        return;
+    }
+
+    KIN_NEJIKI_STATE.active = true;
+    KIN_NEJIKI_STATE.set = saved.set;
+    KIN_NEJIKI_STATE.battleInSet = saved.battleInSet;
+    KIN_NEJIKI_STATE.totalWins = saved.totalWins;
+    KIN_NEJIKI_STATE.playerParty = saved.playerParty;
+    KIN_NEJIKI_STATE.pendingSwap = null;
+
+    showToast(`セーブデータから再開します（通算${saved.totalWins}勝・第${saved.set}セット）`);
+    advanceToNextKinNejikiBattle();
+}
+
 // --- セット番号からAIレベル（1〜4）を算出 ---
 function kinNejikiAiLevelForSet(setNumber) {
     if (setNumber <= 2) return 1;
     if (setNumber <= 4) return 2;
     if (setNumber <= 6) return 3;
-    return 4; // 7セット目（最終ネジキ含む）
+    return 4; // 7セット目（最終ボス含む）
 }
 
 // --- セット番号に応じた装備の段階的抽選 ---
@@ -89,7 +164,7 @@ function generateKinNejikiRentalMonster(speciesId, setNumber) {
         monsterBaseName: tmpl.name,
         emoji: tmpl.emoji,
         speciesId: speciesId,
-        aura: null,
+        aura: getRandomAuraKey(), // 全モンスターに必ずオーラを付与する
         isAwakened: false,
         statusEffect: null,
         difficulty: 'kinnejiki',
@@ -108,7 +183,7 @@ function generateKinNejikiOffer(setNumber) {
     return chosenSpecies.map(sp => generateKinNejikiRentalMonster(sp, setNumber));
 }
 
-// --- 対戦相手チーム（3体）を生成。ネジキ戦の場合は専用ボス＋帯同2体を返す ---
+// --- 対戦相手チーム（3体）を生成。ボス戦の場合は専用ボス＋帯同2体を返す ---
 function generateKinNejikiOpponentTeam(setNumber, isNejiki) {
     if (isNejiki) {
         const bossKey = (setNumber === 3) ? 'set3' : 'set7';
@@ -118,7 +193,7 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki) {
             monsterBaseName: bossDef.templateId ? (MONSTER_TEMPLATES[bossDef.templateId] || {}).name || bossDef.name : bossDef.name,
             emoji: bossDef.emoji,
             speciesId: bossDef.templateId,
-            aura: null,
+            aura: getRandomAuraKey(),
             isAwakened: false,
             statusEffect: null,
             difficulty: 'kinnejiki',
@@ -139,10 +214,10 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki) {
 }
 
 // =====================================================
-// 敵AIロジック（アイテムは使わず、技選択と交代のみ金ネジキ専用に判定する）
+// 敵AIロジック（アイテムは使わず、技選択と交代のみガッツファクトリー専用に判定する）
 // =====================================================
 
-// --- 敵の技選択（アイテムAI runEnemyItemAI とは別に、金ネジキ戦のみ masmon_battle.js から呼ばれる） ---
+// --- 敵の技選択（アイテムAI runEnemyItemAI とは別に、ガッツファクトリー戦のみ masmon_battle.js から呼ばれる） ---
 function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel) {
     if (!affordableSkills || affordableSkills.length === 0) return null;
 
@@ -161,7 +236,7 @@ function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel) {
     };
     const withEstimate = affordableSkills.map(s => ({ ...s, estDmg: estimate(s.info) }));
 
-    // レベル4（ネジキ級）：確殺が狙えるなら最大火力、そうでなければ制圧（ガッツダウン／状態異常）を優先
+    // レベル4（ボス級）：確殺が狙えるなら最大火力、そうでなければ制圧（ガッツダウン／状態異常）を優先
     if (aiLevel >= 4) {
         const lethal = withEstimate.filter(s => s.estDmg >= p.stats.life);
         if (lethal.length > 0) {
@@ -240,13 +315,15 @@ function maybeExecuteKinNejikiEnemySwitch() {
 // 画面遷移・進行制御
 // =====================================================
 
-// --- タイトルから「金ネジキ」の説明画面へ ---
+// --- タイトルから「ガッツファクトリー」の説明画面へ ---
 function startKinNejikiEntry() {
+    updateKinNejikiResumeButtonVisibility();
     changeScreen('screen-kinnejiki-title');
 }
 
 // --- ランを開始し、最初の6体提示を生成 ---
 function beginKinNejikiRun() {
+    clearKinNejikiSuspendSave(); // 新規に挑戦を始める場合、古い一時セーブは破棄する
     KIN_NEJIKI_STATE.active = true;
     KIN_NEJIKI_STATE.set = 1;
     KIN_NEJIKI_STATE.battleInSet = 1;
@@ -273,18 +350,24 @@ function renderKinNejikiSelectScreen() {
 
         const skillNames = m.skills.map(sk => (SKILLS_DB[sk] ? SKILLS_DB[sk].name : sk)).join('、');
         const equipText = m.equip ? getEquipmentDisplayName(m.equip) : '未装備';
+        const aura = AURA_TYPES[m.aura];
+        const auraBadge = aura ? `<span class="ml-1 px-1 py-0.5 rounded text-[8px] font-bold text-slate-900 ${aura.colorClass}">${aura.emoji}${aura.name}</span>` : '';
+
+        const iconWrap = document.createElement('div');
+        iconWrap.className = 'w-10 h-10 flex items-center justify-center text-2xl flex-shrink-0 bg-[#1a120b] rounded-full border border-amber-900/40 overflow-hidden';
+        renderMonsterVisual(iconWrap, m.monsterBaseName, m.emoji, false, true);
 
         card.innerHTML = `
             <div class="flex items-center space-x-2">
-                <div class="w-10 h-10 flex items-center justify-center text-2xl flex-shrink-0 bg-[#1a120b] rounded-full border border-amber-900/40">${m.emoji}</div>
                 <div class="flex-1 min-w-0">
-                    <div class="text-xs font-bold text-amber-200">${m.name} ${isSelected ? '✅' : ''}</div>
+                    <div class="text-xs font-bold text-amber-200">${m.name} ${auraBadge} ${isSelected ? '✅' : ''}</div>
                     <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def}</div>
                     <div class="text-[9px] text-gray-500 mt-0.5">技: ${skillNames}</div>
                     <div class="text-[9px] text-purple-300 mt-0.5">装備: ${equipText}</div>
                 </div>
             </div>
         `;
+        card.querySelector('.flex.items-center').prepend(iconWrap);
         container.appendChild(card);
     });
 
@@ -328,7 +411,7 @@ function advanceToNextKinNejikiBattle() {
     const totalBattleNumber = (set - 1) * 7 + battleInSet;
 
     const floorLabel = isNejiki
-        ? `⚔️ 第${set}セット・ネジキ戦（通算${totalBattleNumber}戦目）`
+        ? `⚔️ 第${set}セット・ボス戦（通算${totalBattleNumber}戦目）`
         : `⚔️ 第${set}セット ${battleInSet}戦目（通算${totalBattleNumber}戦目）`;
 
     startKinNejikiBattleEngine(opponentTeam, floorLabel, isNejiki, aiLevel);
@@ -343,7 +426,7 @@ function startKinNejikiBattleEngine(opponentTeamRaw, floorText, isNejiki, aiLeve
     MASMON_BATTLE_STATE.enemyMeta = [...opponentTeamRaw];
     MASMON_BATTLE_STATE.playerActiveIdx = 0;
     MASMON_BATTLE_STATE.enemyActiveIdx = 0;
-    // 金ネジキはレンタル制のため対戦アイテムの持ち込みは無し
+    // ガッツファクトリーはレンタル制のため対戦アイテムの持ち込みは無し
     MASMON_BATTLE_STATE.playerItems = { mango: 0, kuri: 0, toro: 0 };
     MASMON_BATTLE_STATE.playerItemsInitial = { ...MASMON_BATTLE_STATE.playerItems };
     MASMON_BATTLE_STATE.enemyItems = { mango: 0, kuri: 0, toro: 0 };
@@ -458,6 +541,7 @@ function proceedAfterKinNejikiSwap() {
 // =====================================================
 function kinNejikiFinishRun(cleared) {
     KIN_NEJIKI_STATE.active = false;
+    clearKinNejikiSuspendSave(); // 敗北時・クリア時のいずれも一時セーブは削除する（コンティニュー用途ではないため）
     const finalWins = KIN_NEJIKI_STATE.totalWins;
     saveKinNejikiRanking(finalWins, cleared);
     renderKinNejikiResultScreen(finalWins, cleared);
@@ -482,7 +566,7 @@ async function saveKinNejikiRanking(wins, cleared) {
             });
         }
     } catch (e) {
-        console.error('[金ネジキ] ランキング保存エラー:', e);
+        console.error('[ガッツファクトリー] ランキング保存エラー:', e);
     }
 }
 
@@ -495,7 +579,7 @@ async function fetchKinNejikiRanking(limit = 100) {
         list.sort((a, b) => (b.bestWins || 0) - (a.bestWins || 0));
         return list;
     } catch (e) {
-        console.error('[金ネジキ] ランキング取得エラー:', e);
+        console.error('[ガッツファクトリー] ランキング取得エラー:', e);
         return [];
     }
 }
@@ -508,7 +592,7 @@ function renderKinNejikiResultScreen(wins, cleared) {
 
     if (cleared) {
         badge.textContent = '👑';
-        title.textContent = '金ネジキ制覇！';
+        title.textContent = 'ガッツファクトリー制覇！';
         title.className = 'text-2xl font-black text-amber-400 pixel-font';
     } else {
         badge.textContent = '🏳️';

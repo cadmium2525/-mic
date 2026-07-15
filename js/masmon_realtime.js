@@ -31,29 +31,6 @@ let realtimeRandomQueueRoomKey = null; // 自分が発行した待機枠のマ�
 let realtimeRandomQueueListener = null; // 待機中、random_queueへ相手が来たかを監視するリスナー（player1側のみ使用）
 
 // -----------------------------------------------------
-// 対戦アイテム選択画面 → リアルタイム対戦への橋渡し
-// フェーズ⑥より個人戦（solo）・団体戦（team）の両方に対応
-// -----------------------------------------------------
-function proceedToRealtimeFromItemSelect() {
-    if (!PENDING_MASMON_BATTLE || (PENDING_MASMON_BATTLE.type !== 'solo' && PENDING_MASMON_BATTLE.type !== 'team')) {
-        showToast('編成情報が見つかりませんでした。');
-        return;
-    }
-    const itemLoadout = masmonItemSlots.filter(k => k !== null);
-
-    if (PENDING_MASMON_BATTLE.type === 'solo') {
-        realtimePendingType = 'solo';
-        realtimePendingTeam = [PENDING_MASMON_BATTLE.masmon];
-    } else {
-        realtimePendingType = 'team';
-        realtimePendingTeam = [...PENDING_MASMON_BATTLE.masmons];
-    }
-
-    PENDING_MASMON_BATTLE = null;
-    showRealtimeKeywordScreen(realtimePendingTeam, itemLoadout, realtimePendingType);
-}
-
-// -----------------------------------------------------
 // キーワード入力画面
 // -----------------------------------------------------
 function showRealtimeKeywordScreen(team, itemLoadout, battleType) {
@@ -104,7 +81,7 @@ function showRealtimeKeywordScreen(team, itemLoadout, battleType) {
 
 function cancelRealtimeSetup() {
     resetRealtimeRoomState();
-    showMasmonList();
+    returnToPvpEntry();
 }
 
 // -----------------------------------------------------
@@ -464,7 +441,7 @@ async function cancelRealtimeMatching() {
     await clearMyRandomQueueEntryIfMine();
     resetRealtimeRoomState();
     showToast('マッチングをキャンセルしました。');
-    showMasmonList();
+    returnToPvpEntry();
 }
 
 // -----------------------------------------------------
@@ -498,7 +475,7 @@ function enterRealtimeMatchedScreen(roomData) {
             stopRealtimeHeartbeat();
             resetRealtimeRoomState();
             showToast('対戦相手が退出したため、マッチングを終了しました。');
-            showMasmonList();
+            returnToPvpEntry();
         }
     });
 }
@@ -519,7 +496,7 @@ async function leaveRealtimeRoom() {
     }
     await clearMyRandomQueueEntryIfMine();
     resetRealtimeRoomState();
-    showMasmonList();
+    returnToPvpEntry();
 }
 
 // -----------------------------------------------------
