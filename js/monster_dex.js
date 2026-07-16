@@ -60,8 +60,10 @@ function renderMonsterDexList() {
 
 // --- 技のランクに応じた色クラス（既存のバトル画面の配色に合わせる） ---
 function getDexSkillRankColor(rank) {
+    if (rank === 'S+') return 'text-rose-500 font-extrabold';
     if (rank === 'S') return 'text-red-600 font-extrabold';
     if (rank === 'A') return 'text-orange-500 font-bold';
+    if (rank === 'B+') return 'text-amber-500 font-bold';
     if (rank === 'B') return 'text-yellow-600 font-bold';
     if (rank === 'C') return 'text-green-600 font-bold';
     if (rank === 'D') return 'text-cyan-600';

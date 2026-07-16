@@ -120,6 +120,13 @@ const MONSTER_TEMPLATES = {
         emoji: '🐸',
         desc: '力士のような体躯を持つ蛙型モンスター。がっちりとした重い体と怪力を武器に、張り手や投げ技を得意とするが、見た目に反して舌や鳴き声を使ったかしこさ技も巧みに操る。動きはやや鈍重。',
         stats: { maxLife: 240, life: 240, pow: 94, int: 58, hit: 48, spd: 34, def: 56, gutsSpeed: 13 }
+    },
+    hinotori: {
+        id: 'hinotori',
+        name: 'ヒノトリ',
+        emoji: '🐦‍🔥',
+        desc: '身を炎に包んだ伝説の不死鳥。ちから・かしこさの両面で高い水準を誇り、多彩な炎の技を操って相手を焼き尽くすが、丈夫さはやや低い。',
+        stats: { maxLife: 200, life: 200, pow: 78, int: 88, hit: 52, spd: 50, def: 34, gutsSpeed: 14 }
     }
 };
 
@@ -253,7 +260,19 @@ const SKILLS_DB = {
     kaeru_no_shita: { name: 'かえるのした', cost: 16, type: 'int', hitRate: 72, force: 0.85, gutsDown: 25, critBonus: 0.17, effect: 'paralyze_25', desc: '長い舌を伸ばして絡めとる。相手GUTS-25。さらに命中した場合、舌に絡め取られ2回の行動の間25%の確率で相手を行動不能にする' },
     dai_kaiten_otoshi: { name: '大回転落とし', cost: 50, type: 'pow', hitRate: 70, force: 2.8, gutsDown: 18, critBonus: 0, effect: 'def_down_15', desc: '巨体で大きく回転し、渾身の力で相手を叩き落とす切り札。相手GUTS-18。さらに命中した場合、衝撃で3ターンの間相手の丈夫さを15%低下させる' },
     kaeru_no_uta: { name: 'かえるのうた', cost: 40, type: 'int', hitRate: 90, force: 0.2, gutsDown: 42, critBonus: 0.10, effect: 'confuse_30', desc: '独特な鳴き声の合唱で相手の闘志を大きく削ぐ高命中技。相手GUTS-42。さらに命中した場合、3回の行動の間30%の確率で相手を混乱させる' },
-    bakudan_nage: { name: 'ばくだん投げ', cost: 28, type: 'int', hitRate: 73, force: 2.05, gutsDown: 30, critBonus: 0.03, effect: 'dot_mine', desc: '爆弾を模した重い物体を放り投げる大技。相手GUTS-30。さらに命中した場合、爆発の後遺症で3ターンの間継続ダメージを与える' }
+    bakudan_nage: { name: 'ばくだん投げ', cost: 28, type: 'int', hitRate: 73, force: 2.05, gutsDown: 30, critBonus: 0.03, effect: 'dot_mine', desc: '爆弾を模した重い物体を放り投げる大技。相手GUTS-30。さらに命中した場合、爆発の後遺症で3ターンの間継続ダメージを与える' },
+
+    // --- ヒノトリ系統 ---
+    kuchibashi: { name: 'くちばし', cost: 16, type: 'pow', hitRate: 70, force: 0.5, gutsDown: 4, critBonus: 0, effect: null, desc: '鋭いくちばしで相手を鋭くつつく基本技。相手GUTS-4' },
+    renzoku_kagizume: { name: '連続かぎづめ', cost: 25, type: 'pow', hitRate: 72, force: 1.2, gutsDown: 26, critBonus: 0.08, effect: 'hitdown_stack_3', desc: '鋭い鉤爪で相手を連続して切り裂く。相手GUTS-26。さらに命中した場合、目が眩み相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
+    flame_typhoon: { name: 'フレイムタイフーン', cost: 30, type: 'int', hitRate: 82, force: 1.85, gutsDown: 12, critBonus: 0.25, effect: 'def_down_15', desc: '燃え盛る炎の竜巻を巻き起こし相手を包み込む。相手GUTS-12。さらに命中した場合、3ターンの間相手の丈夫さを15%低下させる' },
+    otakebi: { name: '雄叫び', cost: 20, type: 'int', hitRate: 65, force: 1.05, gutsDown: 27, critBonus: 0.03, effect: 'weaken_pow_int', desc: '大地を震わせる猛々しい咆哮で相手を威圧する。相手GUTS-27。さらに命中した場合、3ターンの間相手の「ちから」「かしこさ」が10%低下する' },
+    bakuretsu_otoshi: { name: '爆裂落とし', cost: 38, type: 'pow', hitRate: 58, force: 1.65, gutsDown: 7, critBonus: 0.15, effect: 'dot_mine', desc: '爆炎を纏った巨体で相手に叩き落とす豪快な一撃。相手GUTS-7。さらに命中した場合、火傷の後遺症で3ターンの間継続ダメージを与える' },
+    flame_line: { name: 'フレイムライン', cost: 25, type: 'int', hitRate: 95, force: 1.1, gutsDown: 16, critBonus: 0.25, effect: 'blind_2', desc: '一直線に炎を放つ回避困難な高命中技。相手GUTS-16。さらに命中した場合、閃光で2ターンの間相手の目を眩ませ命中率を下げる' },
+    flame_beam: { name: 'フレイムビーム', cost: 25, type: 'int', hitRate: 70, force: 2.1, gutsDown: 4, critBonus: 0, effect: null, desc: '収束させた炎のエネルギーを一直線に放つ。相手GUTS-4' },
+    fire_bird: { name: 'ファイヤーバード', cost: 40, type: 'pow', hitRate: 88, force: 1.7, gutsDown: 11, critBonus: 0.08, effect: 'selfcrit_up_3', desc: '炎をまとった火の鳥と化して急降下する。相手GUTS-11。さらに命中した場合、闘志が高まり3ターンの間自身のクリティカル率が25%アップする' },
+    fire_wave: { name: 'ファイアウェーブ', cost: 43, type: 'int', hitRate: 87, force: 2.6, gutsDown: 18, critBonus: 0.12, effect: 'dot_mine', desc: '灼熱の炎を大波のようにぶつける豪快な大技。相手GUTS-18。さらに命中した場合、火傷の後遺症で3ターンの間継続ダメージを与える' },
+    ebony_nova: { name: 'エボニーノヴァ', cost: 54, type: 'int', hitRate: 82, force: 3.2, gutsDown: 3, critBonus: 0.16, effect: 'perma_dmg_up_20', desc: '漆黒の炎を極限まで凝縮し解き放つ、この上ない最大の切り札。相手GUTS-3。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' }
 };
 
 // --- ステータス獲得逓減システム (Diminishing Returns) ---
@@ -306,8 +325,10 @@ function getGutsDownMitigation(defStat) {
 // --- ダメージランク判定ヘルパー ---
 function getDamageRank(force, type) {
     if (type === 'heal' || type === 'buff_guts' || type === 'buff_pow') return 'G';
+    if (force >= 3.0) return 'S+';
     if (force >= 2.5) return 'S';
     if (force >= 2.0) return 'A';
+    if (force >= 1.8) return 'B+';
     if (force >= 1.6) return 'B';
     if (force >= 1.3) return 'C';
     if (force >= 1.0) return 'D';
@@ -848,7 +869,7 @@ const BOSS_TEMPLATES = {
 // ・KIN_NEJIKI_SPECIES_POOL: 「6体提示」の抽選対象となる全12種族
 // ・KIN_NEJIKI_SKILL_POOL: 各種族が使用できる固有技の候補（ここから4つをランダム抽選）
 // =====================================================
-const KIN_NEJIKI_SPECIES_POOL = ['mochi', 'suezo', 'dino', 'monolith', 'plant', 'kyubi', 'ham', 'arrowhead', 'nendoro', 'henger', 'durahan', 'golem', 'kawazumo'];
+const KIN_NEJIKI_SPECIES_POOL = ['mochi', 'suezo', 'dino', 'monolith', 'plant', 'kyubi', 'ham', 'arrowhead', 'nendoro', 'henger', 'durahan', 'golem', 'kawazumo', 'hinotori'];
 
 const KIN_NEJIKI_SKILL_POOL = {
     mochi:     ['monta', 'mochiki', 'gaccho', 'sakurafubuki', 'cho_rollinmochi', 'cho_mochihou', 'mossama', 'yaezakura'],
@@ -863,7 +884,8 @@ const KIN_NEJIKI_SKILL_POOL = {
     henger:    ['w_kick', 'laser_blade', 'laser_cutter', 'w_laser_sword', 'drill_rocket', 'w_drill_rocket', 'napalm_cannon'],
     durahan:   ['cho_dash_giri', 'midaretsuki', 'mappufutatsu', 'combo_punch', 'daisharin', 'fujinken', 'raijinken'],
     golem:     ['dekopin', 'shoda', 'claw_nage', 'double_chop', 'guruguru_attack', 'nobiru_punch', 'jishin'],
-    kawazumo:  ['harite', 'gappuri_yotsu', 'uwatenage', 'kawazutsuki', 'renzoku_harite', 'tobi_harite', 'kaeru_no_shita', 'dai_kaiten_otoshi', 'kaeru_no_uta', 'bakudan_nage']
+    kawazumo:  ['harite', 'gappuri_yotsu', 'uwatenage', 'kawazutsuki', 'renzoku_harite', 'tobi_harite', 'kaeru_no_shita', 'dai_kaiten_otoshi', 'kaeru_no_uta', 'bakudan_nage'],
+    hinotori:  ['kuchibashi', 'renzoku_kagizume', 'flame_typhoon', 'otakebi', 'bakuretsu_otoshi', 'flame_line', 'flame_beam', 'fire_bird', 'fire_wave', 'ebony_nova']
 };
 
 // =====================================================
@@ -965,6 +987,12 @@ const MONSTER_MOLDS = {
         { skills: ['がっぷりよつ', '上手投げ', 'かえるのした'], equipment: '石の腕輪' },
         { skills: ['連続はり手', '飛びはり手', 'ばくだん投げ'], equipment: '黒曜の鎧' },
         { skills: ['大回転落とし', 'かえるのうた', '上手投げ', 'ばくだん投げ'], equipment: '竜牙の爪' }
+    ],
+    'ヒノトリ': [
+        { skills: ['くちばし', '連続かぎづめ', 'フレイムビーム'], equipment: '荒縄のガントレット' },
+        { skills: ['フレイムタイフーン', '雄叫び', 'フレイムビーム'], equipment: '鷹の目レンズ' },
+        { skills: ['爆裂落とし', 'フレイムライン', 'ファイヤーバード'], equipment: '竜牙の爪' },
+        { skills: ['ファイアウェーブ', 'エボニーノヴァ', 'ファイヤーバード', 'フレイムタイフーン'], equipment: '不死鳥の羽根' }
     ]
 };
 
