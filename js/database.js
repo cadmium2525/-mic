@@ -838,6 +838,160 @@ const KIN_NEJIKI_SKILL_POOL = {
     golem:     ['dekopin', 'shoda', 'claw_nage', 'double_chop', 'guruguru_attack', 'nobiru_punch', 'jishin']
 };
 
+// =====================================================
+// MONSTER_MOLDS: モンスターごとの「型」（技構成＋装備）データベース
+// -----------------------------------------------------
+// モンスター1種類につき最大4つの「型」を定義する。
+// 各型は { skills: ['技名1', '技名2', ...], equipment: '装備名' または null } の形式。
+// 技名・装備名は SKILLS_DB / EQUIPMENT_DB に登録されている「name」フィールドと
+// 完全に一致する文字列を書くだけでよい（内部キーへの変換は自動で行われる）。
+//
+// ・ガッツファクトリー（金ネジキ）では、セット数（＝今回の周回内の進行度）に応じて
+//   型1→型2→型3→型4の順に解放される：
+//     セット1〜2 … 型1のみ
+//     セット3〜4 … 型1・型2
+//     セット5〜6 … 型1・型2・型3
+//     セット7     … 型1〜型4すべて
+//   （解放数は getMoldUnlockCountForSet で判定する）
+// ・PvPレンタル対戦には「周回」の概念が無いため、常に型1〜4すべてが抽選対象になる。
+//
+// 【型を追加・変更したい場合】
+//   下の配列に { skills: [...], equipment: '装備名' } を1つ追加・書き換えするだけでよい
+//   （技は最大4つまで。装備は不要なら null にする）。
+// =====================================================
+const MONSTER_MOLDS = {
+    'モッチー': [
+        { skills: ['もんた', 'もちき', 'さくら吹雪'], equipment: '荒縄のガントレット' },
+        { skills: ['ガッチョ', '超ローリンモッチ', '八重ざくら'], equipment: '生命のお守り' },
+        { skills: ['さくら吹雪', '超もっち砲', 'もっさま', '八重ざくら'], equipment: '賢者の指輪' },
+        { skills: ['もっさま', '超ローリンモッチ', '超もっち砲', '八重ざくら'], equipment: '竜牙の爪' }
+    ],
+    'スエゾー': [
+        { skills: ['しっぽビンタ', 'なめる', 'かみつき'], equipment: '鷹の目レンズ' },
+        { skills: ['かみつき', '食う', '超熱視線'], equipment: '知恵の首飾り' },
+        { skills: ['なめる', 'サイコキネシス', 'ベロビンタ'], equipment: '真眼のレンズ' },
+        { skills: ['サイコキネシス', '歌う', '食う', 'ベロビンタ'], equipment: '大賢者の冠' }
+    ],
+    'ディノ': [
+        { skills: ['しっぽ', 'かみつき', '砂かけ'], equipment: '荒縄のガントレット' },
+        { skills: ['かみつき投げ', 'ひざげり', '砂かけ'], equipment: '鉄爪の欠片' },
+        { skills: ['炎のたいあたり', 'ひざげり', 'かみつき投げ'], equipment: 'ひび割れた鱗' },
+        { skills: ['黒ひざコンボ', '炎のたいあたり', 'かみつき投げ', 'ひざげり'], equipment: '竜牙の爪' }
+    ],
+    'モノリス': [
+        { skills: ['たおれこみ', 'わらわら', 'サケビ声'], equipment: '石の腕輪' },
+        { skills: ['超たおれこみ', 'わらわら', 'オーロラゲート'], equipment: '水鱗のよろい' },
+        { skills: ['サケビ声', 'オーロラゲート', '3連アタック'], equipment: '黒曜の鎧' },
+        { skills: ['トリオビームZ', '3連アタック', '超たおれこみ', 'オーロラゲート'], equipment: '護りの霊符' }
+    ],
+    'プラント': [
+        { skills: ['連続根っこ', '種ガン', '花粉'], equipment: '生命のお守り' },
+        { skills: ['コンビネーション', '種マシンガン', 'ドレイン'], equipment: '賢者の指輪' },
+        { skills: ['フラワービーム', 'フェイスドリル', 'ドレイン'], equipment: '大賢者の冠' },
+        { skills: ['フラワービーム', 'フェイスドリル', '種マシンガン', 'ドレイン'], equipment: '巨神の心臓' }
+    ],
+    'キュービ': [
+        { skills: ['ひっかき', '陽炎', '狐火'], equipment: '風切りのお守り' },
+        { skills: ['狐火', '超狐火', 'ゆうわく'], equipment: '幻影のヴェール' },
+        { skills: ['陽炎', '九重神眼', '超狐火'], equipment: '真眼のレンズ' },
+        { skills: ['天河天翔', '超狐火', '九重神眼', 'ゆうわく'], equipment: '大賢者の冠' }
+    ],
+    'ハム': [
+        { skills: ['ワンツーパンチ', 'ソバット', '頭つき'], equipment: '俊足のアンクレット' },
+        { skills: ['頭つき', '背負い投げ', 'おなら'], equipment: '鉄爪の欠片' },
+        { skills: ['超頭つき', 'マシンガンパンチ', 'おなら'], equipment: '幻影のヴェール' },
+        { skills: ['マシンガンパンチ', '背負い投げ', '超大声', '超頭つき'], equipment: '竜牙の爪' }
+    ],
+    'アローヘッド': [
+        { skills: ['テイルアタック', 'ズームパンチ', 'ニードルターン'], equipment: '鷹の目レンズ' },
+        { skills: ['ニードルターン', 'Wニードルターン', 'ロケットパンチ'], equipment: '真眼のレンズ' },
+        { skills: ['竜巻アタック', 'テイルブレード', '地雷針'], equipment: 'ひび割れた鱗' },
+        { skills: ['Wニードルターン', '竜巻アタック', 'ロケットパンチ', 'テイルブレード'], equipment: '黒曜の鎧' }
+    ],
+    'ネンドロ': [
+        { skills: ['ズームパンチ', 'がん飛ばし', 'マッハパンチ'], equipment: '荒縄のガントレット' },
+        { skills: ['がん飛ばし', 'ボディプレス', 'マッハパンチ'], equipment: '鉄爪の欠片' },
+        { skills: ['めいどのみやげ', 'ボディプレス', 'マッハパンチ'], equipment: '石の腕輪' },
+        { skills: ['めいどのみやげ', 'マッハパンチ', 'ボディプレス', 'ズームパンチ'], equipment: '竜牙の爪' }
+    ],
+    'ヘンガー': [
+        { skills: ['Wキック', 'レーザーブレード', 'Wレーザーソード'], equipment: '鷹の目レンズ' },
+        { skills: ['ドリルロケット', 'レーザーカッター', 'Wレーザーソード'], equipment: '知恵の首飾り' },
+        { skills: ['Wドリルロケット', 'ナパームキャノン', 'レーザーカッター'], equipment: '幻影のヴェール' },
+        { skills: ['ナパームキャノン', 'Wドリルロケット', 'ドリルロケット', 'レーザーカッター'], equipment: '大賢者の冠' }
+    ],
+    'デュラハン': [
+        { skills: ['超ダッシュ斬り', '乱れ突き', '風神剣'], equipment: '荒縄のガントレット' },
+        { skills: ['乱れ突き', 'コンボパンチ', '風神剣'], equipment: '鉄爪の欠片' },
+        { skills: ['まっぷたつ', '大車輪', '雷神剣'], equipment: '護りの霊符' },
+        { skills: ['雷神剣', 'まっぷたつ', 'コンボパンチ', '大車輪'], equipment: '竜牙の爪' }
+    ],
+    'ゴーレム': [
+        { skills: ['でこぴん', '掌打', 'ダブルチョップ'], equipment: '石の腕輪' },
+        { skills: ['クロー投げ', 'ダブルチョップ', '地震'], equipment: '鉄爪の欠片' },
+        { skills: ['のびーるパンチ', 'ぐるぐるアタック', '地震'], equipment: '黒曜の鎧' },
+        { skills: ['ぐるぐるアタック', 'のびーるパンチ', 'クロー投げ', '地震'], equipment: '巨神の心臓' }
+    ]
+};
+
+// --- モンスター名から種族IDを逆引きする ---
+function findSpeciesIdByMonsterName(name) {
+    return Object.keys(MONSTER_TEMPLATES).find(id => MONSTER_TEMPLATES[id].name === name) || null;
+}
+
+// --- 技名から技キーを逆引きする ---
+// speciesId を渡すと、まずその種族の固有技候補（KIN_NEJIKI_SKILL_POOL）内から優先的に探す。
+// （複数の種族に同じ表示名の技が存在する場合に、誤って他種族の技を拾わないようにするため）
+function findSkillKeyByName(name, speciesId) {
+    if (speciesId && KIN_NEJIKI_SKILL_POOL[speciesId]) {
+        const inSpecies = KIN_NEJIKI_SKILL_POOL[speciesId].find(k => SKILLS_DB[k] && SKILLS_DB[k].name === name);
+        if (inSpecies) return inSpecies;
+    }
+    return Object.keys(SKILLS_DB).find(k => SKILLS_DB[k].name === name) || null;
+}
+
+// --- 装備名から装備IDを逆引きする ---
+function findEquipmentIdByName(name) {
+    if (!name) return null;
+    return Object.keys(EQUIPMENT_DB).find(k => EQUIPMENT_DB[k].name === name) || null;
+}
+
+// --- ガッツファクトリーのセット数（周回数）から、解放済みの型の数（1〜4）を返す ---
+function getMoldUnlockCountForSet(setNumber) {
+    if (setNumber >= 7) return 4;
+    if (setNumber >= 5) return 3;
+    if (setNumber >= 3) return 2;
+    return 1;
+}
+
+// --- 指定種族の「型」を、解放数（unlockedCount: 1〜4）の範囲からランダムに1つ選び、
+//     技キー配列と装備インスタンスに変換して返す。型データが無ければ null を返す。
+// excludeEquipIds: この配列に含まれる装備IDが選ばれた場合、その型は装備なし扱いにする
+//                  （同じ道具を持ったモンスター同士が対面しない、という仕様のための調整弁）
+function pickMonsterMold(speciesId, unlockedCount, excludeEquipIds) {
+    const tmpl = MONSTER_TEMPLATES[speciesId];
+    const molds = tmpl ? MONSTER_MOLDS[tmpl.name] : null;
+    if (!molds || molds.length === 0) return null;
+
+    const count = Math.max(1, Math.min(unlockedCount || 1, molds.length));
+    const availableMolds = molds.slice(0, count);
+    const chosen = availableMolds[Math.floor(Math.random() * availableMolds.length)];
+    if (!chosen) return null;
+
+    const skillKeys = (chosen.skills || []).map(n => findSkillKeyByName(n, speciesId)).filter(Boolean);
+    if (skillKeys.length === 0) return null; // 技名が1つも解決できない＝型データ不備とみなし呼び出し側でフォールバックさせる
+
+    let equip = null;
+    if (chosen.equipment) {
+        const equipId = findEquipmentIdByName(chosen.equipment);
+        const isExcluded = equipId && excludeEquipIds && excludeEquipIds.includes(equipId);
+        if (equipId && !isExcluded) {
+            equip = buildEquipmentInstanceFromBase(EQUIPMENT_DB[equipId]);
+        }
+    }
+    return { skills: skillKeys, equip };
+}
+
 // --- ファクトリーヘッド（3セット目・7セット目に登場する専用ボス）---
 // 通常のレンタルプールには含まれず、それぞれ専属のモンスター1体を率いて登場する。
 const KIN_NEJIKI_BOSSES = {

@@ -19,7 +19,11 @@ const KIN_NEJIKI_STATE = {
     playerParty: [],    // 選出した3体（レンタルモンスターオブジェクト）
     offer: [],          // 現在提示中の6体（パーティ選出画面用）
     selectedIdx: [],    // offer内で選択中のインデックス（最大3）
-    pendingSwap: null   // 直前の勝利で交換対象になる相手チーム情報
+    pendingSwap: null,  // 直前の勝利で交換対象になる相手チーム情報
+    // 「こちらが交換する前に相手のモンスターが決まる」仕様のため、次バトルの対戦相手は
+    // 勝利直後（交換画面が開く前）の時点で先に生成し、ここに保持しておく。
+    // { opponentTeam, floorLabel, isNejiki, aiLevel } または null
+    nextBattlePrepared: null
 };
 
 // =====================================================
@@ -114,9 +118,13 @@ function kinNejikiAiLevelForSet(setNumber) {
 // --- セット番号に応じた装備の段階的抽選 ---
 // セット1〜2：ノーマル産ステータス装備中心 / セット3〜5：ハード産＋一部特殊効果 / セット6〜7：特殊効果中心
 // オーラ連動装備は全セット共通で一定確率で混在する
-function kinNejikiRollEquipmentForSet(setNumber) {
+// excludeEquipIds: この配列に含まれる装備IDは抽選対象から除外する
+//                  （除外しすぎて候補が0件になった場合は保険として除外を無視する）
+function kinNejikiRollEquipmentForSet(setNumber, excludeEquipIds) {
+    const excluded = excludeEquipIds || [];
+
     if (Math.random() < 0.15) {
-        const auraPool = Object.values(EQUIPMENT_DB).filter(e => e.type === 'auraStat2');
+        const auraPool = Object.values(EQUIPMENT_DB).filter(e => e.type === 'auraStat2' && !excluded.includes(e.id));
         if (auraPool.length > 0) return buildEquipmentInstanceFromBase(auraPool[Math.floor(Math.random() * auraPool.length)]);
     }
 
@@ -137,19 +145,37 @@ function kinNejikiRollEquipmentForSet(setNumber) {
         pool = Object.values(EQUIPMENT_DB).filter(e => e.type === 'stat');
     }
 
-    const base = pool[Math.floor(Math.random() * pool.length)];
+    let filteredPool = pool.filter(e => !excluded.includes(e.id));
+    if (filteredPool.length === 0) filteredPool = pool; // 除外しすぎて候補が無くなった場合の保険
+
+    const base = filteredPool[Math.floor(Math.random() * filteredPool.length)];
     return buildEquipmentInstanceFromBase(base);
 }
 
 // --- 指定種族のレンタルモンスターを1体生成する ---
-// ・技構成：種族固有技候補（KIN_NEJIKI_SKILL_POOL）からランダムに最大4つ
+// ・技構成＋装備：MONSTER_MOLDS に定義された「型」から、セット数（周回数）に応じて
+//   解放された範囲でランダムに1つ選ぶ（型データが無い種族は従来通りランダム抽選にフォールバック）
 // ・ステータス：種族ベース値に個体差(±8%)とセット進行によるスケールを掛ける
-function generateKinNejikiRentalMonster(speciesId, setNumber) {
+// excludeEquipIds: 生成する装備から除外したい装備IDの配列（同じ道具を持ったモンスター同士が
+//                  対面しないようにするための調整。省略可）
+function generateKinNejikiRentalMonster(speciesId, setNumber, excludeEquipIds) {
     const tmpl = MONSTER_TEMPLATES[speciesId];
     if (!tmpl) return null;
-    const skillPool = KIN_NEJIKI_SKILL_POOL[speciesId] || [];
-    const shuffledSkills = [...skillPool].sort(() => Math.random() - 0.5);
-    const chosenSkills = shuffledSkills.slice(0, Math.min(4, shuffledSkills.length));
+
+    const unlockedMoldCount = (typeof getMoldUnlockCountForSet === 'function') ? getMoldUnlockCountForSet(setNumber) : 1;
+    const mold = (typeof pickMonsterMold === 'function') ? pickMonsterMold(speciesId, unlockedMoldCount, excludeEquipIds) : null;
+
+    let chosenSkills, equipInstance;
+    if (mold) {
+        chosenSkills = mold.skills;
+        equipInstance = mold.equip;
+    } else {
+        // 型データが無い（未定義の）種族向けフォールバック：従来通りのランダム抽選
+        const skillPool = KIN_NEJIKI_SKILL_POOL[speciesId] || [];
+        const shuffledSkills = [...skillPool].sort(() => Math.random() - 0.5);
+        chosenSkills = shuffledSkills.slice(0, Math.min(4, shuffledSkills.length));
+        equipInstance = kinNejikiRollEquipmentForSet(setNumber, excludeEquipIds);
+    }
 
     const individualVariance = () => 0.92 + Math.random() * 0.16; // ±8%の個体差
     const setScale = 1 + (Math.max(0, setNumber - 1) * 0.06); // セットが進むごとに約6%ずつ強化
@@ -177,20 +203,33 @@ function generateKinNejikiRentalMonster(speciesId, setNumber) {
         stats: rawStats,
         skills: chosenSkills,
         skillEnhancements: {},
-        equip: kinNejikiRollEquipmentForSet(setNumber),
+        equip: equipInstance,
         ownerName: 'レンタルモンスター'
     };
 }
 
-// --- 12種族プールから重複なく6体（各異なる種族）のレンタル候補を生成 ---
-function generateKinNejikiOffer(setNumber) {
-    const shuffledSpecies = [...KIN_NEJIKI_SPECIES_POOL].sort(() => Math.random() - 0.5);
-    const chosenSpecies = shuffledSpecies.slice(0, 6);
-    return chosenSpecies.map(sp => generateKinNejikiRentalMonster(sp, setNumber));
+// --- 12種族プールから重複なく指定数（既定6体）のレンタル候補を生成 ---
+// excludeSpeciesIds: 抽選対象から除外したい種族IDの配列（同じモンスター同士が対面しないための調整。省略可）
+// excludeEquipIds:   各個体の装備から除外したい装備IDの配列（省略可）
+// count:             生成する体数（既定6）
+function generateKinNejikiOffer(setNumber, excludeSpeciesIds, excludeEquipIds, count) {
+    const n = count || 6;
+    const excludeSpecies = excludeSpeciesIds || [];
+
+    let candidatePool = KIN_NEJIKI_SPECIES_POOL.filter(sp => !excludeSpecies.includes(sp));
+    if (candidatePool.length < n) candidatePool = KIN_NEJIKI_SPECIES_POOL.slice(); // 除外しすぎて足りない場合の保険
+
+    const shuffledSpecies = [...candidatePool].sort(() => Math.random() - 0.5);
+    const chosenSpecies = shuffledSpecies.slice(0, n);
+    return chosenSpecies.map(sp => generateKinNejikiRentalMonster(sp, setNumber, excludeEquipIds));
 }
 
 // --- 対戦相手チーム（3体）を生成。ボス戦の場合は専用ボス＋帯同2体を返す ---
-function generateKinNejikiOpponentTeam(setNumber, isNejiki) {
+// excludeSpeciesIds / excludeEquipIds: 「同じモンスター・同じ装備同士が対面しない」仕様のための除外リスト（省略可）
+function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, excludeEquipIds) {
+    const excludeSpecies = excludeSpeciesIds || [];
+    const excludeEquip = excludeEquipIds || [];
+
     if (isNejiki) {
         const bossKey = (setNumber === 3) ? 'set3' : 'set7';
         const bossDef = KIN_NEJIKI_BOSSES[bossKey];
@@ -206,15 +245,15 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki) {
             stats: { ...bossDef.statsBase, life: bossDef.statsBase.maxLife },
             skills: [...bossDef.skills],
             skillEnhancements: {},
-            equip: kinNejikiRollEquipmentForSet(7),
+            equip: kinNejikiRollEquipmentForSet(7, excludeEquip),
             ownerName: bossDef.title
         };
-        const escorts = generateKinNejikiOffer(7).slice(0, 2);
+        const escorts = generateKinNejikiOffer(7, excludeSpecies, excludeEquip, 2);
         escorts.forEach(m => { if (m) m.ownerName = bossDef.title; });
         return [bossUnit, ...escorts.filter(Boolean)];
     }
 
-    const team = generateKinNejikiOffer(setNumber).slice(0, 3);
+    const team = generateKinNejikiOffer(setNumber, excludeSpecies, excludeEquip, 3);
     team.forEach(m => { if (m) m.ownerName = `レンタル使い（第${setNumber}セット）`; });
     return team;
 }
@@ -336,6 +375,8 @@ function beginKinNejikiRun() {
     KIN_NEJIKI_STATE.totalWins = 0;
     KIN_NEJIKI_STATE.playerParty = [];
     KIN_NEJIKI_STATE.selectedIdx = [];
+    KIN_NEJIKI_STATE.pendingSwap = null;
+    KIN_NEJIKI_STATE.nextBattlePrepared = null;
     KIN_NEJIKI_STATE.offer = generateKinNejikiOffer(1);
     renderKinNejikiSelectScreen();
     changeScreen('screen-kinnejiki-select');
@@ -406,21 +447,64 @@ function confirmKinNejikiParty() {
     advanceToNextKinNejikiBattle();
 }
 
-// --- 次のバトル（現在の set / battleInSet に対応する相手）を組み立てて開始 ---
-function advanceToNextKinNejikiBattle() {
-    const set = KIN_NEJIKI_STATE.set;
-    const battleInSet = KIN_NEJIKI_STATE.battleInSet;
-    const isNejiki = battleInSet === 7 && (set === 3 || set === 7);
+// --- 次バトルの set / battleInSet / ボス戦判定を、カウンタを実際に進めずに先読みする ---
+function peekNextKinNejikiBattleMeta() {
+    let nextSet = KIN_NEJIKI_STATE.set;
+    let nextBattleInSet = KIN_NEJIKI_STATE.battleInSet;
+    if (nextBattleInSet >= 7) {
+        nextBattleInSet = 1;
+        nextSet++;
+    } else {
+        nextBattleInSet++;
+    }
+    const isNejiki = nextBattleInSet === 7 && (nextSet === 3 || nextSet === 7);
+    return { set: nextSet, battleInSet: nextBattleInSet, isNejiki };
+}
+
+// --- 「同じモンスター・同じ装備同士が対面しない」ための除外リストを組み立てる ---
+// own: 現在の手持ちパーティ（交換前）／opponent: 直前に戦った（今まさに倒した）相手チーム
+function buildKinNejikiExclusions(ownParty, opponentParty) {
+    const ownSpecies = (ownParty || []).map(m => m && m.speciesId).filter(Boolean);
+    const oppSpecies = (opponentParty || []).map(m => m && m.speciesId).filter(Boolean);
+    const ownEquip = (ownParty || []).map(m => m && m.equip && m.equip.equipId).filter(Boolean);
+    const oppEquip = (opponentParty || []).map(m => m && m.equip && m.equip.equipId).filter(Boolean);
+    return {
+        species: [...new Set([...ownSpecies, ...oppSpecies])],
+        equip: [...new Set([...ownEquip, ...oppEquip])]
+    };
+}
+
+// --- 指定した set/battleInSet/isNejiki に対応するバトル情報一式（相手チーム・表示ラベル等）を組み立てる ---
+function buildKinNejikiBattlePackage(set, battleInSet, isNejiki, excludeSpecies, excludeEquip) {
     const aiLevel = kinNejikiAiLevelForSet(set);
-
-    const opponentTeam = generateKinNejikiOpponentTeam(set, isNejiki);
+    const opponentTeam = generateKinNejikiOpponentTeam(set, isNejiki, excludeSpecies, excludeEquip);
     const totalBattleNumber = (set - 1) * 7 + battleInSet;
-
     const floorLabel = isNejiki
         ? `⚔️ 第${set}セット・ボス戦（通算${totalBattleNumber}戦目）`
         : `⚔️ 第${set}セット ${battleInSet}戦目（通算${totalBattleNumber}戦目）`;
+    return { opponentTeam, floorLabel, isNejiki, aiLevel };
+}
 
-    startKinNejikiBattleEngine(opponentTeam, floorLabel, isNejiki, aiLevel);
+// --- 次のバトル（現在の set / battleInSet に対応する相手）を組み立てて開始 ---
+// 通常は kinNejikiHandleBattleEnd で事前生成された nextBattlePrepared をそのまま使う。
+// （初戦や、一時セーブからの再開など事前生成が無い場合のみ、その場で生成する）
+function advanceToNextKinNejikiBattle() {
+    if (KIN_NEJIKI_STATE.nextBattlePrepared) {
+        const prepared = KIN_NEJIKI_STATE.nextBattlePrepared;
+        KIN_NEJIKI_STATE.nextBattlePrepared = null;
+        startKinNejikiBattleEngine(prepared.opponentTeam, prepared.floorLabel, prepared.isNejiki, prepared.aiLevel);
+        return;
+    }
+
+    // 事前生成が無い場合の保険：現在の手持ちパーティの種族・装備だけを除外して生成する
+    // （直前の対戦相手の情報は無いため、その分の除外はできない）
+    const set = KIN_NEJIKI_STATE.set;
+    const battleInSet = KIN_NEJIKI_STATE.battleInSet;
+    const isNejiki = battleInSet === 7 && (set === 3 || set === 7);
+    const exclusions = buildKinNejikiExclusions(KIN_NEJIKI_STATE.playerParty, null);
+    const battlePackage = buildKinNejikiBattlePackage(set, battleInSet, isNejiki, exclusions.species, exclusions.equip);
+
+    startKinNejikiBattleEngine(battlePackage.opponentTeam, battlePackage.floorLabel, battlePackage.isNejiki, battlePackage.aiLevel);
 }
 
 // --- 既存の masmon_battle.js エンジン（3vs3対応）へ状態をセットしてバトル画面へ ---
@@ -456,8 +540,9 @@ function kinNejikiHandleBattleEnd(isWin) {
     }
 
     KIN_NEJIKI_STATE.totalWins++;
+    const defeatedTeam = [...MASMON_BATTLE_STATE.enemyMeta];
     KIN_NEJIKI_STATE.pendingSwap = {
-        defeatedTeam: [...MASMON_BATTLE_STATE.enemyMeta],
+        defeatedTeam,
         wasNejiki: !!(MASMON_BATTLE_STATE.kinNejiki && MASMON_BATTLE_STATE.kinNejiki.isNejiki)
     };
 
@@ -465,6 +550,15 @@ function kinNejikiHandleBattleEnd(isWin) {
         kinNejikiFinishRun(true);
         return;
     }
+
+    // 「こちらが交換する前に相手のモンスターが決まる」仕様のため、次バトルの対戦相手は
+    // 交換画面（手持ち変更）が開く前＝このタイミングで確定させる。
+    // 除外対象：現在の手持ち（交換前のパーティ）＋今まさに倒した相手チーム、それぞれの種族と装備。
+    const next = peekNextKinNejikiBattleMeta();
+    const exclusions = buildKinNejikiExclusions(KIN_NEJIKI_STATE.playerParty, defeatedTeam);
+    KIN_NEJIKI_STATE.nextBattlePrepared = buildKinNejikiBattlePackage(
+        next.set, next.battleInSet, next.isNejiki, exclusions.species, exclusions.equip
+    );
 
     renderKinNejikiSwapScreen();
     changeScreen('screen-kinnejiki-swap');

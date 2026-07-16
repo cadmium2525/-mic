@@ -24,13 +24,25 @@ function pvpRentalRollEquipment() {
     return buildEquipmentInstanceFromBase(pool[Math.floor(Math.random() * pool.length)]);
 }
 
-// --- PvP用レンタルモンスター1体を生成（ガッツファクトリーと同じ12種族プール・固有技候補を使用） ---
+// --- PvP用レンタルモンスター1体を生成（ガッツファクトリーと同じ12種族プール・「型」データを使用） ---
+// PvPレンタル対戦には「周回」の概念が無いため、型は常に全4種（型1〜4）から抽選する。
 function generatePvpRentalMonster(speciesId) {
     const tmpl = MONSTER_TEMPLATES[speciesId];
     if (!tmpl) return null;
-    const skillPool = KIN_NEJIKI_SKILL_POOL[speciesId] || [];
-    const shuffledSkills = [...skillPool].sort(() => Math.random() - 0.5);
-    const chosenSkills = shuffledSkills.slice(0, Math.min(4, shuffledSkills.length));
+
+    const mold = (typeof pickMonsterMold === 'function') ? pickMonsterMold(speciesId, 4, null) : null;
+    let chosenSkills, equipInstance;
+    if (mold) {
+        chosenSkills = mold.skills;
+        equipInstance = mold.equip;
+    } else {
+        // 型データが無い（未定義の）種族向けフォールバック：従来通りのランダム抽選
+        const skillPool = KIN_NEJIKI_SKILL_POOL[speciesId] || [];
+        const shuffledSkills = [...skillPool].sort(() => Math.random() - 0.5);
+        chosenSkills = shuffledSkills.slice(0, Math.min(4, shuffledSkills.length));
+        equipInstance = pvpRentalRollEquipment();
+    }
+
     const variance = () => 0.95 + Math.random() * 0.1; // PvPは公平性重視で個体差を小さめに(±5%)
 
     const stats = {
@@ -56,7 +68,7 @@ function generatePvpRentalMonster(speciesId) {
         stats: stats,
         skills: chosenSkills,
         skillEnhancements: {},
-        equip: pvpRentalRollEquipment()
+        equip: equipInstance
     };
 }
 
