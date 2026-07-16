@@ -113,6 +113,13 @@ const MONSTER_TEMPLATES = {
         emoji: '🗿',
         desc: '岩石の巨体を持つゴーレム型モンスター。ちからと丈夫さは最高クラスだが、命中と回避が低く動きは非常に鈍い。',
         stats: { maxLife: 230, life: 230, pow: 108, int: 16, hit: 32, spd: 14, def: 58, gutsSpeed: 11 }
+    },
+    kawazumo: {
+        id: 'kawazumo',
+        name: 'カワズモー',
+        emoji: '🐸',
+        desc: '力士のような体躯を持つ蛙型モンスター。がっちりとした重い体と怪力を武器に、張り手や投げ技を得意とするが、見た目に反して舌や鳴き声を使ったかしこさ技も巧みに操る。動きはやや鈍重。',
+        stats: { maxLife: 240, life: 240, pow: 94, int: 58, hit: 48, spd: 34, def: 56, gutsSpeed: 13 }
     }
 };
 
@@ -234,7 +241,19 @@ const SKILLS_DB = {
     double_chop: { name: 'ダブルチョップ', cost: 24, type: 'pow', hitRate: 78, force: 1.3, gutsDown: 12, effect: null, desc: '両腕を交互に振り下ろす連続技。相手GUTS-12' },
     guruguru_attack: { name: 'ぐるぐるアタック', cost: 45, type: 'pow', hitRate: 66, force: 2.4, gutsDown: 20, effect: 'self_dizzy', desc: '巨体を回転させる遠距離の大技。相手GUTS-20。ただし勢い余って自身も目を回し、次の1ターン自身の命中率が低下する' },
     nobiru_punch: { name: 'のびーるパンチ', cost: 36, type: 'pow', hitRate: 70, force: 2.0, gutsDown: 15, effect: 'hitdown_stack_3', desc: '腕を伸ばして遠くまで殴りつける。相手GUTS-15。さらに命中した場合、相手の視界を乱し命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
-    jishin: { name: '地震', cost: 30, type: 'int', hitRate: 82, force: 0.9, gutsDown: 35, effect: 'def_down_15', desc: '大地を揺るがし相手の闘志を大きく削ぐ。相手GUTS-35。さらに命中した場合、3ターンの間相手の丈夫さを15%低下させる' }
+    jishin: { name: '地震', cost: 30, type: 'int', hitRate: 82, force: 0.9, gutsDown: 35, effect: 'def_down_15', desc: '大地を揺るがし相手の闘志を大きく削ぐ。相手GUTS-35。さらに命中した場合、3ターンの間相手の丈夫さを15%低下させる' },
+
+    // --- カワズモー系統 ---
+    harite: { name: 'はり手', cost: 15, type: 'pow', hitRate: 74, force: 1.05, gutsDown: 6, critBonus: 0, effect: null, desc: '素早い張り手で相手の頬を打つ基本技。相手GUTS-6' },
+    gappuri_yotsu: { name: 'がっぷりよつ', cost: 28, type: 'pow', hitRate: 78, force: 1.5, gutsDown: 15, critBonus: 0.10, effect: 'def_down_15', desc: 'がっちりと組み合い、渾身の力で相手の体勢を崩す。相手GUTS-15。さらに命中した場合、3ターンの間相手の丈夫さを15%低下させる' },
+    uwatenage: { name: '上手投げ', cost: 28, type: 'pow', hitRate: 64, force: 1.75, gutsDown: 18, critBonus: 0.17, effect: null, desc: '渾身の力を込めて相手を豪快に投げ飛ばす。命中率は低いが会心の一撃になりやすい。相手GUTS-18' },
+    kawazutsuki: { name: 'かわずつき', cost: 21, type: 'pow', hitRate: 66, force: 0.85, gutsDown: 9, critBonus: 0.17, effect: 'selfcrit_up_3', desc: '蛙のように鋭く跳びかかって突く。相手GUTS-9。さらに命中した場合、闘志が高まり3ターンの間自身のクリティカル率が25%アップする' },
+    renzoku_harite: { name: '連続はり手', cost: 27, type: 'pow', hitRate: 90, force: 1.35, gutsDown: 6, critBonus: 0.05, effect: 'hitdown_stack_3', desc: '両手による高速の張り手を連続で叩き込む高命中技。相手GUTS-6。さらに命中した場合、目が眩み相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
+    tobi_harite: { name: '飛びはり手', cost: 19, type: 'pow', hitRate: 86, force: 0.75, gutsDown: 5, critBonus: 0.05, effect: null, desc: '飛び上がりながら繰り出す張り手。命中率が高い基本技。相手GUTS-5' },
+    kaeru_no_shita: { name: 'かえるのした', cost: 16, type: 'int', hitRate: 72, force: 0.85, gutsDown: 25, critBonus: 0.17, effect: 'paralyze_25', desc: '長い舌を伸ばして絡めとる。相手GUTS-25。さらに命中した場合、舌に絡め取られ2回の行動の間25%の確率で相手を行動不能にする' },
+    dai_kaiten_otoshi: { name: '大回転落とし', cost: 50, type: 'pow', hitRate: 70, force: 2.8, gutsDown: 18, critBonus: 0, effect: 'def_down_15', desc: '巨体で大きく回転し、渾身の力で相手を叩き落とす切り札。相手GUTS-18。さらに命中した場合、衝撃で3ターンの間相手の丈夫さを15%低下させる' },
+    kaeru_no_uta: { name: 'かえるのうた', cost: 40, type: 'int', hitRate: 90, force: 0.2, gutsDown: 42, critBonus: 0.10, effect: 'confuse_30', desc: '独特な鳴き声の合唱で相手の闘志を大きく削ぐ高命中技。相手GUTS-42。さらに命中した場合、3回の行動の間30%の確率で相手を混乱させる' },
+    bakudan_nage: { name: 'ばくだん投げ', cost: 28, type: 'int', hitRate: 73, force: 2.05, gutsDown: 30, critBonus: 0.03, effect: 'dot_mine', desc: '爆弾を模した重い物体を放り投げる大技。相手GUTS-30。さらに命中した場合、爆発の後遺症で3ターンの間継続ダメージを与える' }
 };
 
 // --- ステータス獲得逓減システム (Diminishing Returns) ---
@@ -729,6 +748,14 @@ function getEquipmentCritBonus(unit) {
     return base.critBonus || 0;
 }
 
+// --- 技自体に設定された「クリティカル率」ボーナス値（0〜1）を取得 ---
+// SKILLS_DB の各技に任意で critBonus フィールドを持たせられる（未設定は0=ボーナス無し）。
+// 技を繰り出したその1回の判定にのみ加算される（selfcrit_up_3のような数ターン持続効果とは別枠）。
+function getSkillCritBonus(sk) {
+    if (!sk) return 0;
+    return sk.critBonus || 0;
+}
+
 // --- 装備の「自身のライフが半分を切った時、攻撃ステータスアップ」効果の倍率を取得 ---
 // ユニットのライフ構造差（stats.life か life か）を吸収して両対応させる。
 function getEquipmentLowLifeAtkMultiplier(unit) {
@@ -821,7 +848,7 @@ const BOSS_TEMPLATES = {
 // ・KIN_NEJIKI_SPECIES_POOL: 「6体提示」の抽選対象となる全12種族
 // ・KIN_NEJIKI_SKILL_POOL: 各種族が使用できる固有技の候補（ここから4つをランダム抽選）
 // =====================================================
-const KIN_NEJIKI_SPECIES_POOL = ['mochi', 'suezo', 'dino', 'monolith', 'plant', 'kyubi', 'ham', 'arrowhead', 'nendoro', 'henger', 'durahan', 'golem'];
+const KIN_NEJIKI_SPECIES_POOL = ['mochi', 'suezo', 'dino', 'monolith', 'plant', 'kyubi', 'ham', 'arrowhead', 'nendoro', 'henger', 'durahan', 'golem', 'kawazumo'];
 
 const KIN_NEJIKI_SKILL_POOL = {
     mochi:     ['monta', 'mochiki', 'gaccho', 'sakurafubuki', 'cho_rollinmochi', 'cho_mochihou', 'mossama', 'yaezakura'],
@@ -835,7 +862,8 @@ const KIN_NEJIKI_SKILL_POOL = {
     nendoro:   ['zoom_punch_nendoro', 'mach_punch', 'meido_no_miyage', 'ganduke', 'body_press_nendoro'],
     henger:    ['w_kick', 'laser_blade', 'laser_cutter', 'w_laser_sword', 'drill_rocket', 'w_drill_rocket', 'napalm_cannon'],
     durahan:   ['cho_dash_giri', 'midaretsuki', 'mappufutatsu', 'combo_punch', 'daisharin', 'fujinken', 'raijinken'],
-    golem:     ['dekopin', 'shoda', 'claw_nage', 'double_chop', 'guruguru_attack', 'nobiru_punch', 'jishin']
+    golem:     ['dekopin', 'shoda', 'claw_nage', 'double_chop', 'guruguru_attack', 'nobiru_punch', 'jishin'],
+    kawazumo:  ['harite', 'gappuri_yotsu', 'uwatenage', 'kawazutsuki', 'renzoku_harite', 'tobi_harite', 'kaeru_no_shita', 'dai_kaiten_otoshi', 'kaeru_no_uta', 'bakudan_nage']
 };
 
 // =====================================================
@@ -931,6 +959,12 @@ const MONSTER_MOLDS = {
         { skills: ['クロー投げ', 'ダブルチョップ', '地震'], equipment: '鉄爪の欠片' },
         { skills: ['のびーるパンチ', 'ぐるぐるアタック', '地震'], equipment: '黒曜の鎧' },
         { skills: ['ぐるぐるアタック', 'のびーるパンチ', 'クロー投げ', '地震'], equipment: '巨神の心臓' }
+    ],
+    'カワズモー': [
+        { skills: ['はり手', 'かわずつき', 'かえるのした'], equipment: '荒縄のガントレット' },
+        { skills: ['がっぷりよつ', '上手投げ', 'かえるのした'], equipment: '石の腕輪' },
+        { skills: ['連続はり手', '飛びはり手', 'ばくだん投げ'], equipment: '黒曜の鎧' },
+        { skills: ['大回転落とし', 'かえるのうた', '上手投げ', 'ばくだん投げ'], equipment: '竜牙の爪' }
     ]
 };
 

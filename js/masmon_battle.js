@@ -909,7 +909,7 @@ function executeMasmonPlayerSkill(skKey) {
                 extraDmgMsg += ` (オーラ相性${AURA_TYPES[p.aura].emoji}→${AURA_TYPES[e.aura].emoji}×1.5)`;
             }
 
-            const critChance = 0.10 + (p.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(p);
+            const critChance = 0.10 + (p.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(p) + getSkillCritBonus(sk);
             let isCrit = Math.random() < critChance;
             if (isCrit) {
                 damage = Math.floor(damage * 1.5);
@@ -1255,7 +1255,7 @@ function executeMasmonEnemyTurn() {
                         enemyExtraDmgMsg += ` (オーラ相性${AURA_TYPES[e.aura].emoji}→${AURA_TYPES[p.aura].emoji}×1.5)`;
                     }
 
-                    const critChance = 0.10 + (e.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(e);
+                    const critChance = 0.10 + (e.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(e) + getSkillCritBonus(sk);
                     const isCrit = Math.random() < critChance;
                     if (isCrit) damage = Math.floor(damage * 1.5);
 

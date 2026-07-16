@@ -962,7 +962,7 @@ async function performRealtimeAction(action) {
                             meExtraDmgMsg += ` (オーラ相性${AURA_TYPES[me.aura].emoji}→${AURA_TYPES[opp.aura].emoji}×1.5)`;
                         }
 
-                        const critChance = 0.10 + (me.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(me);
+                        const critChance = 0.10 + (me.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(me) + getSkillCritBonus(sk);
                         const isCrit = Math.random() < critChance;
                         if (isCrit) damage = Math.floor(damage * 1.5);
 
