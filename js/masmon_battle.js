@@ -184,11 +184,14 @@ function startMasmonBattleCommon(floorText) {
     document.getElementById('battle-player-name').textContent = p.name;
     renderAuraBadge('player-aura-badge', p.aura);
 
-    const log = document.getElementById('battle-log');
-    log.innerHTML = `<div>${enemyOwner}の【${e.name}】が立ちはだかった！</div>`;
+    const initialLogEntries = [`${enemyOwner}の【${e.name}】が立ちはだかった！`];
     if (isTeam) {
-        log.innerHTML += `<div class="text-indigo-300">団体戦スタート！お互い${MASMON_BATTLE_STATE.playerTeam.length}体 vs ${MASMON_BATTLE_STATE.enemyTeam.length}体で戦う！</div>`;
+        initialLogEntries.push({
+            text: `団体戦スタート！お互い${MASMON_BATTLE_STATE.playerTeam.length}体 vs ${MASMON_BATTLE_STATE.enemyTeam.length}体で戦う！`,
+            cls: 'text-indigo-300'
+        });
     }
+    initBattleLog(initialLogEntries);
 
     updateMasmonBattleStatsUI();
     renderMasmonBattleSkills();
@@ -689,7 +692,7 @@ function executeMasmonSwitch(targetIdx) {
     const target = team[targetIdx];
     if (!target || target.stats.life <= 0 || targetIdx === MASMON_BATTLE_STATE.playerActiveIdx) return;
 
-    showBattleLog();
+    beginActionLog();
 
     const prev = getPlayerActive();
     MASMON_BATTLE_STATE.playerActiveIdx = targetIdx;
@@ -700,6 +703,7 @@ function executeMasmonSwitch(targetIdx) {
 
     renderMonsterVisual(document.getElementById('battle-player-icon'), target.monsterBaseName, target.emoji, target.isAwakened, true);
     document.getElementById('battle-player-name').textContent = target.name;
+    renderAuraBadge('player-aura-badge', target.aura);
     renderTeamIcons();
     updateMasmonBattleStatsUI();
     renderMasmonBattleSkills();
@@ -789,7 +793,7 @@ function useMasmonItem(itemKey) {
     const counts = MASMON_BATTLE_STATE.playerItems;
     if (!counts || !counts[itemKey] || counts[itemKey] <= 0) return;
 
-    showBattleLog();
+    beginActionLog();
 
     counts[itemKey]--;
     const p = getPlayerActive();
@@ -830,7 +834,7 @@ function executeMasmonPlayerSkill(skKey) {
     const rawSk = SKILLS_DB[skKey];
     if (!rawSk) return;
 
-    showBattleLog();
+    beginActionLog();
 
     const p = getPlayerActive();
     const e = getEnemyActive();
@@ -1057,7 +1061,7 @@ function proceedToMasmonEnemyTurn() {
 function executeMasmonDefend() {
     if (MASMON_BATTLE_STATE.isBattleEnd || !MASMON_BATTLE_STATE.isPlayerTurnActive) return;
 
-    showBattleLog();
+    beginActionLog();
 
     MASMON_BATTLE_STATE.isDefending = true;
     document.getElementById('player-defense-shield').classList.remove('hidden');

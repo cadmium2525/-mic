@@ -149,19 +149,51 @@ function closeSkillModal() {
 }
 
 // バトル用アニメーション/エフェクト演出関数
+// --- バトルログの記録管理 ---
+// バトル開始からの全ログを BATTLE_LOG_ENTRIES に貯めておき、
+// 表示モード（BATTLE_LOG_VIEW_MODE）に応じて #battle-log に描画する内容を切り替える。
+//   'turn' … 直近の行動（技・防御・アイテム・交代）を選んだ地点からのログのみ表示
+//   'full' … バトル開始からの全ログを表示（「ログ確認」ボタン用）
+let BATTLE_LOG_ENTRIES = [];
+let BATTLE_LOG_TURN_START = 0;
+let BATTLE_LOG_VIEW_MODE = 'turn';
+
 function addLog(text) {
+    BATTLE_LOG_ENTRIES.push({ text, cls: null });
+    renderBattleLog();
+}
+
+// バトル開始時にログ履歴をリセットして初期メッセージを表示する。
+// entries: 文字列、または { text, cls } の配列
+function initBattleLog(entries) {
+    BATTLE_LOG_ENTRIES = (entries || []).map(e => (typeof e === 'string') ? { text: e, cls: null } : e);
+    BATTLE_LOG_TURN_START = 0;
+    BATTLE_LOG_VIEW_MODE = 'turn';
+    renderBattleLog();
+}
+
+// 現在の BATTLE_LOG_VIEW_MODE に従って #battle-log の中身を再描画する。
+function renderBattleLog() {
     const log = document.getElementById('battle-log');
-    const div = document.createElement('div');
-    div.textContent = text;
-    log.appendChild(div);
+    if (!log) return;
+    const startIdx = (BATTLE_LOG_VIEW_MODE === 'full') ? 0 : BATTLE_LOG_TURN_START;
+    log.innerHTML = '';
+    for (let i = startIdx; i < BATTLE_LOG_ENTRIES.length; i++) {
+        const entry = BATTLE_LOG_ENTRIES[i];
+        const div = document.createElement('div');
+        if (entry.cls) div.className = entry.cls;
+        div.textContent = entry.text;
+        log.appendChild(div);
+    }
     log.scrollTop = log.scrollHeight;
 }
 
 // --- バトルログ表示切り替え ---
 // バトル中は基本的に技選択エリアを表示し、ログはその場所に切り替えて表示する。
-// ・行動（技・防御・アイテム・交代）を選んだ直後 → showBattleLog()
+// ・行動（技・防御・アイテム・交代）を選んだ直後 → beginActionLog()
+//   （その行動を起こした時点からのログのみを表示するモードに切り替える）
 // ・相手のターンが終わり自分のターンになった直後 → hideBattleLog()
-// ・自分のターン中でもログを見たい場合 → toggleBattleLogView()（ログ確認ボタン）
+// ・自分のターン中でもログを見たい場合 → toggleBattleLogView()（ログ確認ボタン。バトル全体のログを表示する）
 // ※ class="hidden" の付け外しだけに頼らず、style.display も直接操作することで
 //   他のCSSクラス（grid/flex等）との兼ね合いによる表示崩れを確実に防ぐ。
 function showBattleLog() {
@@ -177,6 +209,15 @@ function showBattleLog() {
         logEl.scrollTop = logEl.scrollHeight;
     }
     updateBattleLogToggleBtnLabel();
+}
+
+// 行動（技・防御・アイテム・交代）を選択した直後に呼ぶ。
+// ここから先に追加されるログだけを表示する「直近ログ表示」モードに切り替えてから表示する。
+function beginActionLog() {
+    BATTLE_LOG_TURN_START = BATTLE_LOG_ENTRIES.length;
+    BATTLE_LOG_VIEW_MODE = 'turn';
+    renderBattleLog();
+    showBattleLog();
 }
 
 function hideBattleLog() {
@@ -200,6 +241,9 @@ function toggleBattleLogView() {
     if (isLogShown) {
         hideBattleLog();
     } else {
+        // 「ログ確認」ボタンから開く場合は、バトル開始からの全ログを表示する
+        BATTLE_LOG_VIEW_MODE = 'full';
+        renderBattleLog();
         showBattleLog();
     }
 }

@@ -108,8 +108,7 @@ function setupBattle(isBoss = false) {
     renderMonsterVisual(playerIconEl, GAME_STATE.player.name, GAME_STATE.player.emoji, GAME_STATE.isAwakened, true);
     document.getElementById('battle-player-name').textContent = GAME_STATE.player.name;
 
-    const log = document.getElementById('battle-log');
-    log.innerHTML = `<div>${GAME_STATE.enemy.type}の ${GAME_STATE.enemy.name} が現れた！</div>`;
+    initBattleLog([`${GAME_STATE.enemy.type}の ${GAME_STATE.enemy.name} が現れた！`]);
 
     // オーラバッジの表示更新（味方は儀式で決めたオーラ、敵はランダム付与されたオーラ）
     renderAuraBadge('player-aura-badge', GAME_STATE.player.aura);
@@ -424,7 +423,7 @@ function executePlayerSkill(skKey) {
     const sk = SKILLS_DB[skKey];
     if (!sk) return;
 
-    showBattleLog();
+    beginActionLog();
 
     const p = GAME_STATE.player;
     const e = GAME_STATE.enemy;
@@ -609,7 +608,7 @@ function executePlayerSkill(skKey) {
 function endPlayerTurn(defendMode = false) {
     if (GAME_STATE.isBattleEnd || !GAME_STATE.isPlayerTurnActive) return;
 
-    showBattleLog();
+    beginActionLog();
     GAME_STATE.isPlayerTurnActive = false;
     
     if (defendMode) {

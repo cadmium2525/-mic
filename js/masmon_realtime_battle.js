@@ -283,13 +283,16 @@ function enterRealtimeBattleScreen(state) {
     const myFirst = getRealtimeActiveUnit(state, REALTIME_BATTLE.mySlot);
     const oppFirst = getRealtimeActiveUnit(state, REALTIME_BATTLE.oppSlot);
 
-    const log = document.getElementById('battle-log');
-    log.innerHTML = `<div>マッチング成立！ ${myFirst.name} と ${oppFirst.name} のバトル開始！</div>`;
+    const initialLogEntries = [`マッチング成立！ ${myFirst.name} と ${oppFirst.name} のバトル開始！`];
     if (isTeam) {
         const mySize = state.teams[REALTIME_BATTLE.mySlot].units.length;
         const oppSize = state.teams[REALTIME_BATTLE.oppSlot].units.length;
-        log.innerHTML += `<div class="text-indigo-300">団体戦スタート！お互い${mySize}体 vs ${oppSize}体で戦う！</div>`;
+        initialLogEntries.push({
+            text: `団体戦スタート！お互い${mySize}体 vs ${oppSize}体で戦う！`,
+            cls: 'text-indigo-300'
+        });
     }
+    initBattleLog(initialLogEntries);
 
     changeScreen('screen-battle');
 }
@@ -871,7 +874,7 @@ async function performRealtimeAction(action) {
     const cached = REALTIME_BATTLE.cachedState;
     if (!cached || cached.status !== 'active' || cached.turnOwner !== REALTIME_BATTLE.mySlot) return;
 
-    showBattleLog();
+    beginActionLog();
 
     const mySlot = REALTIME_BATTLE.mySlot;
     const oppSlot = REALTIME_BATTLE.oppSlot;
