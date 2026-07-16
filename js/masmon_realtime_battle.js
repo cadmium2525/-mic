@@ -38,7 +38,8 @@ const REALTIME_BATTLE = {
     disconnectTimer: null,
     cachedState: null,
     actionInProgress: false,
-    seenLogKeys: {}          // 二重描画防止
+    seenLogKeys: {},          // 二重描画防止
+    lastRenderedTurnOwner: null // 直前に描画した時点のturnOwner（自分のターンへ切り替わった瞬間の検出用）
 };
 
 // --- 現在のバトル状態から「場に出ているユニット」を取得するヘルパー ---
@@ -306,6 +307,13 @@ function renderRealtimeBattleUI(state) {
     const oppOwnerName = state.ownerNames ? state.ownerNames[oppSlot] : '対戦相手';
 
     const isMyTurn = state.status === 'active' && state.turnOwner === mySlot;
+
+    // 相手のターン（または対戦開始直後）から自分のターンに切り替わった瞬間だけログを閉じて技表示に戻す。
+    // 自分のターン中に「ログ確認」ボタンで開いた場合はここでは閉じない。
+    if (isMyTurn && REALTIME_BATTLE.lastRenderedTurnOwner !== mySlot) {
+        hideBattleLog();
+    }
+    REALTIME_BATTLE.lastRenderedTurnOwner = state.status === 'active' ? state.turnOwner : null;
 
     document.getElementById('battle-turn-counter').textContent = state.turnNumber || 1;
 
@@ -863,6 +871,8 @@ async function performRealtimeAction(action) {
     const cached = REALTIME_BATTLE.cachedState;
     if (!cached || cached.status !== 'active' || cached.turnOwner !== REALTIME_BATTLE.mySlot) return;
 
+    showBattleLog();
+
     const mySlot = REALTIME_BATTLE.mySlot;
     const oppSlot = REALTIME_BATTLE.oppSlot;
     const stateRef = REALTIME_BATTLE.ref.child('battleState');
@@ -931,14 +941,22 @@ async function performRealtimeAction(action) {
                         const rawDmg = (effectiveAttacker * usedForce * mods.dmgMod) - (defenderStat * 0.35);
                         let damage = Math.floor(Math.max(10, (rawDmg * (0.9 + Math.random() * 0.2)) * defenderGutsDefenseMod));
 
+                        let meExtraDmgMsg = "";
                         if (me.isSokojikaraActive) {
                             damage = Math.floor(damage * 1.5);
+                            meExtraDmgMsg += " (底力×1.5)";
                         }
                         if (me.isShuchuActive) {
                             damage = Math.floor(damage * 1.2);
+                            meExtraDmgMsg += " (集中×1.2)";
                         }
                         if (me.permaForceBoostActive) {
                             damage = Math.floor(damage * 1.2);
+                            meExtraDmgMsg += " (天河天翔×1.2)";
+                        }
+                        if (isAuraAdvantageous(me.aura, opp.aura)) {
+                            damage = Math.floor(damage * 1.5);
+                            meExtraDmgMsg += ` (オーラ相性${AURA_TYPES[me.aura].emoji}→${AURA_TYPES[opp.aura].emoji}×1.5)`;
                         }
 
                         const critChance = 0.10 + (me.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(me);
@@ -957,7 +975,7 @@ async function performRealtimeAction(action) {
                         damage = shieldResult.finalDamage;
 
                         opp.life = Math.max(0, opp.life - damage);
-                        resultLogs.push(isCrit ? `★クリティカル！ ${opp.name} に ${damage} ダメージ！` : `${opp.name} に ${damage} ダメージ！`);
+                        resultLogs.push(isCrit ? `★クリティカル！ ${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}` : `${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}`);
                         if (shieldResult.absorbed > 0) {
                             resultLogs.push(`🛡️ ${opp.name} のシールドが ${shieldResult.absorbed} のダメージを吸収した！(シールド残量: ${opp.shieldValue})`);
                         }
@@ -1355,6 +1373,7 @@ function resetRealtimeBattleClientState() {
     REALTIME_BATTLE.cachedState = null;
     REALTIME_BATTLE.actionInProgress = false;
     REALTIME_BATTLE.seenLogKeys = {};
+    REALTIME_BATTLE.lastRenderedTurnOwner = null;
     REALTIME_BATTLE.logRevealQueue = [];
     REALTIME_BATTLE.isRevealingLog = false;
 

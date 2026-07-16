@@ -289,6 +289,7 @@ function checkFaintAndProceed(side) {
 // バトル進行
 // -----------------------------------------------------
 function startMasmonPlayerTurn(isFirstTurn = false) {
+    hideBattleLog();
     MASMON_BATTLE_STATE.isPlayerTurnActive = true;
     MASMON_BATTLE_STATE.usedSkillsThisTurn = {};
 
@@ -688,6 +689,8 @@ function executeMasmonSwitch(targetIdx) {
     const target = team[targetIdx];
     if (!target || target.stats.life <= 0 || targetIdx === MASMON_BATTLE_STATE.playerActiveIdx) return;
 
+    showBattleLog();
+
     const prev = getPlayerActive();
     MASMON_BATTLE_STATE.playerActiveIdx = targetIdx;
     MASMON_BATTLE_STATE.isDefending = false;
@@ -786,6 +789,8 @@ function useMasmonItem(itemKey) {
     const counts = MASMON_BATTLE_STATE.playerItems;
     if (!counts || !counts[itemKey] || counts[itemKey] <= 0) return;
 
+    showBattleLog();
+
     counts[itemKey]--;
     const p = getPlayerActive();
     const item = MASMON_ITEM_DB[itemKey];
@@ -824,6 +829,9 @@ function executeMasmonPlayerSkill(skKey) {
 
     const rawSk = SKILLS_DB[skKey];
     if (!rawSk) return;
+
+    showBattleLog();
+
     const p = getPlayerActive();
     const e = getEnemyActive();
     const sk = getMasmonEffectiveSkill(p, skKey);
@@ -891,6 +899,10 @@ function executeMasmonPlayerSkill(skKey) {
             if (p.permaForceBoostActive) {
                 damage = Math.floor(damage * 1.2);
                 extraDmgMsg += " (天河天翔×1.2)";
+            }
+            if (isAuraAdvantageous(p.aura, e.aura)) {
+                damage = Math.floor(damage * 1.5);
+                extraDmgMsg += ` (オーラ相性${AURA_TYPES[p.aura].emoji}→${AURA_TYPES[e.aura].emoji}×1.5)`;
             }
 
             const critChance = 0.10 + (p.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(p);
@@ -1044,6 +1056,8 @@ function proceedToMasmonEnemyTurn() {
 // --- 防御コマンド（技一覧内から選択。被ダメ半減のみで、ガッツ回復ペナルティは無い） ---
 function executeMasmonDefend() {
     if (MASMON_BATTLE_STATE.isBattleEnd || !MASMON_BATTLE_STATE.isPlayerTurnActive) return;
+
+    showBattleLog();
 
     MASMON_BATTLE_STATE.isDefending = true;
     document.getElementById('player-defense-shield').classList.remove('hidden');
@@ -1219,14 +1233,22 @@ function executeMasmonEnemyTurn() {
                     let rawDmg = (effectiveAttacker * enemyUsedForce) - (defenderStat * 0.35);
                     let damage = Math.floor(Math.max(8, (rawDmg * (0.9 + Math.random() * 0.2)) * playerGutsDefenseMod));
 
+                    let enemyExtraDmgMsg = "";
                     if (e.isSokojikaraActive) {
                         damage = Math.floor(damage * 1.5);
+                        enemyExtraDmgMsg += " (底力×1.5)";
                     }
                     if (e.isShuchuActive) {
                         damage = Math.floor(damage * 1.2);
+                        enemyExtraDmgMsg += " (集中×1.2)";
                     }
                     if (e.permaForceBoostActive) {
                         damage = Math.floor(damage * 1.2);
+                        enemyExtraDmgMsg += " (天河天翔×1.2)";
+                    }
+                    if (isAuraAdvantageous(e.aura, p.aura)) {
+                        damage = Math.floor(damage * 1.5);
+                        enemyExtraDmgMsg += ` (オーラ相性${AURA_TYPES[e.aura].emoji}→${AURA_TYPES[p.aura].emoji}×1.5)`;
                     }
 
                     const critChance = 0.10 + (e.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(e);
@@ -1254,7 +1276,7 @@ function executeMasmonEnemyTurn() {
                     enemySteps.push({
                         run: () => {
                             p.stats.life = Math.max(0, p.stats.life - damage);
-                            addLog(isCrit ? `★相手のクリティカル！ ${p.name} は ${damage} ダメージを受けた！` : `${p.name} は ${damage} ダメージを受けた！`);
+                            addLog(isCrit ? `★相手のクリティカル！ ${p.name} は ${damage} ダメージを受けた！${enemyExtraDmgMsg}` : `${p.name} は ${damage} ダメージを受けた！${enemyExtraDmgMsg}`);
                             if (MASMON_BATTLE_STATE.isDefending) {
                                 addLog(`【防御効果】攻撃を盾で受け流し、ダメージを半減した！`);
                             }

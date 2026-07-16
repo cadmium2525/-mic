@@ -157,6 +157,50 @@ function addLog(text) {
     log.scrollTop = log.scrollHeight;
 }
 
+// --- バトルログ表示切り替え ---
+// バトル中は基本的に技選択エリアを表示し、ログはその場所に切り替えて表示する。
+// ・行動（技・防御・アイテム・交代）を選んだ直後 → showBattleLog()
+// ・相手のターンが終わり自分のターンになった直後 → hideBattleLog()
+// ・自分のターン中でもログを見たい場合 → toggleBattleLogView()（ログ確認ボタン）
+function showBattleLog() {
+    const skillsWrap = document.getElementById('battle-skills-container');
+    const logEl = document.getElementById('battle-log');
+    if (skillsWrap) skillsWrap.classList.add('hidden');
+    if (logEl) {
+        logEl.classList.remove('hidden');
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+    updateBattleLogToggleBtnLabel();
+}
+
+function hideBattleLog() {
+    const skillsWrap = document.getElementById('battle-skills-container');
+    const logEl = document.getElementById('battle-log');
+    if (logEl) logEl.classList.add('hidden');
+    if (skillsWrap) skillsWrap.classList.remove('hidden');
+    updateBattleLogToggleBtnLabel();
+}
+
+function toggleBattleLogView() {
+    const logEl = document.getElementById('battle-log');
+    if (!logEl) return;
+    if (logEl.classList.contains('hidden')) {
+        showBattleLog();
+    } else {
+        hideBattleLog();
+    }
+}
+
+function updateBattleLogToggleBtnLabel() {
+    const btn = document.getElementById('battle-log-toggle-btn');
+    if (!btn) return;
+    const logEl = document.getElementById('battle-log');
+    const isLogShown = logEl && !logEl.classList.contains('hidden');
+    btn.innerHTML = isLogShown
+        ? '<i class="fa-solid fa-arrow-left"></i><span>技に戻る</span>'
+        : '<i class="fa-solid fa-scroll"></i><span>ログ確認</span>';
+}
+
 function showEffect(text) {
     const overlay = document.getElementById('battle-effect-overlay');
     overlay.textContent = text;

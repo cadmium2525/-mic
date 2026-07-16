@@ -43,6 +43,12 @@ function saveKinNejikiSuspend() {
         showToast('挑戦中のみ一時セーブできます。');
         return;
     }
+    // 勝利後の交換画面から呼ばれた場合、この勝利分をまだカウンタ（battleInSet/set）へ
+    // 反映していないことがあるので、その場合はここで先に反映してからセーブする。
+    // （これをしないと再開時に直前に勝ったバトルをもう一度やり直すことになってしまう）
+    if (KIN_NEJIKI_STATE.pendingSwap) {
+        advanceKinNejikiCounters();
+    }
     try {
         const payload = {
             set: KIN_NEJIKI_STATE.set,
@@ -473,6 +479,10 @@ let kinNejikiSwapTheirsIdx = null;
 function renderKinNejikiSwapScreen() {
     kinNejikiSwapMineIdx = null;
     kinNejikiSwapTheirsIdx = null;
+    const selectStep = document.getElementById('kinnejiki-swap-step-select');
+    const nextStep = document.getElementById('kinnejiki-swap-step-next');
+    if (selectStep) selectStep.classList.remove('hidden');
+    if (nextStep) nextStep.classList.add('hidden');
     renderKinNejikiSwapLists();
 }
 
@@ -481,26 +491,32 @@ function renderKinNejikiSwapLists() {
     const theirsContainer = document.getElementById('kinnejiki-swap-theirs-container');
     if (!mineContainer || !theirsContainer) return;
 
-    const renderList = (container, list, selectedIdx, onClick) => {
+    const renderList = (container, list, selectedIdx, onClick, keyPrefix) => {
         container.innerHTML = '';
         list.forEach((m, idx) => {
             if (!m) return;
             const isSelected = idx === selectedIdx;
             const card = document.createElement('div');
-            card.className = `bg-[#2a1b15] border rounded-xl p-2 cursor-pointer active:scale-[0.98] transition-all ${isSelected ? 'border-emerald-400 shadow-[0_0_6px_2px_rgba(52,211,153,0.4)]' : 'border-amber-900/50'}`;
+            card.className = `bg-[#2a1b15] border rounded-xl p-2 cursor-pointer active:scale-[0.98] transition-all flex items-center space-x-2 ${isSelected ? 'border-emerald-400 shadow-[0_0_6px_2px_rgba(52,211,153,0.4)]' : 'border-amber-900/50'}`;
             card.onclick = () => onClick(idx);
             const skillNames = (m.skills || []).map(sk => (SKILLS_DB[sk] ? SKILLS_DB[sk].name : sk)).join('、');
+            const visualId = `kinnejiki-swap-visual-${keyPrefix}-${idx}`;
             card.innerHTML = `
-                <div class="text-xs font-bold text-amber-200">${m.emoji} ${m.name}</div>
-                <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def}</div>
-                <div class="text-[9px] text-gray-500 mt-0.5">技: ${skillNames}</div>
+                <div id="${visualId}" class="flex-shrink-0 w-12 h-12 flex items-center justify-center text-2xl"></div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-xs font-bold text-amber-200">${m.name}</div>
+                    <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def}</div>
+                    <div class="text-[9px] text-gray-500 mt-0.5">技: ${skillNames}</div>
+                </div>
             `;
             container.appendChild(card);
+            const visualEl = card.querySelector(`#${CSS.escape(visualId)}`);
+            renderMonsterVisual(visualEl, m.monsterBaseName || m.name, m.emoji, !!m.isAwakened, keyPrefix === 'mine');
         });
     };
 
-    renderList(mineContainer, KIN_NEJIKI_STATE.playerParty, kinNejikiSwapMineIdx, (idx) => { kinNejikiSwapMineIdx = idx; renderKinNejikiSwapLists(); });
-    renderList(theirsContainer, KIN_NEJIKI_STATE.pendingSwap.defeatedTeam, kinNejikiSwapTheirsIdx, (idx) => { kinNejikiSwapTheirsIdx = idx; renderKinNejikiSwapLists(); });
+    renderList(mineContainer, KIN_NEJIKI_STATE.playerParty, kinNejikiSwapMineIdx, (idx) => { kinNejikiSwapMineIdx = idx; renderKinNejikiSwapLists(); }, 'mine');
+    renderList(theirsContainer, KIN_NEJIKI_STATE.pendingSwap.defeatedTeam, kinNejikiSwapTheirsIdx, (idx) => { kinNejikiSwapTheirsIdx = idx; renderKinNejikiSwapLists(); }, 'theirs');
 
     const btn = document.getElementById('kinnejiki-confirm-swap-btn');
     if (btn) btn.disabled = (kinNejikiSwapMineIdx === null || kinNejikiSwapTheirsIdx === null);
@@ -514,15 +530,25 @@ function confirmKinNejikiSwap() {
     cloned.ownerName = 'あなた';
     KIN_NEJIKI_STATE.playerParty[kinNejikiSwapMineIdx] = cloned;
     showToast(`【${cloned.name}】を仲間に迎え入れた！`);
-    proceedAfterKinNejikiSwap();
+    showKinNejikiSwapNextStep();
 }
 
 function skipKinNejikiSwap() {
-    proceedAfterKinNejikiSwap();
+    showKinNejikiSwapNextStep();
 }
 
-function proceedAfterKinNejikiSwap() {
-    // 原作のレンタル制に準拠し、自分の手持ちは毎戦フルライフの状態で次のバトルへ持ち越す
+// --- 交換する/しないを決めた後、「次のバトルへ進む」か「セーブして終了する」かを選ぶ画面に切り替える ---
+function showKinNejikiSwapNextStep() {
+    const selectStep = document.getElementById('kinnejiki-swap-step-select');
+    const nextStep = document.getElementById('kinnejiki-swap-step-next');
+    if (selectStep) selectStep.classList.add('hidden');
+    if (nextStep) nextStep.classList.remove('hidden');
+}
+
+// --- 手持ちの全回復と、セット・バトル数カウンタの進行をまとめて行う ---
+// 「次のバトルへ進む」時だけでなく、「セーブして終了する」時にもこの勝利分を必ず反映させる
+// （反映せずにセーブすると、再開時に直前に勝ったバトルをもう一度戦うことになってしまうため）
+function advanceKinNejikiCounters() {
     KIN_NEJIKI_STATE.playerParty.forEach(m => { m.stats.life = m.stats.maxLife; });
     KIN_NEJIKI_STATE.pendingSwap = null;
 
@@ -532,7 +558,10 @@ function proceedAfterKinNejikiSwap() {
     } else {
         KIN_NEJIKI_STATE.battleInSet++;
     }
+}
 
+function proceedAfterKinNejikiSwap() {
+    advanceKinNejikiCounters();
     advanceToNextKinNejikiBattle();
 }
 

@@ -81,6 +81,10 @@
                         <i class="fa-solid fa-user-shield"></i>
                         <span>アカウント管理</span>
                     </button>
+                    <button onclick="openMonsterDexScreen()" class="w-full py-2.5 bg-[#1a120b] hover:bg-[#2a1b15] text-amber-300 font-bold rounded-xl text-sm shadow border border-amber-800 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-book"></i>
+                        <span>モンスター図鑑（技一覧）</span>
+                    </button>
                     <p class="text-[10px] text-gray-400">※育成不要！毎回その場で選ぶレンタルモンスターで戦おう！</p>
                 </div>
             </div>
@@ -179,7 +183,7 @@
                     </div>
                 </div>
 
-                <!-- 味方ステータス ＆ バトルログ -->
+                <!-- 味方ステータス -->
                 <div class="bg-[#24150e] p-3 border-t border-amber-950 space-y-2">
                     <!-- 団体戦：味方チームアイコン -->
                     <div id="player-team-icons" class="hidden flex justify-center space-x-2 mb-1"></div>
@@ -195,11 +199,6 @@
                             </div>
                         </div>
                     </div>
-
-                    <!-- バトル行動履歴ログ -->
-                    <div class="bg-[#140b08] p-2 rounded h-16 overflow-y-auto text-[10px] text-gray-300 font-mono space-y-0.5 border border-amber-950" id="battle-log">
-                        <div>バトル開始！先行はブリーダーモンスターです。</div>
-                    </div>
                 </div>
 
                 <!-- コマンド入力エリア -->
@@ -209,14 +208,24 @@
                         <span class="text-[9px] text-amber-300">行動数: <span id="battle-actions-counter" class="font-bold">0</span></span>
                     </div>
 
-                    <p class="text-[9px] text-gray-400 text-center">※技ボタンを長押しすると詳細を確認できます</p>
+                    <div class="flex justify-between items-center">
+                        <p class="text-[9px] text-gray-400">※技ボタンを長押しすると詳細を確認できます</p>
+                        <button id="battle-log-toggle-btn" onclick="toggleBattleLogView()" class="shrink-0 flex items-center space-x-1 bg-[#2a1b15] hover:bg-[#3a271d] text-amber-300 text-[9px] font-bold px-2 py-1 rounded border border-amber-900/50 transition-all active:scale-95">
+                            <i class="fa-solid fa-scroll"></i><span>ログ確認</span>
+                        </button>
+                    </div>
 
                     <!-- 対戦アイテムバー（マスモンバトルのみ表示） -->
                     <div id="battle-items-container" class="hidden grid grid-cols-3 gap-1.5"></div>
 
-                    <!-- 技選択ボタンエリア (スクロール対応) -->
-                    <div class="grid grid-cols-2 gap-1.5 max-h-28 overflow-y-auto" id="battle-skills-container">
+                    <!-- 技選択エリア / ログ表示エリア（同じ場所に切り替えて表示する） -->
+                    <div id="battle-skills-container" class="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto">
                         <!-- 動的に技ボタンを配置 -->
+                    </div>
+
+                    <!-- バトル行動履歴ログ：デフォルトは非表示。技選択時や「ログ確認」ボタンでこの位置に表示する -->
+                    <div class="hidden bg-[#140b08] p-2 rounded h-40 overflow-y-auto text-[13px] text-gray-300 font-mono space-y-1 border border-amber-950" id="battle-log">
+                        <div>バトル開始！先行はブリーダーモンスターです。</div>
                     </div>
 
                     <!-- ターン終了ボタン（通常終了 / 防御して終了） ※リアルタイム対戦では非表示（技一覧に防御を統合） -->
@@ -447,33 +456,49 @@
 
             <!-- ==================== SCREEN 12: ガッツファクトリー 勝利後の交換画面 ==================== -->
             <div id="screen-kinnejiki-swap" class="screen flex-col justify-between h-full p-4 bg-[#1a120b] space-y-2">
-                <div class="bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-700 text-center">
-                    <h2 class="text-sm font-black text-emerald-300 pixel-font">🎉 勝利！ モンスターを交換しますか？</h2>
-                    <p class="text-[9px] text-gray-400 mt-0.5">自分の手持ちから1体、相手チームから1体をそれぞれタップして選ぶと交換されます</p>
+
+                <!-- ステップ1: 交換するかどうかを選ぶ -->
+                <div id="kinnejiki-swap-step-select" class="flex-1 flex flex-col justify-between min-h-0 space-y-2">
+                    <div class="bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-700 text-center">
+                        <h2 class="text-sm font-black text-emerald-300 pixel-font">🎉 勝利！ モンスターを交換しますか？</h2>
+                        <p class="text-[9px] text-gray-400 mt-0.5">自分の手持ちから1体、相手チームから1体をそれぞれタップして選ぶと交換されます</p>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto space-y-3 pr-1">
+                        <div>
+                            <p class="text-[10px] text-amber-400 font-bold mb-1">🧳 あなたの手持ち</p>
+                            <div class="space-y-1.5" id="kinnejiki-swap-mine-container"></div>
+                        </div>
+                        <div>
+                            <p class="text-[10px] text-red-400 font-bold mb-1">🏳️ 倒した相手のチーム</p>
+                            <div class="space-y-1.5" id="kinnejiki-swap-theirs-container"></div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <button id="kinnejiki-confirm-swap-btn" onclick="confirmKinNejikiSwap()" disabled class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl text-sm shadow-lg transform active:scale-95 transition-all pixel-font border-b-4 border-emerald-800">
+                            選択した2体を交換する
+                        </button>
+                        <button onclick="skipKinNejikiSwap()" class="w-full py-2.5 bg-[#1a120b] hover:bg-[#2a1b15] text-gray-400 font-bold rounded-xl text-xs shadow border border-gray-700 transition-all active:scale-95">
+                            交換しない
+                        </button>
+                    </div>
                 </div>
 
-                <div class="flex-1 overflow-y-auto space-y-3 pr-1">
-                    <div>
-                        <p class="text-[10px] text-amber-400 font-bold mb-1">🧳 あなたの手持ち</p>
-                        <div class="space-y-1.5" id="kinnejiki-swap-mine-container"></div>
+                <!-- ステップ2: 交換の可否を決めた後、次のバトルへ進むかセーブして終了するかを選ぶ -->
+                <div id="kinnejiki-swap-step-next" class="hidden flex-1 flex flex-col justify-center items-center space-y-3 text-center">
+                    <div class="bg-emerald-950/40 p-3 rounded-xl border border-emerald-700 w-full">
+                        <p class="text-xs text-gray-300">このまま次のバトルに進みますか？<br>それとも、ここでセーブして中断しますか？</p>
                     </div>
-                    <div>
-                        <p class="text-[10px] text-red-400 font-bold mb-1">🏳️ 倒した相手のチーム</p>
-                        <div class="space-y-1.5" id="kinnejiki-swap-theirs-container"></div>
+                    <div class="w-full space-y-2">
+                        <button onclick="proceedAfterKinNejikiSwap()" class="w-full py-3 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl text-sm shadow-lg transform active:scale-95 transition-all pixel-font border-b-4 border-amber-800">
+                            次のバトルに進む
+                        </button>
+                        <button onclick="saveKinNejikiSuspend()" class="w-full py-2.5 bg-[#0f1a16] hover:bg-[#16241f] text-teal-400 font-bold rounded-xl text-xs shadow border border-teal-800 transition-all active:scale-95 flex items-center justify-center space-x-2">
+                            <i class="fa-solid fa-floppy-disk"></i>
+                            <span>一時セーブして中断する</span>
+                        </button>
                     </div>
-                </div>
-
-                <div class="space-y-2">
-                    <button id="kinnejiki-confirm-swap-btn" onclick="confirmKinNejikiSwap()" disabled class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl text-sm shadow-lg transform active:scale-95 transition-all pixel-font border-b-4 border-emerald-800">
-                        選択した2体を交換する
-                    </button>
-                    <button onclick="skipKinNejikiSwap()" class="w-full py-2.5 bg-[#1a120b] hover:bg-[#2a1b15] text-gray-400 font-bold rounded-xl text-xs shadow border border-gray-700 transition-all active:scale-95">
-                        交換せず次のバトルへ
-                    </button>
-                    <button onclick="saveKinNejikiSuspend()" class="w-full py-2 bg-[#0f1a16] hover:bg-[#16241f] text-teal-400 font-bold rounded-xl text-xs shadow border border-teal-800 transition-all active:scale-95 flex items-center justify-center space-x-2">
-                        <i class="fa-solid fa-floppy-disk"></i>
-                        <span>一時セーブして中断する</span>
-                    </button>
                 </div>
             </div>
 
@@ -515,6 +540,38 @@
                 <button onclick="startKinNejikiEntry()" class="w-full py-3 bg-[#3c2a21] hover:bg-[#4a352a] text-white font-bold rounded-xl text-xs border border-amber-800 transition-all active:scale-95">
                     戻る
                 </button>
+            </div>
+
+            <!-- ==================== SCREEN 15: モンスター図鑑（技一覧） ==================== -->
+            <div id="screen-monster-dex" class="screen flex-col h-full bg-[#1a120b]">
+                <div class="p-3 border-b border-amber-950 flex items-center justify-between bg-[#24150e] flex-shrink-0">
+                    <button onclick="returnToTitleFromDex()" class="text-amber-400 text-[10px] font-bold flex items-center space-x-1">
+                        <i class="fa-solid fa-arrow-left"></i><span>タイトルへ</span>
+                    </button>
+                    <h2 class="text-sm font-black text-amber-300 pixel-font">📖 モンスター図鑑</h2>
+                    <div class="w-14"></div>
+                </div>
+
+                <!-- 種族一覧ビュー -->
+                <div class="flex-1 overflow-y-auto p-3 space-y-2" id="monster-dex-list-view"></div>
+
+                <!-- 種族詳細ビュー（ベースステータス＋技一覧） -->
+                <div class="hidden flex-col flex-1 min-h-0" id="monster-dex-detail-view">
+                    <div class="p-3 border-b border-amber-900/50 bg-[#24150e] flex-shrink-0">
+                        <button onclick="showMonsterDexList()" class="text-amber-400 text-[10px] font-bold mb-2 flex items-center space-x-1">
+                            <i class="fa-solid fa-arrow-left"></i><span>種族一覧に戻る</span>
+                        </button>
+                        <div class="flex items-center space-x-3">
+                            <div id="monster-dex-detail-visual" class="w-14 h-14 flex-shrink-0 flex items-center justify-center text-3xl"></div>
+                            <div class="min-w-0">
+                                <div class="text-sm font-black text-amber-200" id="monster-dex-detail-name"></div>
+                                <div class="text-[9px] text-gray-400 leading-relaxed" id="monster-dex-detail-desc"></div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-3 gap-1 mt-2 text-[9px] text-gray-300" id="monster-dex-detail-stats"></div>
+                    </div>
+                    <div class="flex-1 overflow-y-auto p-3 space-y-2" id="monster-dex-detail-skills"></div>
+                </div>
             </div>
 
         </div>
@@ -666,6 +723,7 @@
     <script src="js/masmon_realtime_battle.js"></script>
     <script src="js/kinnejiki.js"></script>
     <script src="js/pvp_rental.js"></script>
+    <script src="js/monster_dex.js"></script>
     <!-- BGM/SE 管理（他スクリプトの関数をラップするため必ず最後に読み込む） -->
     <script src="js/audio.js"></script>
 

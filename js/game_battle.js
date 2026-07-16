@@ -129,6 +129,7 @@ function setupBattle(isBoss = false) {
 }
 
 function startPlayerTurn(isFirstTurn = false) {
+    hideBattleLog();
     GAME_STATE.isPlayerTurnActive = true;
     GAME_STATE.usedSkillsThisTurn = {}; 
     
@@ -422,6 +423,9 @@ function executePlayerSkill(skKey) {
 
     const sk = SKILLS_DB[skKey];
     if (!sk) return;
+
+    showBattleLog();
+
     const p = GAME_STATE.player;
     const e = GAME_STATE.enemy;
 
@@ -605,6 +609,7 @@ function executePlayerSkill(skKey) {
 function endPlayerTurn(defendMode = false) {
     if (GAME_STATE.isBattleEnd || !GAME_STATE.isPlayerTurnActive) return;
 
+    showBattleLog();
     GAME_STATE.isPlayerTurnActive = false;
     
     if (defendMode) {
