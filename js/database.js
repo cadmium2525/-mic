@@ -666,6 +666,19 @@ function rollEquipmentInstance(mode) {
     return buildEquipmentInstanceFromBase(base);
 }
 
+// --- ステータスキーの日本語表示名（装備効果文言・図鑑等で共通利用） ---
+function getStatLabel(key) {
+    const labels = {
+        maxLife: 'ライフ',
+        pow: 'ちから',
+        int: 'かしこさ',
+        hit: '命中',
+        spd: '回避',
+        def: '丈夫さ'
+    };
+    return labels[key] || key;
+}
+
 // --- 装備インスタンスの表示名（レア度込み） ---
 function getEquipmentDisplayName(instance) {
     const base = EQUIPMENT_DB[instance.equipId];

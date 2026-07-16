@@ -162,12 +162,18 @@ function addLog(text) {
 // ・行動（技・防御・アイテム・交代）を選んだ直後 → showBattleLog()
 // ・相手のターンが終わり自分のターンになった直後 → hideBattleLog()
 // ・自分のターン中でもログを見たい場合 → toggleBattleLogView()（ログ確認ボタン）
+// ※ class="hidden" の付け外しだけに頼らず、style.display も直接操作することで
+//   他のCSSクラス（grid/flex等）との兼ね合いによる表示崩れを確実に防ぐ。
 function showBattleLog() {
     const skillsWrap = document.getElementById('battle-skills-container');
     const logEl = document.getElementById('battle-log');
-    if (skillsWrap) skillsWrap.classList.add('hidden');
+    if (skillsWrap) {
+        skillsWrap.classList.add('hidden');
+        skillsWrap.style.display = 'none';
+    }
     if (logEl) {
         logEl.classList.remove('hidden');
+        logEl.style.display = 'block';
         logEl.scrollTop = logEl.scrollHeight;
     }
     updateBattleLogToggleBtnLabel();
@@ -176,18 +182,25 @@ function showBattleLog() {
 function hideBattleLog() {
     const skillsWrap = document.getElementById('battle-skills-container');
     const logEl = document.getElementById('battle-log');
-    if (logEl) logEl.classList.add('hidden');
-    if (skillsWrap) skillsWrap.classList.remove('hidden');
+    if (logEl) {
+        logEl.classList.add('hidden');
+        logEl.style.display = 'none';
+    }
+    if (skillsWrap) {
+        skillsWrap.classList.remove('hidden');
+        skillsWrap.style.display = 'grid';
+    }
     updateBattleLogToggleBtnLabel();
 }
 
 function toggleBattleLogView() {
     const logEl = document.getElementById('battle-log');
     if (!logEl) return;
-    if (logEl.classList.contains('hidden')) {
-        showBattleLog();
-    } else {
+    const isLogShown = logEl.style.display === 'block' && !logEl.classList.contains('hidden');
+    if (isLogShown) {
         hideBattleLog();
+    } else {
+        showBattleLog();
     }
 }
 

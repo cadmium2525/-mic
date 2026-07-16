@@ -1,7 +1,7 @@
 {
-  "name": "モンスターファーム ガッツファクトリー",
-  "short_name": "ガッツファクトリー",
-  "description": "連戦を制して最上位ブリーダーを目指す！",
+  "name": "モンスターファーム ガッツロード",
+  "short_name": "ガッツロード",
+  "description": "30階の栄光を目指す、モンスター育成＆バトルRPG",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

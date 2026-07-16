@@ -481,8 +481,8 @@ function renderKinNejikiSwapScreen() {
     kinNejikiSwapTheirsIdx = null;
     const selectStep = document.getElementById('kinnejiki-swap-step-select');
     const nextStep = document.getElementById('kinnejiki-swap-step-next');
-    if (selectStep) selectStep.classList.remove('hidden');
-    if (nextStep) nextStep.classList.add('hidden');
+    if (selectStep) { selectStep.classList.remove('hidden'); selectStep.style.display = 'flex'; }
+    if (nextStep) { nextStep.classList.add('hidden'); nextStep.style.display = 'none'; }
     renderKinNejikiSwapLists();
 }
 
@@ -501,12 +501,24 @@ function renderKinNejikiSwapLists() {
             card.onclick = () => onClick(idx);
             const skillNames = (m.skills || []).map(sk => (SKILLS_DB[sk] ? SKILLS_DB[sk].name : sk)).join('、');
             const visualId = `kinnejiki-swap-visual-${keyPrefix}-${idx}`;
+
+            const auraInfo = m.aura ? AURA_TYPES[m.aura] : null;
+            const auraText = auraInfo ? `${auraInfo.emoji} ${auraInfo.name}オーラ` : 'オーラなし';
+
+            const equipText = m.equip
+                ? `${(EQUIPMENT_DB[m.equip.equipId] || {}).icon || '⚙️'} ${getEquipmentDisplayName(m.equip)}（${getEquipmentDisplayDesc(m.equip)}）`
+                : '装備なし';
+
             card.innerHTML = `
                 <div id="${visualId}" class="flex-shrink-0 w-12 h-12 flex items-center justify-center text-2xl"></div>
                 <div class="flex-1 min-w-0">
-                    <div class="text-xs font-bold text-amber-200">${m.name}</div>
+                    <div class="flex items-center justify-between">
+                        <div class="text-xs font-bold text-amber-200">${m.name}</div>
+                        <div class="text-[8px] text-purple-300 font-bold flex-shrink-0 ml-1">${auraText}</div>
+                    </div>
                     <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def}</div>
                     <div class="text-[9px] text-gray-500 mt-0.5">技: ${skillNames}</div>
+                    <div class="text-[9px] text-sky-300 mt-0.5 leading-relaxed">🎽 ${equipText}</div>
                 </div>
             `;
             container.appendChild(card);
@@ -541,8 +553,8 @@ function skipKinNejikiSwap() {
 function showKinNejikiSwapNextStep() {
     const selectStep = document.getElementById('kinnejiki-swap-step-select');
     const nextStep = document.getElementById('kinnejiki-swap-step-next');
-    if (selectStep) selectStep.classList.add('hidden');
-    if (nextStep) nextStep.classList.remove('hidden');
+    if (selectStep) { selectStep.classList.add('hidden'); selectStep.style.display = 'none'; }
+    if (nextStep) { nextStep.classList.remove('hidden'); nextStep.style.display = 'flex'; }
 }
 
 // --- 手持ちの全回復と、セット・バトル数カウンタの進行をまとめて行う ---
