@@ -127,6 +127,13 @@ const MONSTER_TEMPLATES = {
         emoji: '🐦‍🔥',
         desc: '身を炎に包んだ伝説の不死鳥。ちから・かしこさの両面で高い水準を誇り、多彩な炎の技を操って相手を焼き尽くすが、丈夫さはやや低い。',
         stats: { maxLife: 200, life: 200, pow: 78, int: 88, hit: 52, spd: 50, def: 34, gutsSpeed: 14 }
+    },
+    gari: {
+        id: 'gari',
+        name: 'ガリ',
+        emoji: '👊',
+        desc: '厳しい修行の末に神聖な力を会得した孤高の武闘家モンスター。ちから・かしこさともに高水準で、拳打と神聖魔法を織り交ぜた多彩な技を操るが、丈夫さはやや薄い。',
+        stats: { maxLife: 210, life: 210, pow: 92, int: 84, hit: 58, spd: 44, def: 30, gutsSpeed: 15 }
     }
 };
 
@@ -272,7 +279,20 @@ const SKILLS_DB = {
     flame_beam: { name: 'フレイムビーム', cost: 25, type: 'int', hitRate: 70, force: 2.1, gutsDown: 4, critBonus: 0, effect: null, desc: '収束させた炎のエネルギーを一直線に放つ。相手GUTS-4' },
     fire_bird: { name: 'ファイヤーバード', cost: 40, type: 'pow', hitRate: 88, force: 1.7, gutsDown: 11, critBonus: 0.08, effect: 'selfcrit_up_3', desc: '炎をまとった火の鳥と化して急降下する。相手GUTS-11。さらに命中した場合、闘志が高まり3ターンの間自身のクリティカル率が25%アップする' },
     fire_wave: { name: 'ファイアウェーブ', cost: 43, type: 'int', hitRate: 87, force: 2.6, gutsDown: 18, critBonus: 0.12, effect: 'dot_mine', desc: '灼熱の炎を大波のようにぶつける豪快な大技。相手GUTS-18。さらに命中した場合、火傷の後遺症で3ターンの間継続ダメージを与える' },
-    ebony_nova: { name: 'エボニーノヴァ', cost: 54, type: 'int', hitRate: 82, force: 3.2, gutsDown: 3, critBonus: 0.16, effect: 'perma_dmg_up_20', desc: '漆黒の炎を極限まで凝縮し解き放つ、この上ない最大の切り札。相手GUTS-3。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' }
+    ebony_nova: { name: 'エボニーノヴァ', cost: 54, type: 'int', hitRate: 82, force: 3.2, gutsDown: 3, critBonus: 0.16, effect: 'perma_dmg_up_20', desc: '漆黒の炎を極限まで凝縮し解き放つ、この上ない最大の切り札。相手GUTS-3。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
+
+    // --- ガリ系統 ---
+    knuckle: { name: 'ナックル', cost: 18, type: 'pow', hitRate: 77, force: 0.85, gutsDown: 4, critBonus: 0, effect: null, desc: '拳を握り込んで叩きつける基本技。相手GUTS-4' },
+    holy_fire: { name: 'ホーリーファイヤー', cost: 31, type: 'int', hitRate: 64, force: 2.15, gutsDown: 12, critBonus: 0.10, effect: 'dot_mine', desc: '神聖な炎を呼び出し相手を焼き尽くす。相手GUTS-12。さらに命中した場合、聖なる火傷で3ターンの間継続ダメージを与える' },
+    god_bless: { name: 'ゴッドブレス', cost: 36, type: 'int', hitRate: 89, force: 1.7, gutsDown: 13, critBonus: 0.14, effect: 'next_force_up', desc: '天よりの祝福を身にまとい相手を打つ高命中技。相手GUTS-13。さらに命中した場合、自身が次に繰り出す技の威力が50%アップする' },
+    press: { name: 'プレス', cost: 25, type: 'pow', hitRate: 57, force: 1.65, gutsDown: 8, critBonus: 0.03, effect: 'def_down_15', desc: '全体重を乗せて相手を押し潰す。相手GUTS-8。さらに命中した場合、3ターンの間相手の丈夫さを15%低下させる' },
+    hurricane: { name: 'ハリケーン', cost: 19, type: 'int', hitRate: 63, force: 1.4, gutsDown: 11, critBonus: 0.04, effect: 'blind_2', desc: '暴風を巻き起こし相手に叩きつける。相手GUTS-11。さらに命中した場合、砂塵で2ターンの間相手の目を眩ませ命中率を下げる' },
+    holy_earth: { name: 'ホーリーアース', cost: 28, type: 'int', hitRate: 66, force: 1.35, gutsDown: 27, critBonus: 0.25, effect: 'def_down_15', desc: '大地の聖なる力を呼び覚まし激しく揺るがす。相手GUTS-27。さらに命中した場合、3ターンの間相手の丈夫さを15%低下させる' },
+    spin_cutter: { name: 'スピンカッター', cost: 22, type: 'pow', hitRate: 71, force: 0.9, gutsDown: 3, critBonus: 0.12, effect: 'hitdown_stack_3', desc: '身を回転させ鋭い一撃を叩き込む。相手GUTS-3。さらに命中した場合、目が眩み相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
+    straight: { name: 'ストレート', cost: 15, type: 'pow', hitRate: 74, force: 0.75, gutsDown: 6, critBonus: 0.08, effect: null, desc: '基本に忠実な真っ直ぐな一撃。相手GUTS-6' },
+    holy_icicle: { name: 'ホーリーアイシクル', cost: 27, type: 'int', hitRate: 78, force: 1.5, gutsDown: 17, critBonus: 0.17, effect: 'paralyze_25', desc: '神聖な氷柱を呼び出し相手を貫く。相手GUTS-17。さらに命中した場合、凍りつき2回の行動の間25%の確率で相手を行動不能にする' },
+    big_spin_cutter: { name: '大スピンカッター', cost: 26, type: 'pow', hitRate: 62, force: 1.15, gutsDown: 18, critBonus: 0.26, effect: 'selfcrit_up_3', desc: '大きく回転しながら渾身の一撃を叩き込む。相手GUTS-18。さらに命中した場合、闘志が高まり3ターンの間自身のクリティカル率が25%アップする' },
+    god_final: { name: 'ゴッドファイナル', cost: 40, type: 'pow', hitRate: 69, force: 2.7, gutsDown: 2, critBonus: 0.14, effect: 'perma_dmg_up_20', desc: '神の力を宿した拳を叩き込む、この上ない最大の切り札。相手GUTS-2。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' }
 };
 
 // --- ステータス獲得逓減システム (Diminishing Returns) ---
@@ -869,7 +889,7 @@ const BOSS_TEMPLATES = {
 // ・KIN_NEJIKI_SPECIES_POOL: 「6体提示」の抽選対象となる全12種族
 // ・KIN_NEJIKI_SKILL_POOL: 各種族が使用できる固有技の候補（ここから4つをランダム抽選）
 // =====================================================
-const KIN_NEJIKI_SPECIES_POOL = ['mochi', 'suezo', 'dino', 'monolith', 'plant', 'kyubi', 'ham', 'arrowhead', 'nendoro', 'henger', 'durahan', 'golem', 'kawazumo', 'hinotori'];
+const KIN_NEJIKI_SPECIES_POOL = ['mochi', 'suezo', 'dino', 'monolith', 'plant', 'kyubi', 'ham', 'arrowhead', 'nendoro', 'henger', 'durahan', 'golem', 'kawazumo', 'hinotori', 'gari'];
 
 const KIN_NEJIKI_SKILL_POOL = {
     mochi:     ['monta', 'mochiki', 'gaccho', 'sakurafubuki', 'cho_rollinmochi', 'cho_mochihou', 'mossama', 'yaezakura'],
@@ -885,7 +905,8 @@ const KIN_NEJIKI_SKILL_POOL = {
     durahan:   ['cho_dash_giri', 'midaretsuki', 'mappufutatsu', 'combo_punch', 'daisharin', 'fujinken', 'raijinken'],
     golem:     ['dekopin', 'shoda', 'claw_nage', 'double_chop', 'guruguru_attack', 'nobiru_punch', 'jishin'],
     kawazumo:  ['harite', 'gappuri_yotsu', 'uwatenage', 'kawazutsuki', 'renzoku_harite', 'tobi_harite', 'kaeru_no_shita', 'dai_kaiten_otoshi', 'kaeru_no_uta', 'bakudan_nage'],
-    hinotori:  ['kuchibashi', 'renzoku_kagizume', 'flame_typhoon', 'otakebi', 'bakuretsu_otoshi', 'flame_line', 'flame_beam', 'fire_bird', 'fire_wave', 'ebony_nova']
+    hinotori:  ['kuchibashi', 'renzoku_kagizume', 'flame_typhoon', 'otakebi', 'bakuretsu_otoshi', 'flame_line', 'flame_beam', 'fire_bird', 'fire_wave', 'ebony_nova'],
+    gari:      ['knuckle', 'holy_fire', 'god_bless', 'press', 'hurricane', 'holy_earth', 'spin_cutter', 'straight', 'holy_icicle', 'big_spin_cutter', 'god_final']
 };
 
 // =====================================================
@@ -993,6 +1014,12 @@ const MONSTER_MOLDS = {
         { skills: ['フレイムタイフーン', '雄叫び', 'フレイムビーム'], equipment: '鷹の目レンズ' },
         { skills: ['爆裂落とし', 'フレイムライン', 'ファイヤーバード'], equipment: '竜牙の爪' },
         { skills: ['ファイアウェーブ', 'エボニーノヴァ', 'ファイヤーバード', 'フレイムタイフーン'], equipment: '不死鳥の羽根' }
+    ],
+    'ガリ': [
+        { skills: ['ナックル', 'ストレート', 'スピンカッター'], equipment: '荒縄のガントレット' },
+        { skills: ['プレス', 'ハリケーン', 'ホーリーファイヤー'], equipment: '真眼のレンズ' },
+        { skills: ['ホーリーアース', 'ホーリーアイシクル', '大スピンカッター'], equipment: '竜牙の爪' },
+        { skills: ['ゴッドファイナル', 'ゴッドブレス', '大スピンカッター', 'ホーリーアース'], equipment: '牙獣のお守り' }
     ]
 };
 
