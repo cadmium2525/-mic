@@ -169,6 +169,20 @@ const MONSTER_TEMPLATES = {
         emoji: '😇',
         desc: '天より遣わされたと伝わる裁きの天使モンスター。かしこさが桁外れに高く、光と裁きを纏った荘厳な詠唱技の数々で相手を圧倒するが、ちから・丈夫さはかなり低い。',
         stats: { maxLife: 195, life: 195, pow: 45, int: 108, hit: 52, spd: 36, def: 28, gutsSpeed: 14 }
+    },
+    illumine: {
+        id: 'illumine',
+        name: 'イルミネ',
+        emoji: '⚔️',
+        desc: '光り輝く無数の武器を自在に操る戦士型モンスター。ちからに優れ、剣・盾・弓・爪など多彩な得物を使い分ける万能の戦闘スタイルを誇るが、かしこさはかなり低い。',
+        stats: { maxLife: 215, life: 215, pow: 96, int: 30, hit: 58, spd: 44, def: 40, gutsSpeed: 14 }
+    },
+    liger: {
+        id: 'liger',
+        name: 'ライガー',
+        emoji: '🐯',
+        desc: 'ライオンと虎の力を併せ持つ俊敏な猛獣モンスター。ちからに優れ、鋭い爪と牙による接近戦に加え、雷や冷気を操る技も操る。動きは非常に俊敏だが、丈夫さはやや低め。',
+        stats: { maxLife: 200, life: 200, pow: 92, int: 70, hit: 50, spd: 62, def: 36, gutsSpeed: 15 }
     }
 };
 
@@ -391,7 +405,37 @@ const SKILLS_DB = {
     shiten_no_tsurugi_yo_oritate: { name: '熾天の剣よ降り立て', cost: 42, type: 'int', hitRate: 80, force: 1.75, gutsDown: 25, critBonus: 0.11, effect: 'def_down_15', desc: '天より舞い降りる熾天使の剣を叩きつける。相手GUTS-25。さらに命中した場合、聖剣の衝撃で3ターンの間相手の丈夫さを15%低下させる' },
     seiya_no_kane_yo_narihibike: { name: '聖夜の鐘よ鳴響け', cost: 43, type: 'int', hitRate: 72, force: 2.35, gutsDown: 20, critBonus: 0.11, effect: 'confuse_30', desc: '荘厳な鐘の音を鳴り響かせ精神を揺さぶる。相手GUTS-20。さらに命中した場合、3回の行動の間30%の確率で相手を混乱させる' },
     inore_rinne_no_wa_yo: { name: '祈れ輪廻の環よ', cost: 45, type: 'int', hitRate: 60, force: 2.6, gutsDown: 20, critBonus: 0.11, effect: 'shield_self_20pct', desc: '輪廻転生の環を呼び覚まし絶大な力を叩きつける。相手GUTS-20。さらに命中した場合、自身の最大ライフの20%に相当するシールドを展開する' },
-    ten_no_jihi_yo_shimesareyo: { name: '天の慈悲よ示されよ', cost: 50, type: 'int', hitRate: 72, force: 2.7, gutsDown: 20, critBonus: 0.07, effect: 'perma_dmg_up_20', desc: '天の慈悲そのものを解き放つ、この上ない最大の切り札。相手GUTS-20。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' }
+    ten_no_jihi_yo_shimesareyo: { name: '天の慈悲よ示されよ', cost: 50, type: 'int', hitRate: 72, force: 2.7, gutsDown: 20, critBonus: 0.07, effect: 'perma_dmg_up_20', desc: '天の慈悲そのものを解き放つ、この上ない最大の切り札。相手GUTS-20。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
+
+    // --- イルミネ系統 ---
+    plasma: { name: 'プラズマ', cost: 13, type: 'pow', hitRate: 100, force: 0.15, gutsDown: 3, critBonus: 0.06, effect: null, desc: '体内で生成した電光を放つ、回避を完全に無視して【必中】する基本技。相手GUTS-3' },
+    shield_bash: { name: 'シールドバッシュ', cost: 20, type: 'pow', hitRate: 58, force: 1.1, gutsDown: 3, critBonus: 0.10, effect: 'def_down_15', desc: '盾を叩きつけて相手の体勢を崩す。相手GUTS-3。さらに命中した場合、3ターンの間相手の丈夫さを15%低下させる' },
+    straight_punch: { name: 'ストレート', cost: 24, type: 'pow', hitRate: 87, force: 1.45, gutsDown: 16, critBonus: 0, effect: null, desc: '基本に忠実な高命中の一直線の拳。相手GUTS-16' },
+    venom_edge: { name: 'ヴェノムエッジ', cost: 17, type: 'pow', hitRate: 70, force: 1.05, gutsDown: 3, critBonus: 0.10, effect: 'dot_mine', desc: '毒を纏った刃で斬りつける。相手GUTS-3。さらに命中した場合、毒による傷跡で3ターンの間継続ダメージを与える' },
+    assassin_claw: { name: 'アサシンクロウ', cost: 28, type: 'pow', hitRate: 80, force: 1.5, gutsDown: 20, critBonus: 0.16, effect: 'selfcrit_up_3', desc: '暗殺者の如く急所を狙う鋭い爪撃。相手GUTS-20。さらに命中した場合、研ぎ澄まされた殺気で3ターンの間自身のクリティカル率が25%アップする' },
+    morning_star: { name: 'モーニングスター', cost: 27, type: 'pow', hitRate: 58, force: 1.65, gutsDown: 4, critBonus: 0.06, effect: 'def_down_15', desc: '棘のついた鉄球を叩きつける豪快な一撃。相手GUTS-4。さらに命中した場合、3ターンの間相手の丈夫さを15%低下させる' },
+    arcana_flare: { name: 'アルカナフレア', cost: 29, type: 'int', hitRate: 60, force: 1.4, gutsDown: 30, critBonus: 0.06, effect: 'blind_2', desc: '神秘の紋章から閃光を放つ唯一の魔法技。相手GUTS-30。さらに命中した場合、まばゆい光で2ターンの間相手の目を眩ませ命中率を下げる' },
+    assault_arrow: { name: 'アサルトアロー', cost: 33, type: 'pow', hitRate: 75, force: 1.75, gutsDown: 7, critBonus: 0.16, effect: 'hitdown_stack_3', desc: '矢の連射で相手を蜂の巣にする。相手GUTS-7。さらに命中した場合、視界を乱され相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
+    buster_sword: { name: 'バスターソード', cost: 41, type: 'pow', hitRate: 80, force: 1.15, gutsDown: 16, critBonus: 0.22, effect: 'next_force_up', desc: '巨大な剣を振りかぶり力を溜めて叩きつける。相手GUTS-16。さらに命中した場合、自身が次に繰り出す技の威力が50%アップする' },
+    ars_magna: { name: 'アルスマグナ', cost: 35, type: 'pow', hitRate: 92, force: 1.7, gutsDown: 3, critBonus: 0.06, effect: 'weaken_pow_int', desc: '大いなる業を体現する高命中の一撃。相手GUTS-3。さらに命中した場合、力を封じられ3ターンの間相手の「ちから」「かしこさ」が10%低下する' },
+    blade_dance: { name: 'ブレードダンス', cost: 38, type: 'pow', hitRate: 92, force: 1.35, gutsDown: 30, critBonus: 0.13, effect: 'selfcrit_up_3', desc: '舞うように剣を振るう高命中の連続攻撃。相手GUTS-30。さらに命中した場合、研ぎ澄まされた集中力で3ターンの間自身のクリティカル率が25%アップする' },
+    requiem_end: { name: 'レクイエムエンド', cost: 46, type: 'pow', hitRate: 75, force: 2.6, gutsDown: 20, critBonus: 0.19, effect: 'perma_dmg_up_20', desc: '全てを終わらせる鎮魂の一撃、この上ない最大の切り札。相手GUTS-20。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
+    mirage_claw: { name: 'ミラージュクロウ', cost: 45, type: 'pow', hitRate: 97, force: 1.85, gutsDown: 30, critBonus: 0.16, effect: 'guaranteed_dodge_next', desc: '陽炎の如き残像を纏った高命中の爪撃。相手GUTS-30。さらに命中した場合、残像に紛れ次に受ける敵の攻撃を確実に回避する' },
+    crimson_nova: { name: 'クリムゾンノヴァ', cost: 43, type: 'pow', hitRate: 80, force: 1.58, gutsDown: 16, critBonus: 0.10, effect: 'paralyze_25', desc: '深紅の爆光を解き放つ大爆発。相手GUTS-16。さらに命中した場合、爆風の衝撃で2回の行動の間25%の確率で相手を行動不能にする' },
+
+    // --- ライガー系統 ---
+    liger_hikkaki: { name: 'ひっかき', cost: 10, type: 'pow', hitRate: 80, force: 0.5, gutsDown: 3, critBonus: 0, effect: null, desc: '鋭い爪で素早く引っかく基本技。相手GUTS-3' },
+    liger_kamitsuki: { name: 'かみつき', cost: 16, type: 'pow', hitRate: 70, force: 0.85, gutsDown: 3, critBonus: 0.02, effect: 'dot_mine', desc: '鋭い牙で深く噛みつく。相手GUTS-3。さらに命中した場合、噛み傷から3ターンの間継続ダメージを与える' },
+    body_slam: { name: '体当たり', cost: 17, type: 'pow', hitRate: 92, force: 1.1, gutsDown: 3, critBonus: 0.04, effect: null, desc: '全体重を乗せて突撃する高命中の基本技。相手GUTS-3' },
+    raigeki: { name: '雷撃', cost: 18, type: 'int', hitRate: 70, force: 0.8, gutsDown: 25, critBonus: 0.06, effect: 'paralyze_25', desc: '全身に纏った電気を撃ち放つ。相手GUTS-25。さらに命中した場合、感電により2回の行動の間25%の確率で相手を行動不能にする' },
+    one_two: { name: 'ワンツー', cost: 19, type: 'pow', hitRate: 58, force: 1.45, gutsDown: 3, critBonus: 0.04, effect: 'hitdown_stack_3', desc: '素早い両前脚の連続攻撃。相手GUTS-3。さらに命中した場合、目にもとまらぬ連撃で相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
+    reikidan: { name: '冷気弾', cost: 24, type: 'int', hitRate: 48, force: 1.05, gutsDown: 7, critBonus: 0.15, effect: 'def_down_15', desc: '極寒の冷気を凝縮した弾を放つ。相手GUTS-7。さらに命中した場合、体が凍りつき3ターンの間相手の丈夫さを15%低下させる' },
+    kagegeki: { name: '影撃', cost: 23, type: 'pow', hitRate: 80, force: 0.75, gutsDown: 4, critBonus: 0.15, effect: 'blind_2', desc: '影に紛れ死角から繰り出す一撃。相手GUTS-4。さらに命中した場合、闇に紛れた一撃で2ターンの間相手の目を眩ませ命中率を下げる' },
+    cho_raigeki: { name: '超雷撃', cost: 27, type: 'int', hitRate: 70, force: 1.35, gutsDown: 30, critBonus: 0.04, effect: 'confuse_30', desc: '全身全霊で放つ強化された雷撃。相手GUTS-30。さらに命中した場合、神経を焼かれ3回の行動の間30%の確率で相手を混乱させる' },
+    kuuchu_kaiten_attack: { name: '空中回転アタック', cost: 26, type: 'pow', hitRate: 100, force: 1.58, gutsDown: 7, critBonus: 0.10, effect: 'self_dizzy', desc: '空高く跳躍し回転しながら急襲する【必中】技。相手GUTS-7。ただし勢い余って自身も目を回し、次の1ターン自身の命中率が低下する' },
+    combination_liger: { name: 'コンビネーション', cost: 30, type: 'pow', hitRate: 60, force: 1.7, gutsDown: 4, critBonus: 0.10, effect: 'def_down_15', desc: '爪と牙を織り交ぜた連続コンビネーション攻撃。相手GUTS-4。さらに命中した場合、削られた守りにより3ターンの間相手の丈夫さを15%低下させる' },
+    liger_raijinken: { name: '雷神剣', cost: 35, type: 'int', hitRate: 70, force: 2.2, gutsDown: 20, critBonus: 0.15, effect: 'weaken_pow_int', desc: '雷神の力を宿した爪牙による渾身の一撃。相手GUTS-20。さらに命中した場合、力を封じられ3ターンの間相手の「ちから」「かしこさ」が10%低下する' },
+    rakurai_kyoumei: { name: '落雷共鳴', cost: 50, type: 'int', hitRate: 80, force: 2.6, gutsDown: 4, critBonus: 0.15, effect: 'perma_dmg_up_20', desc: '大地に落雷を呼び、その衝撃を全身で共鳴させ叩き込む、この上ない最大の切り札。相手GUTS-4。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' }
 };
 
 // --- ステータス獲得逓減システム (Diminishing Returns) ---
@@ -989,7 +1033,7 @@ const BOSS_TEMPLATES = {
 // ・KIN_NEJIKI_SPECIES_POOL: 「6体提示」の抽選対象となる全12種族
 // ・KIN_NEJIKI_SKILL_POOL: 各種族が使用できる固有技の候補（ここから4つをランダム抽選）
 // =====================================================
-const KIN_NEJIKI_SPECIES_POOL = ['mochi', 'suezo', 'dino', 'monolith', 'plant', 'kyubi', 'ham', 'arrowhead', 'nendoro', 'henger', 'durahan', 'golem', 'kawazumo', 'hinotori', 'gari', 'metalner', 'kijin', 'ghost', 'gel', 'ark'];
+const KIN_NEJIKI_SPECIES_POOL = ['mochi', 'suezo', 'dino', 'monolith', 'plant', 'kyubi', 'ham', 'arrowhead', 'nendoro', 'henger', 'durahan', 'golem', 'kawazumo', 'hinotori', 'gari', 'metalner', 'kijin', 'ghost', 'gel', 'ark', 'illumine', 'liger'];
 
 const KIN_NEJIKI_SKILL_POOL = {
     mochi:     ['monta', 'mochiki', 'gaccho', 'sakurafubuki', 'cho_rollinmochi', 'cho_mochihou', 'mossama', 'yaezakura'],
@@ -1011,7 +1055,9 @@ const KIN_NEJIKI_SKILL_POOL = {
     kijin:     ['zutsuki', 'onite', 'nagetobashi', 'onitsume', 'kijin_ranbu', 'chiretsuzan', 'onikokushou', 'ashura', 'rasetsu', 'rashomon'],
     ghost:     ['piko_hammer', 'taiatari', 'ohpunch', 'combination', 'odokasu', 'dokuro_beam', 'bikkuri_dokuro', 'card', 'ohki_otoshimono', 'ghost_flash'],
     gel:       ['tsukisashi', 'kushizashi', 'mana_drain', 'muchi', 'g_cube', 'gel_press', 'hae_tataki', 'parabola_beam', 'cho_parabola_beam', 'koma_attack', 'taihou', 'gel_copter'],
-    ark:       ['waga_hitomi', 'sekai_wo_yurase', 'tobe_shinritsu_no_yaiba', 'shinkou_yo_kegare_wo_harae', 'ima_koso_shin_naru_mezame', 'aoki_ibara_yo_toga_wo_ugate', 'sabaki_no_hikari_yo_kudare', 'shuuen_ni_sukui_wo_ataeyo', 'shiten_no_tsurugi_yo_oritate', 'seiya_no_kane_yo_narihibike', 'inore_rinne_no_wa_yo', 'ten_no_jihi_yo_shimesareyo']
+    ark:       ['waga_hitomi', 'sekai_wo_yurase', 'tobe_shinritsu_no_yaiba', 'shinkou_yo_kegare_wo_harae', 'ima_koso_shin_naru_mezame', 'aoki_ibara_yo_toga_wo_ugate', 'sabaki_no_hikari_yo_kudare', 'shuuen_ni_sukui_wo_ataeyo', 'shiten_no_tsurugi_yo_oritate', 'seiya_no_kane_yo_narihibike', 'inore_rinne_no_wa_yo', 'ten_no_jihi_yo_shimesareyo'],
+    illumine:  ['plasma', 'shield_bash', 'straight_punch', 'venom_edge', 'assassin_claw', 'morning_star', 'arcana_flare', 'assault_arrow', 'buster_sword', 'ars_magna', 'blade_dance', 'requiem_end', 'mirage_claw', 'crimson_nova'],
+    liger:     ['liger_hikkaki', 'liger_kamitsuki', 'body_slam', 'raigeki', 'one_two', 'reikidan', 'kagegeki', 'cho_raigeki', 'kuuchu_kaiten_attack', 'combination_liger', 'liger_raijinken', 'rakurai_kyoumei']
 };
 
 // =====================================================
@@ -1155,6 +1201,18 @@ const MONSTER_MOLDS = {
         { skills: ['神光よ汚れを祓え', '今こそ真なる目醒め', '蒼き荊よ咎を穿て', '裁きの光よ下れ'], equipment: '賢者の指輪' },
         { skills: ['裁きの光よ下れ', '終焉に救いを与えよ', '熾天の剣よ降り立て', '聖夜の鐘よ鳴響け'], equipment: '真眼のレンズ' },
         { skills: ['祈れ輪廻の環よ', '天の慈悲よ示されよ', '熾天の剣よ降り立て', '終焉に救いを与えよ'], equipment: '大賢者の冠' }
+    ],
+    'イルミネ': [
+        { skills: ['プラズマ', 'シールドバッシュ', 'ヴェノムエッジ', 'ストレート'], equipment: '荒縄のガントレット' },
+        { skills: ['アサシンクロウ', 'モーニングスター', 'ヴェノムエッジ', 'ストレート'], equipment: '鷹の目レンズ' },
+        { skills: ['アサルトアロー', 'バスターソード', 'アルカナフレア', 'アサシンクロウ'], equipment: '真眼のレンズ' },
+        { skills: ['レクイエムエンド', 'ミラージュクロウ', 'ブレードダンス', 'アルスマグナ'], equipment: '竜牙の爪' }
+    ],
+    'ライガー': [
+        { skills: ['ひっかき', 'かみつき', '体当たり', 'ワンツー'], equipment: '荒縄のガントレット' },
+        { skills: ['体当たり', '影撃', '雷撃', 'コンビネーション'], equipment: '鷹の目レンズ' },
+        { skills: ['冷気弾', '超雷撃', '空中回転アタック', 'コンビネーション'], equipment: '真眼のレンズ' },
+        { skills: ['落雷共鳴', '雷神剣', '超雷撃', '空中回転アタック'], equipment: '竜牙の爪' }
     ]
 };
 
