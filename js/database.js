@@ -141,6 +141,34 @@ const MONSTER_TEMPLATES = {
         emoji: '🤖',
         desc: '全身を鋼のような金属質の肉体で覆った拳法家モンスター。ちからと丈夫さに優れ、変幻自在の掌打で相手を翻弄するが、かしこさはやや低め。',
         stats: { maxLife: 225, life: 225, pow: 90, int: 46, hit: 56, spd: 36, def: 58, gutsSpeed: 13 }
+    },
+    kijin: {
+        id: 'kijin',
+        name: 'キジン',
+        emoji: '👹',
+        desc: '鬼神の名を冠する怒りの戦鬼。並外れたちからと丈夫さを誇り、鬼気迫る技の数々で相手を圧倒するが、かしこさはほとんど持ち合わせていない。',
+        stats: { maxLife: 220, life: 220, pow: 102, int: 20, hit: 55, spd: 42, def: 52, gutsSpeed: 15 }
+    },
+    ghost: {
+        id: 'ghost',
+        name: 'ゴースト',
+        emoji: '👻',
+        desc: '悪戯好きな幽霊モンスター。かしこさに優れ、驚かしや呪いを絡めた多彩な技で相手を翻弄するが、丈夫さは低め。',
+        stats: { maxLife: 170, life: 170, pow: 65, int: 80, hit: 60, spd: 58, def: 24, gutsSpeed: 16 }
+    },
+    gel: {
+        id: 'gel',
+        name: 'ゲル',
+        emoji: '🍮',
+        desc: 'ぷるぷると波打つ半透明の粘性生命体。ちから・かしこさともに高水準で、突き刺しから熱線・砲撃まで多彩な技を繰り出すが、重く粘つく体のため動きは非常に鈍い。',
+        stats: { maxLife: 245, life: 245, pow: 90, int: 88, hit: 46, spd: 22, def: 58, gutsSpeed: 13 }
+    },
+    ark: {
+        id: 'ark',
+        name: 'アーク',
+        emoji: '😇',
+        desc: '天より遣わされたと伝わる裁きの天使モンスター。かしこさが桁外れに高く、光と裁きを纏った荘厳な詠唱技の数々で相手を圧倒するが、ちから・丈夫さはかなり低い。',
+        stats: { maxLife: 195, life: 195, pow: 45, int: 108, hit: 52, spd: 36, def: 28, gutsSpeed: 14 }
     }
 };
 
@@ -311,7 +339,59 @@ const SKILLS_DB = {
     twin_shoda: { name: 'ツイン掌打', cost: 28, type: 'pow', hitRate: 87, force: 1.7, gutsDown: 17, critBonus: 0.13, effect: 'selfcrit_up_3', desc: '両の掌を同時に打ち込む高命中の連撃。相手GUTS-17。さらに命中した場合、闘志が高まり3ターンの間自身のクリティカル率が25%アップする' },
     meta_beam: { name: 'メタビーム', cost: 22, type: 'int', hitRate: 78, force: 1.5, gutsDown: 11, critBonus: 0.03, effect: null, desc: '金属質の体内で収束させたエネルギーを放つ。相手GUTS-11' },
     sho_henka: { name: '小変化', cost: 25, type: 'pow', hitRate: 69, force: 1.1, gutsDown: 12, critBonus: 0.04, effect: 'next_force_up', desc: '体の一部を金属質に変化させ力を溜める。相手GUTS-12。さらに命中した場合、自身が次に繰り出す技の威力が50%アップする' },
-    taikyoku_henka: { name: '太極変化', cost: 38, type: 'pow', hitRate: 72, force: 2.6, gutsDown: 23, critBonus: 0.17, effect: 'perma_dmg_up_20', desc: '全身を極限まで金属化させ渾身の一撃を放つ、この上ない最大の切り札。相手GUTS-23。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' }
+    taikyoku_henka: { name: '太極変化', cost: 38, type: 'pow', hitRate: 72, force: 2.6, gutsDown: 23, critBonus: 0.17, effect: 'perma_dmg_up_20', desc: '全身を極限まで金属化させ渾身の一撃を放つ、この上ない最大の切り札。相手GUTS-23。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
+
+    // --- キジン系統 ---
+    zutsuki: { name: '頭突き', cost: 16, type: 'pow', hitRate: 70, force: 0.85, gutsDown: 4, critBonus: 0, effect: null, desc: '角を生やした頭で相手に突きかかる基本技。相手GUTS-4' },
+    onite: { name: '鬼手', cost: 24, type: 'pow', hitRate: 64, force: 1.35, gutsDown: 12, critBonus: 0.12, effect: 'def_down_15', desc: '鬼の如き巨大な手で相手を鷲掴みにする。相手GUTS-12。さらに命中した場合、3ターンの間相手の丈夫さを15%低下させる' },
+    nagetobashi: { name: '投げ飛ばし', cost: 30, type: 'pow', hitRate: 72, force: 1.65, gutsDown: 22, critBonus: 0.09, effect: 'paralyze_25', desc: '相手を掴み上げ力任せに投げ飛ばす。相手GUTS-22。さらに命中した場合、強い衝撃で2回の行動の間25%の確率で相手を行動不能にする' },
+    onitsume: { name: '鬼爪', cost: 20, type: 'pow', hitRate: 69, force: 1.1, gutsDown: 7, critBonus: 0.13, effect: 'hitdown_stack_3', desc: '鋭く伸びた鬼の爪で相手を切り裂く。相手GUTS-7。さらに命中した場合、目が眩み相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
+    kijin_ranbu: { name: '鬼神乱舞', cost: 32, type: 'pow', hitRate: 78, force: 1.75, gutsDown: 18, critBonus: 0.17, effect: 'selfcrit_up_3', desc: '鬼神の如く舞い乱れながら連続で斬りつける。相手GUTS-18。さらに命中した場合、闘志が高まり3ターンの間自身のクリティカル率が25%アップする' },
+    chiretsuzan: { name: '地裂斬', cost: 22, type: 'pow', hitRate: 76, force: 1.2, gutsDown: 11, critBonus: 0.10, effect: 'dot_mine', desc: '大地を切り裂くほどの一閃を放つ。相手GUTS-11。さらに命中した場合、深い傷跡から3ターンの間継続ダメージを与える' },
+    onikokushou: { name: '鬼哭衝', cost: 28, type: 'pow', hitRate: 71, force: 1.5, gutsDown: 23, critBonus: 0.16, effect: 'weaken_pow_int', desc: '鬼が哭くような咆哮とともに突きを繰り出す。相手GUTS-23。さらに命中した場合、3ターンの間相手の「ちから」「かしこさ」が10%低下する' },
+    ashura: { name: '阿修羅', cost: 34, type: 'pow', hitRate: 79, force: 2.2, gutsDown: 16, critBonus: 0.12, effect: 'next_force_up', desc: '阿修羅の如き形相で幾多の拳を叩き込む。相手GUTS-16。さらに命中した場合、自身が次に繰り出す技の威力が50%アップする' },
+    rasetsu: { name: '羅刹', cost: 25, type: 'pow', hitRate: 59, force: 1.6, gutsDown: 3, critBonus: 0, effect: 'blind_2', desc: '羅刹の恐ろしい形相で相手を威圧しながら斬りつける。相手GUTS-3。さらに命中した場合、恐怖で2ターンの間相手の目を眩ませ命中率を下げる' },
+    rashomon: { name: '羅生門', cost: 42, type: 'pow', hitRate: 77, force: 2.8, gutsDown: 21, critBonus: 0.17, effect: 'perma_dmg_up_20', desc: '羅生門の鬼の如く渾身の一刀を振り下ろす、この上ない最大の切り札。相手GUTS-21。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
+
+    // --- ゴースト系統 ---
+    piko_hammer: { name: 'ピコピコハンマー', cost: 13, type: 'pow', hitRate: 58, force: 1.1, gutsDown: 3, critBonus: 0.03, effect: null, desc: 'おもちゃのハンマーで相手をポカポカ叩く基本技。相手GUTS-3' },
+    taiatari: { name: '体当たり', cost: 15, type: 'pow', hitRate: 82, force: 1.25, gutsDown: 4, critBonus: 0, effect: null, desc: '体ごとぶつかっていく基本技。相手GUTS-4' },
+    ohpunch: { name: '大パンチ', cost: 37, type: 'pow', hitRate: 71, force: 2.2, gutsDown: 23, critBonus: 0.06, effect: 'def_down_15', desc: '大きく振りかぶった拳を叩き込む。相手GUTS-23。さらに命中した場合、3ターンの間相手の丈夫さを15%低下させる' },
+    combination: { name: 'コンビネーション', cost: 55, type: 'pow', hitRate: 94, force: 1.28, gutsDown: 24, critBonus: 0.04, effect: 'hitdown_stack_3', desc: '緩急をつけた連続攻撃で相手を翻弄する高命中の大技。相手GUTS-24。さらに命中した場合、目が眩み相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
+    odokasu: { name: 'おどかす', cost: 17, type: 'int', hitRate: 69, force: 0.85, gutsDown: 26, critBonus: 0.09, effect: 'weaken_pow_int', desc: '不気味な姿で相手を脅かす。相手GUTS-26。さらに命中した場合、3ターンの間相手の「ちから」「かしこさ」が10%低下する' },
+    dokuro_beam: { name: 'ドクロビーム', cost: 28, type: 'int', hitRate: 76, force: 1.4, gutsDown: 17, critBonus: 0.13, effect: 'blind_2', desc: '口から放つ髑髏形の怪光線。相手GUTS-17。さらに命中した場合、不気味な光で2ターンの間相手の目を眩ませ命中率を下げる' },
+    bikkuri_dokuro: { name: 'びっくりドクロ', cost: 40, type: 'int', hitRate: 87, force: 2.3, gutsDown: 37, critBonus: 0.25, effect: 'paralyze_25', desc: '突如出現する巨大な髑髏で相手を心底驚かせる。相手GUTS-37。さらに命中した場合、恐怖のあまり2回の行動の間25%の確率で相手を行動不能にする' },
+    card: { name: 'カード', cost: 24, type: 'int', hitRate: 72, force: 1.15, gutsDown: 16, critBonus: 0.12, effect: 'dot_mine', desc: '呪いを込めた一枚のカードを相手に投げつける。相手GUTS-16。さらに命中した場合、呪いの効果で3ターンの間継続ダメージを与える' },
+    ohki_otoshimono: { name: '大きなおとしもの', cost: 33, type: 'int', hitRate: 78, force: 1.7, gutsDown: 21, critBonus: 0.17, effect: 'paralyze_25', desc: '頭上から巨大な物体を落として相手を直撃する。相手GUTS-21。さらに命中した場合、強い衝撃で2回の行動の間25%の確率で相手を行動不能にする' },
+    ghost_flash: { name: 'ゴーストフラッシュ', cost: 48, type: 'int', hitRate: 70, force: 2.75, gutsDown: 28, critBonus: 0.13, effect: 'perma_dmg_up_20', desc: '無数の霊が一斉に光り輝く、この上ない最大の切り札。相手GUTS-28。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
+
+    // --- ゲル系統 ---
+    tsukisashi: { name: '突き刺し', cost: 16, type: 'pow', hitRate: 50, force: 1.1, gutsDown: 3, critBonus: 0.10, effect: null, desc: 'ゲル状の体の一部を尖らせて突き刺す基本技。相手GUTS-3' },
+    kushizashi: { name: 'くし刺し', cost: 17, type: 'pow', hitRate: 70, force: 1.25, gutsDown: 4, critBonus: 0.15, effect: 'dot_mine', desc: '体の複数箇所を尖らせ次々と串刺しにする連続攻撃。相手GUTS-4。さらに命中した場合、深く刺さった傷跡により3ターンの間継続ダメージを与える' },
+    mana_drain: { name: 'マナドレイン', cost: 21, type: 'int', hitRate: 60, force: 1.7, gutsDown: 38, critBonus: 0.10, effect: 'drain_heal', desc: '相手の生命力を根こそぎ吸い取る。相手GUTS-38。さらに与えたダメージの20%だけ自身のライフを回復する' },
+    muchi: { name: 'ムチ', cost: 16, type: 'pow', hitRate: 80, force: 0.5, gutsDown: 3, critBonus: 0, effect: 'hitdown_stack_3', desc: '体を鞭のようにしならせて打ちつける高命中の基本技。相手GUTS-3。さらに命中した場合、鋭い一撃で相手の視界が乱れ命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
+    g_cube: { name: 'G・キューブ', cost: 22, type: 'pow', hitRate: 58, force: 1.65, gutsDown: 12, critBonus: 0.10, effect: 'def_down_15', desc: '体の一部を硬いキューブ状に変形させ叩きつける。相手GUTS-12。さらに命中した場合、強烈な圧迫で3ターンの間相手の丈夫さを15%低下させる' },
+    gel_press: { name: 'ゲルプレス', cost: 40, type: 'pow', hitRate: 88, force: 2.6, gutsDown: 11, critBonus: 0.10, effect: 'self_heal_15pct', desc: '全身を押しつぶすように叩きつける必殺の一撃。相手GUTS-11。さらに命中した場合、押しつぶした相手の養分を吸収し自身のライフを15%回復する' },
+    hae_tataki: { name: 'ハエタタキ', cost: 17, type: 'pow', hitRate: 60, force: 0.8, gutsDown: 25, critBonus: 0, effect: 'selfcrit_up_3', desc: '狙いを定め一撃で仕留めるスワット攻撃。相手GUTS-25。さらに命中した場合、会心の一撃で3ターンの間自身のクリティカル率が25%アップする' },
+    parabola_beam: { name: 'パラボラビーム', cost: 20, type: 'int', hitRate: 90, force: 0.75, gutsDown: 12, critBonus: 0.15, effect: 'blind_2', desc: '体表の反射板でエネルギーを収束させ放つ高命中のビーム。相手GUTS-12。さらに命中した場合、まばゆい反射光で2ターンの間相手の目を眩ませ命中率を下げる' },
+    cho_parabola_beam: { name: '超パラボラビーム', cost: 38, type: 'int', hitRate: 92, force: 1.75, gutsDown: 20, critBonus: 0.24, effect: 'def_down_15', desc: '反射板を最大出力で展開し放つ強化ビーム。相手GUTS-20。さらに命中した場合、防御ごと貫く衝撃で3ターンの間相手の丈夫さを15%低下させる' },
+    koma_attack: { name: 'コマアタック', cost: 20, type: 'pow', hitRate: 90, force: 0.85, gutsDown: 8, critBonus: 0.03, effect: 'self_dizzy', desc: '高速回転しながら体当たりする高命中技。相手GUTS-8。ただし勢い余って自身も目を回し、次の1ターン自身の命中率が低下する' },
+    taihou: { name: '大砲', cost: 33, type: 'int', hitRate: 58, force: 2.7, gutsDown: 7, critBonus: 0.06, effect: 'dot_mine', desc: '体内に溜めたガスを砲弾のように撃ち出す最大出力の一撃。相手GUTS-7。さらに命中した場合、炸裂の破片が突き刺さり3ターンの間継続ダメージを与える' },
+    gel_copter: { name: 'ゲルコプター', cost: 50, type: 'int', hitRate: 88, force: 1.7, gutsDown: 16, critBonus: 0.06, effect: 'perma_dmg_up_20', desc: '体の一部を高速回転させ空高くから急襲する、この上ない最大の切り札。相手GUTS-16。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
+
+    // --- アーク系統 ---
+    waga_hitomi: { name: '我が瞳の真理を見よ', cost: 16, type: 'int', hitRate: 80, force: 0.15, gutsDown: 3, critBonus: 0, effect: 'next_force_up', desc: '瞳に宿す真理の力で相手の弱点を見抜く。相手GUTS-3。さらに命中した場合、自身が次に繰り出す技の威力が50%アップする' },
+    sekai_wo_yurase: { name: '世界を揺らせ', cost: 18, type: 'pow', hitRate: 66, force: 1.25, gutsDown: 3, critBonus: 0.11, effect: 'def_down_15', desc: '大地そのものを揺るがす渾身の一撃。相手GUTS-3。さらに命中した場合、衝撃で3ターンの間相手の丈夫さを15%低下させる' },
+    tobe_shinritsu_no_yaiba: { name: '翔べ震律の刃よ', cost: 21, type: 'int', hitRate: 72, force: 0.5, gutsDown: 16, critBonus: 0.07, effect: 'hitdown_stack_3', desc: '震える法則を纏った不可視の刃を飛ばす。相手GUTS-16。さらに命中した場合、感覚を乱され相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
+    shinkou_yo_kegare_wo_harae: { name: '神光よ汚れを祓え', cost: 22, type: 'int', hitRate: 80, force: 1.1, gutsDown: 7, critBonus: 0.11, effect: 'weaken_pow_int', desc: '清浄な光で相手に宿る穢れを祓い清める。相手GUTS-7。さらに命中した場合、力を封じられ3ターンの間相手の「ちから」「かしこさ」が10%低下する' },
+    ima_koso_shin_naru_mezame: { name: '今こそ真なる目醒め', cost: 26, type: 'int', hitRate: 72, force: 1.45, gutsDown: 16, critBonus: 0.11, effect: 'selfcrit_up_3', desc: '眠っていた真なる力を解き放つ覚醒の一撃。相手GUTS-16。さらに命中した場合、研ぎ澄まされた感覚で3ターンの間自身のクリティカル率が25%アップする' },
+    aoki_ibara_yo_toga_wo_ugate: { name: '蒼き荊よ咎を穿て', cost: 29, type: 'int', hitRate: 72, force: 1.7, gutsDown: 16, critBonus: 0.11, effect: 'dot_mine', desc: '蒼く輝く荊の鎖で相手の罪を貫く。相手GUTS-16。さらに命中した場合、突き刺さった荊により3ターンの間継続ダメージを与える' },
+    sabaki_no_hikari_yo_kudare: { name: '裁きの光よ下れ', cost: 31, type: 'int', hitRate: 60, force: 2.2, gutsDown: 20, critBonus: 0.07, effect: 'paralyze_25', desc: '天より降り注ぐ裁きの光で相手を打ち据える。相手GUTS-20。さらに命中した場合、光に貫かれ2回の行動の間25%の確率で相手を行動不能にする' },
+    shuuen_ni_sukui_wo_ataeyo: { name: '終焉に救いを与えよ', cost: 35, type: 'int', hitRate: 80, force: 2.3, gutsDown: 16, critBonus: 0.04, effect: 'self_heal_15pct', desc: '終わりゆく者にすら救済を与える圧倒的な一撃。相手GUTS-16。さらに命中した場合、救済の奇跡により自身のライフを15%回復する' },
+    shiten_no_tsurugi_yo_oritate: { name: '熾天の剣よ降り立て', cost: 42, type: 'int', hitRate: 80, force: 1.75, gutsDown: 25, critBonus: 0.11, effect: 'def_down_15', desc: '天より舞い降りる熾天使の剣を叩きつける。相手GUTS-25。さらに命中した場合、聖剣の衝撃で3ターンの間相手の丈夫さを15%低下させる' },
+    seiya_no_kane_yo_narihibike: { name: '聖夜の鐘よ鳴響け', cost: 43, type: 'int', hitRate: 72, force: 2.35, gutsDown: 20, critBonus: 0.11, effect: 'confuse_30', desc: '荘厳な鐘の音を鳴り響かせ精神を揺さぶる。相手GUTS-20。さらに命中した場合、3回の行動の間30%の確率で相手を混乱させる' },
+    inore_rinne_no_wa_yo: { name: '祈れ輪廻の環よ', cost: 45, type: 'int', hitRate: 60, force: 2.6, gutsDown: 20, critBonus: 0.11, effect: 'shield_self_20pct', desc: '輪廻転生の環を呼び覚まし絶大な力を叩きつける。相手GUTS-20。さらに命中した場合、自身の最大ライフの20%に相当するシールドを展開する' },
+    ten_no_jihi_yo_shimesareyo: { name: '天の慈悲よ示されよ', cost: 50, type: 'int', hitRate: 72, force: 2.7, gutsDown: 20, critBonus: 0.07, effect: 'perma_dmg_up_20', desc: '天の慈悲そのものを解き放つ、この上ない最大の切り札。相手GUTS-20。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' }
 };
 
 // --- ステータス獲得逓減システム (Diminishing Returns) ---
@@ -370,6 +450,7 @@ function getDamageRank(force, type) {
     if (force >= 1.8) return 'B+';
     if (force >= 1.6) return 'B';
     if (force >= 1.3) return 'C';
+    if (force >= 1.21) return 'D+';
     if (force >= 1.0) return 'D';
     if (force >= 0.7) return 'E';
     if (force >= 0.3) return 'F';
@@ -908,7 +989,7 @@ const BOSS_TEMPLATES = {
 // ・KIN_NEJIKI_SPECIES_POOL: 「6体提示」の抽選対象となる全12種族
 // ・KIN_NEJIKI_SKILL_POOL: 各種族が使用できる固有技の候補（ここから4つをランダム抽選）
 // =====================================================
-const KIN_NEJIKI_SPECIES_POOL = ['mochi', 'suezo', 'dino', 'monolith', 'plant', 'kyubi', 'ham', 'arrowhead', 'nendoro', 'henger', 'durahan', 'golem', 'kawazumo', 'hinotori', 'gari', 'metalner'];
+const KIN_NEJIKI_SPECIES_POOL = ['mochi', 'suezo', 'dino', 'monolith', 'plant', 'kyubi', 'ham', 'arrowhead', 'nendoro', 'henger', 'durahan', 'golem', 'kawazumo', 'hinotori', 'gari', 'metalner', 'kijin', 'ghost', 'gel', 'ark'];
 
 const KIN_NEJIKI_SKILL_POOL = {
     mochi:     ['monta', 'mochiki', 'gaccho', 'sakurafubuki', 'cho_rollinmochi', 'cho_mochihou', 'mossama', 'yaezakura'],
@@ -926,7 +1007,11 @@ const KIN_NEJIKI_SKILL_POOL = {
     kawazumo:  ['harite', 'gappuri_yotsu', 'uwatenage', 'kawazutsuki', 'renzoku_harite', 'tobi_harite', 'kaeru_no_shita', 'dai_kaiten_otoshi', 'kaeru_no_uta', 'bakudan_nage'],
     hinotori:  ['kuchibashi', 'renzoku_kagizume', 'flame_typhoon', 'otakebi', 'bakuretsu_otoshi', 'flame_line', 'flame_beam', 'fire_bird', 'fire_wave', 'ebony_nova'],
     gari:      ['knuckle', 'holy_fire', 'god_bless', 'press', 'hurricane', 'holy_earth', 'spin_cutter', 'straight', 'holy_icicle', 'big_spin_cutter', 'god_final'],
-    metalner:  ['ponken', 'hidarite', 'sunkei', 'senkousho', 'tetsuzankou', 'double_shoda', 'twin_shoda', 'meta_beam', 'sho_henka', 'taikyoku_henka']
+    metalner:  ['ponken', 'hidarite', 'sunkei', 'senkousho', 'tetsuzankou', 'double_shoda', 'twin_shoda', 'meta_beam', 'sho_henka', 'taikyoku_henka'],
+    kijin:     ['zutsuki', 'onite', 'nagetobashi', 'onitsume', 'kijin_ranbu', 'chiretsuzan', 'onikokushou', 'ashura', 'rasetsu', 'rashomon'],
+    ghost:     ['piko_hammer', 'taiatari', 'ohpunch', 'combination', 'odokasu', 'dokuro_beam', 'bikkuri_dokuro', 'card', 'ohki_otoshimono', 'ghost_flash'],
+    gel:       ['tsukisashi', 'kushizashi', 'mana_drain', 'muchi', 'g_cube', 'gel_press', 'hae_tataki', 'parabola_beam', 'cho_parabola_beam', 'koma_attack', 'taihou', 'gel_copter'],
+    ark:       ['waga_hitomi', 'sekai_wo_yurase', 'tobe_shinritsu_no_yaiba', 'shinkou_yo_kegare_wo_harae', 'ima_koso_shin_naru_mezame', 'aoki_ibara_yo_toga_wo_ugate', 'sabaki_no_hikari_yo_kudare', 'shuuen_ni_sukui_wo_ataeyo', 'shiten_no_tsurugi_yo_oritate', 'seiya_no_kane_yo_narihibike', 'inore_rinne_no_wa_yo', 'ten_no_jihi_yo_shimesareyo']
 };
 
 // =====================================================
@@ -952,100 +1037,124 @@ const KIN_NEJIKI_SKILL_POOL = {
 // =====================================================
 const MONSTER_MOLDS = {
     'モッチー': [
-        { skills: ['もんた', 'もちき', 'さくら吹雪'], equipment: '荒縄のガントレット' },
-        { skills: ['ガッチョ', '超ローリンモッチ', '八重ざくら'], equipment: '生命のお守り' },
+        { skills: ['もんた', 'もちき', 'さくら吹雪', 'ガッチョ'], equipment: '荒縄のガントレット' },
+        { skills: ['ガッチョ', '超ローリンモッチ', '八重ざくら', 'さくら吹雪'], equipment: '生命のお守り' },
         { skills: ['さくら吹雪', '超もっち砲', 'もっさま', '八重ざくら'], equipment: '賢者の指輪' },
         { skills: ['もっさま', '超ローリンモッチ', '超もっち砲', '八重ざくら'], equipment: '竜牙の爪' }
     ],
     'スエゾー': [
-        { skills: ['しっぽビンタ', 'なめる', 'かみつき'], equipment: '鷹の目レンズ' },
-        { skills: ['かみつき', '食う', '超熱視線'], equipment: '知恵の首飾り' },
-        { skills: ['なめる', 'サイコキネシス', 'ベロビンタ'], equipment: '真眼のレンズ' },
+        { skills: ['しっぽビンタ', 'なめる', 'かみつき', '食う'], equipment: '鷹の目レンズ' },
+        { skills: ['かみつき', '食う', '超熱視線', 'ベロビンタ'], equipment: '知恵の首飾り' },
+        { skills: ['なめる', 'サイコキネシス', 'ベロビンタ', '超熱視線'], equipment: '真眼のレンズ' },
         { skills: ['サイコキネシス', '歌う', '食う', 'ベロビンタ'], equipment: '大賢者の冠' }
     ],
     'ディノ': [
-        { skills: ['しっぽ', 'かみつき', '砂かけ'], equipment: '荒縄のガントレット' },
-        { skills: ['かみつき投げ', 'ひざげり', '砂かけ'], equipment: '鉄爪の欠片' },
-        { skills: ['炎のたいあたり', 'ひざげり', 'かみつき投げ'], equipment: 'ひび割れた鱗' },
+        { skills: ['しっぽ', 'かみつき', '砂かけ', 'かみつき投げ'], equipment: '荒縄のガントレット' },
+        { skills: ['かみつき投げ', 'ひざげり', '砂かけ', '炎のたいあたり'], equipment: '鉄爪の欠片' },
+        { skills: ['炎のたいあたり', 'ひざげり', 'かみつき投げ', '砂かけ'], equipment: 'ひび割れた鱗' },
         { skills: ['黒ひざコンボ', '炎のたいあたり', 'かみつき投げ', 'ひざげり'], equipment: '竜牙の爪' }
     ],
     'モノリス': [
-        { skills: ['たおれこみ', 'わらわら', 'サケビ声'], equipment: '石の腕輪' },
-        { skills: ['超たおれこみ', 'わらわら', 'オーロラゲート'], equipment: '水鱗のよろい' },
-        { skills: ['サケビ声', 'オーロラゲート', '3連アタック'], equipment: '黒曜の鎧' },
+        { skills: ['たおれこみ', 'わらわら', 'サケビ声', '超たおれこみ'], equipment: '石の腕輪' },
+        { skills: ['超たおれこみ', 'わらわら', 'オーロラゲート', 'サケビ声'], equipment: '水鱗のよろい' },
+        { skills: ['サケビ声', 'オーロラゲート', '3連アタック', 'わらわら'], equipment: '黒曜の鎧' },
         { skills: ['トリオビームZ', '3連アタック', '超たおれこみ', 'オーロラゲート'], equipment: '護りの霊符' }
     ],
     'プラント': [
-        { skills: ['連続根っこ', '種ガン', '花粉'], equipment: '生命のお守り' },
-        { skills: ['コンビネーション', '種マシンガン', 'ドレイン'], equipment: '賢者の指輪' },
-        { skills: ['フラワービーム', 'フェイスドリル', 'ドレイン'], equipment: '大賢者の冠' },
+        { skills: ['連続根っこ', '種ガン', '花粉', 'コンビネーション'], equipment: '生命のお守り' },
+        { skills: ['コンビネーション', '種マシンガン', 'ドレイン', '花粉'], equipment: '賢者の指輪' },
+        { skills: ['フラワービーム', 'フェイスドリル', 'ドレイン', '種マシンガン'], equipment: '大賢者の冠' },
         { skills: ['フラワービーム', 'フェイスドリル', '種マシンガン', 'ドレイン'], equipment: '巨神の心臓' }
     ],
     'キュービ': [
-        { skills: ['ひっかき', '陽炎', '狐火'], equipment: '風切りのお守り' },
-        { skills: ['狐火', '超狐火', 'ゆうわく'], equipment: '幻影のヴェール' },
-        { skills: ['陽炎', '九重神眼', '超狐火'], equipment: '真眼のレンズ' },
+        { skills: ['ひっかき', '陽炎', '狐火', '超狐火'], equipment: '風切りのお守り' },
+        { skills: ['狐火', '超狐火', 'ゆうわく', 'ひっかき'], equipment: '幻影のヴェール' },
+        { skills: ['陽炎', '九重神眼', '超狐火', 'ゆうわく'], equipment: '真眼のレンズ' },
         { skills: ['天河天翔', '超狐火', '九重神眼', 'ゆうわく'], equipment: '大賢者の冠' }
     ],
     'ハム': [
-        { skills: ['ワンツーパンチ', 'ソバット', '頭つき'], equipment: '俊足のアンクレット' },
-        { skills: ['頭つき', '背負い投げ', 'おなら'], equipment: '鉄爪の欠片' },
-        { skills: ['超頭つき', 'マシンガンパンチ', 'おなら'], equipment: '幻影のヴェール' },
+        { skills: ['ワンツーパンチ', 'ソバット', '頭つき', '背負い投げ'], equipment: '俊足のアンクレット' },
+        { skills: ['頭つき', '背負い投げ', 'おなら', 'ソバット'], equipment: '鉄爪の欠片' },
+        { skills: ['超頭つき', 'マシンガンパンチ', 'おなら', '背負い投げ'], equipment: '幻影のヴェール' },
         { skills: ['マシンガンパンチ', '背負い投げ', '超大声', '超頭つき'], equipment: '竜牙の爪' }
     ],
     'アローヘッド': [
-        { skills: ['テイルアタック', 'ズームパンチ', 'ニードルターン'], equipment: '鷹の目レンズ' },
-        { skills: ['ニードルターン', 'Wニードルターン', 'ロケットパンチ'], equipment: '真眼のレンズ' },
-        { skills: ['竜巻アタック', 'テイルブレード', '地雷針'], equipment: 'ひび割れた鱗' },
+        { skills: ['テイルアタック', 'ズームパンチ', 'ニードルターン', 'ロケットパンチ'], equipment: '鷹の目レンズ' },
+        { skills: ['ニードルターン', 'Wニードルターン', 'ロケットパンチ', 'ズームパンチ'], equipment: '真眼のレンズ' },
+        { skills: ['竜巻アタック', 'テイルブレード', '地雷針', 'ニードルターン'], equipment: 'ひび割れた鱗' },
         { skills: ['Wニードルターン', '竜巻アタック', 'ロケットパンチ', 'テイルブレード'], equipment: '黒曜の鎧' }
     ],
     'ネンドロ': [
-        { skills: ['ズームパンチ', 'がん飛ばし', 'マッハパンチ'], equipment: '荒縄のガントレット' },
-        { skills: ['がん飛ばし', 'ボディプレス', 'マッハパンチ'], equipment: '鉄爪の欠片' },
-        { skills: ['めいどのみやげ', 'ボディプレス', 'マッハパンチ'], equipment: '石の腕輪' },
+        { skills: ['ズームパンチ', 'がん飛ばし', 'マッハパンチ', 'ボディプレス'], equipment: '荒縄のガントレット' },
+        { skills: ['がん飛ばし', 'ボディプレス', 'マッハパンチ', 'めいどのみやげ'], equipment: '鉄爪の欠片' },
+        { skills: ['めいどのみやげ', 'ボディプレス', 'マッハパンチ', 'がん飛ばし'], equipment: '石の腕輪' },
         { skills: ['めいどのみやげ', 'マッハパンチ', 'ボディプレス', 'ズームパンチ'], equipment: '竜牙の爪' }
     ],
     'ヘンガー': [
-        { skills: ['Wキック', 'レーザーブレード', 'Wレーザーソード'], equipment: '鷹の目レンズ' },
-        { skills: ['ドリルロケット', 'レーザーカッター', 'Wレーザーソード'], equipment: '知恵の首飾り' },
-        { skills: ['Wドリルロケット', 'ナパームキャノン', 'レーザーカッター'], equipment: '幻影のヴェール' },
+        { skills: ['Wキック', 'レーザーブレード', 'Wレーザーソード', 'レーザーカッター'], equipment: '鷹の目レンズ' },
+        { skills: ['ドリルロケット', 'レーザーカッター', 'Wレーザーソード', 'レーザーブレード'], equipment: '知恵の首飾り' },
+        { skills: ['Wドリルロケット', 'ナパームキャノン', 'レーザーカッター', 'ドリルロケット'], equipment: '幻影のヴェール' },
         { skills: ['ナパームキャノン', 'Wドリルロケット', 'ドリルロケット', 'レーザーカッター'], equipment: '大賢者の冠' }
     ],
     'デュラハン': [
-        { skills: ['超ダッシュ斬り', '乱れ突き', '風神剣'], equipment: '荒縄のガントレット' },
-        { skills: ['乱れ突き', 'コンボパンチ', '風神剣'], equipment: '鉄爪の欠片' },
-        { skills: ['まっぷたつ', '大車輪', '雷神剣'], equipment: '護りの霊符' },
+        { skills: ['超ダッシュ斬り', '乱れ突き', '風神剣', 'コンボパンチ'], equipment: '荒縄のガントレット' },
+        { skills: ['乱れ突き', 'コンボパンチ', '風神剣', '超ダッシュ斬り'], equipment: '鉄爪の欠片' },
+        { skills: ['まっぷたつ', '大車輪', '雷神剣', '乱れ突き'], equipment: '護りの霊符' },
         { skills: ['雷神剣', 'まっぷたつ', 'コンボパンチ', '大車輪'], equipment: '竜牙の爪' }
     ],
     'ゴーレム': [
-        { skills: ['でこぴん', '掌打', 'ダブルチョップ'], equipment: '石の腕輪' },
-        { skills: ['クロー投げ', 'ダブルチョップ', '地震'], equipment: '鉄爪の欠片' },
-        { skills: ['のびーるパンチ', 'ぐるぐるアタック', '地震'], equipment: '黒曜の鎧' },
+        { skills: ['でこぴん', '掌打', 'ダブルチョップ', 'クロー投げ'], equipment: '石の腕輪' },
+        { skills: ['クロー投げ', 'ダブルチョップ', '地震', '掌打'], equipment: '鉄爪の欠片' },
+        { skills: ['のびーるパンチ', 'ぐるぐるアタック', '地震', 'ダブルチョップ'], equipment: '黒曜の鎧' },
         { skills: ['ぐるぐるアタック', 'のびーるパンチ', 'クロー投げ', '地震'], equipment: '巨神の心臓' }
     ],
     'カワズモー': [
-        { skills: ['はり手', 'かわずつき', 'かえるのした'], equipment: '荒縄のガントレット' },
-        { skills: ['がっぷりよつ', '上手投げ', 'かえるのした'], equipment: '石の腕輪' },
-        { skills: ['連続はり手', '飛びはり手', 'ばくだん投げ'], equipment: '黒曜の鎧' },
+        { skills: ['はり手', 'かわずつき', 'かえるのした', 'がっぷりよつ'], equipment: '荒縄のガントレット' },
+        { skills: ['がっぷりよつ', '上手投げ', 'かえるのした', 'はり手'], equipment: '石の腕輪' },
+        { skills: ['連続はり手', '飛びはり手', 'ばくだん投げ', 'かわずつき'], equipment: '黒曜の鎧' },
         { skills: ['大回転落とし', 'かえるのうた', '上手投げ', 'ばくだん投げ'], equipment: '竜牙の爪' }
     ],
     'ヒノトリ': [
-        { skills: ['くちばし', '連続かぎづめ', 'フレイムビーム'], equipment: '荒縄のガントレット' },
-        { skills: ['フレイムタイフーン', '雄叫び', 'フレイムビーム'], equipment: '鷹の目レンズ' },
-        { skills: ['爆裂落とし', 'フレイムライン', 'ファイヤーバード'], equipment: '竜牙の爪' },
+        { skills: ['くちばし', '連続かぎづめ', 'フレイムビーム', '雄叫び'], equipment: '荒縄のガントレット' },
+        { skills: ['フレイムタイフーン', '雄叫び', 'フレイムビーム', '連続かぎづめ'], equipment: '鷹の目レンズ' },
+        { skills: ['爆裂落とし', 'フレイムライン', 'ファイヤーバード', 'フレイムタイフーン'], equipment: '竜牙の爪' },
         { skills: ['ファイアウェーブ', 'エボニーノヴァ', 'ファイヤーバード', 'フレイムタイフーン'], equipment: '不死鳥の羽根' }
     ],
     'ガリ': [
-        { skills: ['ナックル', 'ストレート', 'スピンカッター'], equipment: '荒縄のガントレット' },
-        { skills: ['プレス', 'ハリケーン', 'ホーリーファイヤー'], equipment: '真眼のレンズ' },
-        { skills: ['ホーリーアース', 'ホーリーアイシクル', '大スピンカッター'], equipment: '竜牙の爪' },
+        { skills: ['ナックル', 'ストレート', 'スピンカッター', 'プレス'], equipment: '荒縄のガントレット' },
+        { skills: ['プレス', 'ハリケーン', 'ホーリーファイヤー', 'ゴッドブレス'], equipment: '真眼のレンズ' },
+        { skills: ['ホーリーアース', 'ホーリーアイシクル', '大スピンカッター', 'ハリケーン'], equipment: '竜牙の爪' },
         { skills: ['ゴッドファイナル', 'ゴッドブレス', '大スピンカッター', 'ホーリーアース'], equipment: '牙獣のお守り' }
     ],
     'メタルナー': [
-        { skills: ['ポン拳', '左掌', 'テツざんこう'], equipment: '荒縄のガントレット' },
-        { skills: ['すんけい', 'ダブル掌打', 'メタビーム'], equipment: '石の腕輪' },
-        { skills: ['閃光掌', 'ツイン掌打', '小変化'], equipment: '黒曜の鎧' },
+        { skills: ['ポン拳', '左掌', 'テツざんこう', 'すんけい'], equipment: '荒縄のガントレット' },
+        { skills: ['すんけい', 'ダブル掌打', 'メタビーム', '左掌'], equipment: '石の腕輪' },
+        { skills: ['閃光掌', 'ツイン掌打', '小変化', 'ダブル掌打'], equipment: '黒曜の鎧' },
         { skills: ['太極変化', 'ツイン掌打', '閃光掌', 'すんけい'], equipment: '竜牙の爪' }
+    ],
+    'キジン': [
+        { skills: ['頭突き', '鬼手', '鬼爪', '投げ飛ばし'], equipment: '荒縄のガントレット' },
+        { skills: ['投げ飛ばし', '地裂斬', '鬼哭衝', '鬼爪'], equipment: '石の腕輪' },
+        { skills: ['鬼神乱舞', '羅刹', '阿修羅', '地裂斬'], equipment: '竜牙の爪' },
+        { skills: ['羅生門', '阿修羅', '鬼神乱舞', '鬼哭衝'], equipment: '牙獣のお守り' }
+    ],
+    'ゴースト': [
+        { skills: ['ピコピコハンマー', '体当たり', 'おどかす', 'カード'], equipment: '荒縄のガントレット' },
+        { skills: ['大パンチ', 'カード', 'ドクロビーム', 'おどかす'], equipment: '賢者の指輪' },
+        { skills: ['コンビネーション', '大きなおとしもの', 'びっくりドクロ', 'ドクロビーム'], equipment: '真眼のレンズ' },
+        { skills: ['ゴーストフラッシュ', 'びっくりドクロ', '大きなおとしもの', 'ドクロビーム'], equipment: '大賢者の冠' }
+    ],
+    'ゲル': [
+        { skills: ['突き刺し', 'くし刺し', 'ムチ', 'G・キューブ'], equipment: '荒縄のガントレット' },
+        { skills: ['くし刺し', 'G・キューブ', 'パラボラビーム', 'ハエタタキ'], equipment: '鷹の目レンズ' },
+        { skills: ['マナドレイン', '超パラボラビーム', 'ゲルプレス', 'ハエタタキ'], equipment: '知恵の首飾り' },
+        { skills: ['ゲルコプター', 'ゲルプレス', '超パラボラビーム', '大砲'], equipment: '大賢者の冠' }
+    ],
+    'アーク': [
+        { skills: ['我が瞳の真理を見よ', '世界を揺らせ', '翔べ震律の刃よ', '神光よ汚れを祓え'], equipment: '知恵の首飾り' },
+        { skills: ['神光よ汚れを祓え', '今こそ真なる目醒め', '蒼き荊よ咎を穿て', '裁きの光よ下れ'], equipment: '賢者の指輪' },
+        { skills: ['裁きの光よ下れ', '終焉に救いを与えよ', '熾天の剣よ降り立て', '聖夜の鐘よ鳴響け'], equipment: '真眼のレンズ' },
+        { skills: ['祈れ輪廻の環よ', '天の慈悲よ示されよ', '熾天の剣よ降り立て', '終焉に救いを与えよ'], equipment: '大賢者の冠' }
     ]
 };
 
