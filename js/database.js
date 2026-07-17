@@ -134,6 +134,13 @@ const MONSTER_TEMPLATES = {
         emoji: '👊',
         desc: '厳しい修行の末に神聖な力を会得した孤高の武闘家モンスター。ちから・かしこさともに高水準で、拳打と神聖魔法を織り交ぜた多彩な技を操るが、丈夫さはやや薄い。',
         stats: { maxLife: 210, life: 210, pow: 92, int: 84, hit: 58, spd: 44, def: 30, gutsSpeed: 15 }
+    },
+    metalner: {
+        id: 'metalner',
+        name: 'メタルナー',
+        emoji: '🤖',
+        desc: '全身を鋼のような金属質の肉体で覆った拳法家モンスター。ちからと丈夫さに優れ、変幻自在の掌打で相手を翻弄するが、かしこさはやや低め。',
+        stats: { maxLife: 225, life: 225, pow: 90, int: 46, hit: 56, spd: 36, def: 58, gutsSpeed: 13 }
     }
 };
 
@@ -292,7 +299,19 @@ const SKILLS_DB = {
     straight: { name: 'ストレート', cost: 15, type: 'pow', hitRate: 74, force: 0.75, gutsDown: 6, critBonus: 0.08, effect: null, desc: '基本に忠実な真っ直ぐな一撃。相手GUTS-6' },
     holy_icicle: { name: 'ホーリーアイシクル', cost: 27, type: 'int', hitRate: 78, force: 1.5, gutsDown: 17, critBonus: 0.17, effect: 'paralyze_25', desc: '神聖な氷柱を呼び出し相手を貫く。相手GUTS-17。さらに命中した場合、凍りつき2回の行動の間25%の確率で相手を行動不能にする' },
     big_spin_cutter: { name: '大スピンカッター', cost: 26, type: 'pow', hitRate: 62, force: 1.15, gutsDown: 18, critBonus: 0.26, effect: 'selfcrit_up_3', desc: '大きく回転しながら渾身の一撃を叩き込む。相手GUTS-18。さらに命中した場合、闘志が高まり3ターンの間自身のクリティカル率が25%アップする' },
-    god_final: { name: 'ゴッドファイナル', cost: 40, type: 'pow', hitRate: 69, force: 2.7, gutsDown: 2, critBonus: 0.14, effect: 'perma_dmg_up_20', desc: '神の力を宿した拳を叩き込む、この上ない最大の切り札。相手GUTS-2。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' }
+    god_final: { name: 'ゴッドファイナル', cost: 40, type: 'pow', hitRate: 69, force: 2.7, gutsDown: 2, critBonus: 0.14, effect: 'perma_dmg_up_20', desc: '神の力を宿した拳を叩き込む、この上ない最大の切り札。相手GUTS-2。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
+
+    // --- メタルナー系統 ---
+    ponken: { name: 'ポン拳', cost: 14, type: 'pow', hitRate: 71, force: 0.5, gutsDown: 4, critBonus: 0, effect: null, desc: '素早く突き出す基本の拳打。相手GUTS-4' },
+    hidarite: { name: '左掌', cost: 20, type: 'pow', hitRate: 77, force: 1.05, gutsDown: 7, critBonus: 0.05, effect: null, desc: '左手の掌底で相手を打つ。相手GUTS-7' },
+    sunkei: { name: 'すんけい', cost: 30, type: 'pow', hitRate: 58, force: 1.2, gutsDown: 22, critBonus: 0.08, effect: 'def_down_15', desc: 'わずかな間合いから内部に浸透する衝撃を叩き込む。相手GUTS-22。さらに命中した場合、3ターンの間相手の丈夫さを15%低下させる' },
+    senkousho: { name: '閃光掌', cost: 33, type: 'pow', hitRate: 91, force: 1.15, gutsDown: 37, critBonus: 0.06, effect: 'blind_2', desc: '目にも留まらぬ閃光の如き掌打を繰り出す高命中技。相手GUTS-37。さらに命中した場合、閃光で2ターンの間相手の目を眩ませ命中率を下げる' },
+    tetsuzankou: { name: 'テツざんこう', cost: 18, type: 'pow', hitRate: 70, force: 0.85, gutsDown: 6, critBonus: 0.12, effect: 'paralyze_25', desc: '鋼の体躯を鉄山の如くぶつける渾身の一撃。相手GUTS-6。さらに命中した場合、衝撃で痺れが走り2回の行動の間25%の確率で相手を行動不能にする' },
+    double_shoda: { name: 'ダブル掌打', cost: 24, type: 'pow', hitRate: 73, force: 1.4, gutsDown: 13, critBonus: 0.09, effect: 'hitdown_stack_3', desc: '両手の掌底を連続で叩き込む。相手GUTS-13。さらに命中した場合、目が眩み相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
+    twin_shoda: { name: 'ツイン掌打', cost: 28, type: 'pow', hitRate: 87, force: 1.7, gutsDown: 17, critBonus: 0.13, effect: 'selfcrit_up_3', desc: '両の掌を同時に打ち込む高命中の連撃。相手GUTS-17。さらに命中した場合、闘志が高まり3ターンの間自身のクリティカル率が25%アップする' },
+    meta_beam: { name: 'メタビーム', cost: 22, type: 'int', hitRate: 78, force: 1.5, gutsDown: 11, critBonus: 0.03, effect: null, desc: '金属質の体内で収束させたエネルギーを放つ。相手GUTS-11' },
+    sho_henka: { name: '小変化', cost: 25, type: 'pow', hitRate: 69, force: 1.1, gutsDown: 12, critBonus: 0.04, effect: 'next_force_up', desc: '体の一部を金属質に変化させ力を溜める。相手GUTS-12。さらに命中した場合、自身が次に繰り出す技の威力が50%アップする' },
+    taikyoku_henka: { name: '太極変化', cost: 38, type: 'pow', hitRate: 72, force: 2.6, gutsDown: 23, critBonus: 0.17, effect: 'perma_dmg_up_20', desc: '全身を極限まで金属化させ渾身の一撃を放つ、この上ない最大の切り札。相手GUTS-23。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' }
 };
 
 // --- ステータス獲得逓減システム (Diminishing Returns) ---
@@ -889,7 +908,7 @@ const BOSS_TEMPLATES = {
 // ・KIN_NEJIKI_SPECIES_POOL: 「6体提示」の抽選対象となる全12種族
 // ・KIN_NEJIKI_SKILL_POOL: 各種族が使用できる固有技の候補（ここから4つをランダム抽選）
 // =====================================================
-const KIN_NEJIKI_SPECIES_POOL = ['mochi', 'suezo', 'dino', 'monolith', 'plant', 'kyubi', 'ham', 'arrowhead', 'nendoro', 'henger', 'durahan', 'golem', 'kawazumo', 'hinotori', 'gari'];
+const KIN_NEJIKI_SPECIES_POOL = ['mochi', 'suezo', 'dino', 'monolith', 'plant', 'kyubi', 'ham', 'arrowhead', 'nendoro', 'henger', 'durahan', 'golem', 'kawazumo', 'hinotori', 'gari', 'metalner'];
 
 const KIN_NEJIKI_SKILL_POOL = {
     mochi:     ['monta', 'mochiki', 'gaccho', 'sakurafubuki', 'cho_rollinmochi', 'cho_mochihou', 'mossama', 'yaezakura'],
@@ -906,7 +925,8 @@ const KIN_NEJIKI_SKILL_POOL = {
     golem:     ['dekopin', 'shoda', 'claw_nage', 'double_chop', 'guruguru_attack', 'nobiru_punch', 'jishin'],
     kawazumo:  ['harite', 'gappuri_yotsu', 'uwatenage', 'kawazutsuki', 'renzoku_harite', 'tobi_harite', 'kaeru_no_shita', 'dai_kaiten_otoshi', 'kaeru_no_uta', 'bakudan_nage'],
     hinotori:  ['kuchibashi', 'renzoku_kagizume', 'flame_typhoon', 'otakebi', 'bakuretsu_otoshi', 'flame_line', 'flame_beam', 'fire_bird', 'fire_wave', 'ebony_nova'],
-    gari:      ['knuckle', 'holy_fire', 'god_bless', 'press', 'hurricane', 'holy_earth', 'spin_cutter', 'straight', 'holy_icicle', 'big_spin_cutter', 'god_final']
+    gari:      ['knuckle', 'holy_fire', 'god_bless', 'press', 'hurricane', 'holy_earth', 'spin_cutter', 'straight', 'holy_icicle', 'big_spin_cutter', 'god_final'],
+    metalner:  ['ponken', 'hidarite', 'sunkei', 'senkousho', 'tetsuzankou', 'double_shoda', 'twin_shoda', 'meta_beam', 'sho_henka', 'taikyoku_henka']
 };
 
 // =====================================================
@@ -1020,6 +1040,12 @@ const MONSTER_MOLDS = {
         { skills: ['プレス', 'ハリケーン', 'ホーリーファイヤー'], equipment: '真眼のレンズ' },
         { skills: ['ホーリーアース', 'ホーリーアイシクル', '大スピンカッター'], equipment: '竜牙の爪' },
         { skills: ['ゴッドファイナル', 'ゴッドブレス', '大スピンカッター', 'ホーリーアース'], equipment: '牙獣のお守り' }
+    ],
+    'メタルナー': [
+        { skills: ['ポン拳', '左掌', 'テツざんこう'], equipment: '荒縄のガントレット' },
+        { skills: ['すんけい', 'ダブル掌打', 'メタビーム'], equipment: '石の腕輪' },
+        { skills: ['閃光掌', 'ツイン掌打', '小変化'], equipment: '黒曜の鎧' },
+        { skills: ['太極変化', 'ツイン掌打', '閃光掌', 'すんけい'], equipment: '竜牙の爪' }
     ]
 };
 
