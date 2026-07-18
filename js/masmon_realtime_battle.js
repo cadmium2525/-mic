@@ -5,25 +5,34 @@
 // フェーズ④で構築したマッチング基盤（battle_rooms/{keyword} の
 // player1 / player2 / ハートビート）の上に、実際のターン制バトル同期を実装する。
 //
-// 従来のCPU対戦（masmon_battle.js）との違い：
-//   ・1回の行動（技 or 防御 or アイテム）で即座に相手のターンへ移る
-//     （「攻撃終了」「防御して終了」ボタンは無し）
+// 【行動順バトルエンジン】（js/turn_order.js と連携。masmon_battle.js（CPU戦）と同一方式）
+//   ・両プレイヤーは turnOwner に関係なく「同時に」行動を選択できる
+//     （1ターンの制限時間は REALTIME_TURN_TIME_LIMIT_MS。時間内に選択しない場合は
+//       ガッツで使用可能な技からランダムに自動選択する）
+//   ・選んだ行動は battleState.pendingActions.{player1|player2} にまず書き込まれるだけで、
+//     まだ効果は計算しない
+//   ・両者の pendingActions が揃った瞬間を検知した側のクライアントの transaction が、
+//     その場で行動順（優先度→移動速度→ランダム）を決定し、先攻→後攻の順に効果を計算して
+//     書き込む（＝固定のホストは存在せず、"揃えた"transactionがそのまま解決役になるため、
+//     二重計算にもならず、特定のホストが落ちても止まらない）
 //   ・防御は技一覧の中の1コマンドとして選択する
 //     （被ダメージ軽減のみ。ガッツ回復量の減少ペナルティは無い）
-//   ・双方の行動結果は、行動した側のクライアントが計算し、
-//     Firebase Realtime Database の transaction で書き込むことで同期する
-//     （相手側は listener で結果を受け取って表示するだけ＝二重計算しない）
+//   ・後攻側は、先攻側の行動でガッツを削られた結果、実行時にガッツ不足で
+//     行動できないことがある（CPU戦と同じ仕様）
 //   ・60秒間相手の応答（ハートビート）が無い場合、不戦勝を宣言できる
 //
 // フェーズ⑥：団体戦（3vs3）対応
 //   ・battleState.teams.{player1|player2} = { units: [...], activeIdx } の形式で
 //     個人戦（units長さ1）・団体戦（units長さ最大3）を同じ構造で扱う
 //   ・行動によって場に出ている側のユニットが戦闘不能になった場合、
-//     行動を実行した側のtransaction内で次の生存ユニットへ自動的に交代する
+//     解決役のtransaction内で次の生存ユニットへ自動的に交代する
 //     （CPU団体戦のcheckFaintAndProceedと同等の考え方をtransaction内に内包）
 //   ・両チームとも全滅していない限りバトルは継続し、1回の行動の後は
 //     必ず相手チームの「場に出ているユニット」のターンへ移る
 // =====================================================
+
+// 1ターンあたりの行動選択の制限時間（ミリ秒）。時間切れの場合はランダムな使用可能技を自動選択する。
+const REALTIME_TURN_TIME_LIMIT_MS = 30000;
 
 const REALTIME_BATTLE = {
     active: false,
@@ -36,10 +45,12 @@ const REALTIME_BATTLE = {
     oppLastSeenListener: null,
     oppLastSeen: 0,
     disconnectTimer: null,
+    actionTimerInterval: null,   // 行動選択の制限時間カウントダウン用（1秒毎）
+    autoTimeoutTurnNumber: null, // 自動選択（タイムアウト）を既に行ったturnNumber（二重発火防止）
     cachedState: null,
     actionInProgress: false,
     seenLogKeys: {},          // 二重描画防止
-    lastRenderedTurnOwner: null // 直前に描画した時点のturnOwner（自分のターンへ切り替わった瞬間の検出用）
+    lastCanActTurnNumber: null // 直前に「行動できる状態」として描画したturnNumber（技表示に戻す判定用）
 };
 
 // --- 現在のバトル状態から「場に出ているユニット」を取得するヘルパー ---
@@ -138,6 +149,8 @@ function convertRoomMasmonToRealtimeUnit(masmon) {
         spd: s.spd + equipBonus.spd + auraBonus.spd,
         def: s.def + equipBonus.def + auraBonus.def,
         gutsSpeed: s.gutsSpeed || 14,
+        // 移動速度（行動順決定用。旧セーブデータには存在しない場合があるため種族名から補完する）
+        moveSpeed: getMoveSpeedForMasmon(masmon),
         guts: 50,
         critBonusTurns: 0,
         isDefending: false,
@@ -178,7 +191,6 @@ function getRealtimeEffectiveSkill(unit, skKey) {
 function buildInitialRealtimeBattleState(roomData, ratingInfo) {
     const p1Team = (roomData.player1.selectedTeam || []).map(convertRoomMasmonToRealtimeUnit);
     const p2Team = (roomData.player2.selectedTeam || []).map(convertRoomMasmonToRealtimeUnit);
-    const turnOwner = p2Team[0].spd > p1Team[0].spd ? 'player2' : 'player1';
 
     const p1Items = roomData.player1.items || { mango: 0, kuri: 0, toro: 0 };
     const p2Items = roomData.player2.items || { mango: 0, kuri: 0, toro: 0 };
@@ -188,7 +200,10 @@ function buildInitialRealtimeBattleState(roomData, ratingInfo) {
     return {
         status: 'active',
         battleType: roomData.battleType || (p1Team.length > 1 || p2Team.length > 1 ? 'team' : 'solo'),
-        turnOwner: turnOwner,
+        // 行動順バトルエンジン：両者は同時に行動を選択する（固定のturnOwnerは廃止）。
+        // pendingActions が両方揃った瞬間、揃えた側のtransactionが行動順解決を行う。
+        pendingActions: { player1: null, player2: null },
+        turnDeadline: Date.now() + REALTIME_TURN_TIME_LIMIT_MS,
         turnNumber: 1,
         winner: null,
         winReason: null,
@@ -264,6 +279,13 @@ function attachRealtimeBattleListeners() {
 
     if (REALTIME_BATTLE.disconnectTimer) clearInterval(REALTIME_BATTLE.disconnectTimer);
     REALTIME_BATTLE.disconnectTimer = setInterval(checkOpponentDisconnect, 5000);
+
+    if (REALTIME_BATTLE.actionTimerInterval) clearInterval(REALTIME_BATTLE.actionTimerInterval);
+    REALTIME_BATTLE.actionTimerInterval = setInterval(() => {
+        if (REALTIME_BATTLE.active && REALTIME_BATTLE.cachedState) {
+            updateRealtimeTimerDisplay(REALTIME_BATTLE.cachedState);
+        }
+    }, 1000);
 }
 
 // -----------------------------------------------------
@@ -312,14 +334,19 @@ function renderRealtimeBattleUI(state) {
     const opp = getRealtimeActiveUnit(state, oppSlot);
     const oppOwnerName = state.ownerNames ? state.ownerNames[oppSlot] : '対戦相手';
 
-    const isMyTurn = state.status === 'active' && state.turnOwner === mySlot;
+    const pending = state.pendingActions || {};
+    const myActed = !!pending[mySlot];
+    const oppActed = !!pending[oppSlot];
+    const canAct = state.status === 'active' && !myActed && !REALTIME_BATTLE.actionInProgress;
 
-    // 相手のターン（または対戦開始直後）から自分のターンに切り替わった瞬間だけログを閉じて技表示に戻す。
-    // 自分のターン中に「ログ確認」ボタンで開いた場合はここでは閉じない。
-    if (isMyTurn && REALTIME_BATTLE.lastRenderedTurnOwner !== mySlot) {
+    // 新しいターンになって再び行動できるようになった瞬間だけログを閉じて技表示に戻す。
+    // 自分が行動送信済み（相手を待っている間）に「ログ確認」ボタンで開いた場合はここでは閉じない。
+    if (canAct && REALTIME_BATTLE.lastCanActTurnNumber !== state.turnNumber) {
         hideBattleLog();
     }
-    REALTIME_BATTLE.lastRenderedTurnOwner = state.status === 'active' ? state.turnOwner : null;
+    if (state.status === 'active' && !myActed) {
+        REALTIME_BATTLE.lastCanActTurnNumber = state.turnNumber;
+    }
 
     document.getElementById('battle-turn-counter').textContent = state.turnNumber || 1;
 
@@ -346,23 +373,38 @@ function renderRealtimeBattleUI(state) {
 
     const turnIndicator = document.getElementById('realtime-turn-indicator');
     if (state.status === 'active') {
-        turnIndicator.textContent = isMyTurn ? '🟢 あなたのターン' : '🔴 相手のターン';
-        turnIndicator.className = `text-white font-bold text-[9px] px-1.5 py-0.5 rounded ${isMyTurn ? 'bg-emerald-700' : 'bg-red-900'}`;
+        let label, cls;
+        if (!myActed) {
+            label = '🟢 行動選択中';
+            cls = 'bg-emerald-700';
+        } else if (!oppActed) {
+            label = '⏳ 相手の行動を待っています';
+            cls = 'bg-amber-800';
+        } else {
+            label = '⚔️ 行動を解決中…';
+            cls = 'bg-amber-800';
+        }
+        turnIndicator.textContent = label;
+        turnIndicator.className = `text-white font-bold text-[9px] px-1.5 py-0.5 rounded ${cls}`;
+        turnIndicator.classList.remove('hidden');
     } else {
         turnIndicator.classList.add('hidden');
     }
 
     const myGutsRecovery = 30 + getEquipmentGutsRecoveryBonus(me);
-    document.getElementById('turn-guts-notice').textContent = isMyTurn
-        ? `💡 あなたのターンです！行動を選んでください（GUTS回復:+${myGutsRecovery}）`
-        : `⏳ 対戦相手の行動を待っています…`;
+    document.getElementById('turn-guts-notice').textContent = canAct
+        ? `💡 行動を選んでください（GUTS回復:+${myGutsRecovery}）。両者の選択が揃うと同時に解決されます`
+        : (myActed ? `✅ 行動を送信しました。相手の選択を待っています…` : `⏳ お待ちください…`);
 
     renderRealtimeBattleSkills(state);
     renderRealtimeBattleItems(state);
     updateRealtimeStatusEffectUI(state);
+    syncRealtimeTurnTimer(state);
 
-    // 相手のターンが続いている間だけ切断バナーの判定対象にする
-    if (isMyTurn || state.status !== 'active') {
+    // 自分が既に行動済み（＝相手を待っているだけ）の間だけ、相手の切断バナー判定対象にする
+    if (myActed && state.status === 'active') {
+        // checkOpponentDisconnect() 側で判定するため、ここでは何もしない
+    } else {
         document.getElementById('realtime-disconnect-banner').classList.add('hidden');
     }
 }
@@ -403,6 +445,65 @@ function updateRealtimeStatusEffectUI(state) {
     // 味方（player-status-effect-display）と相手（enemy-status-effect-display）の両方を表示する
     renderSide('player-status-effect-display', me, opp);
     renderSide('enemy-status-effect-display', opp, me);
+}
+
+// -----------------------------------------------------
+// 行動選択の制限時間（カウントダウン表示＋タイムアウト時の自動選択）
+// タイマー本体（setInterval）は attachRealtimeBattleListeners で開始し、
+// 1秒毎に最新の cachedState を見て表示を更新する。
+// -----------------------------------------------------
+function syncRealtimeTurnTimer(state) {
+    updateRealtimeTimerDisplay(state);
+}
+
+function updateRealtimeTimerDisplay(state) {
+    const timerEl = document.getElementById('realtime-action-timer');
+    if (!timerEl || !state) return;
+
+    const mySlot = REALTIME_BATTLE.mySlot;
+    const pending = state.pendingActions || {};
+    const myActed = !!pending[mySlot];
+
+    if (state.status !== 'active' || myActed || !state.turnDeadline) {
+        timerEl.classList.add('hidden');
+        return;
+    }
+
+    const remainingMs = state.turnDeadline - Date.now();
+    const remainingSec = Math.max(0, Math.ceil(remainingMs / 1000));
+    timerEl.classList.remove('hidden');
+    timerEl.textContent = `⏱️ ${remainingSec}`;
+    timerEl.classList.toggle('bg-red-800', remainingSec <= 5);
+    timerEl.classList.toggle('bg-amber-900', remainingSec > 5);
+
+    if (remainingMs <= 0) {
+        triggerRealtimeTurnTimeout(state);
+    }
+}
+
+// --- 制限時間切れ：ガッツで使用可能な技からランダムに自動選択する（無ければ何も行動しない） ---
+function triggerRealtimeTurnTimeout(state) {
+    if (!REALTIME_BATTLE.active) return;
+    if (REALTIME_BATTLE.autoTimeoutTurnNumber === state.turnNumber) return; // 二重発火防止
+    if (REALTIME_BATTLE.actionInProgress) return;
+
+    const mySlot = REALTIME_BATTLE.mySlot;
+    if (state.pendingActions && state.pendingActions[mySlot]) return; // 既に行動済み
+
+    REALTIME_BATTLE.autoTimeoutTurnNumber = state.turnNumber;
+
+    const me = getRealtimeActiveUnit(state, mySlot);
+    const affordable = (me.skills || []).filter(skKey => {
+        const sk = getRealtimeEffectiveSkill(me, skKey);
+        return sk && me.guts >= sk.cost;
+    });
+
+    if (affordable.length === 0) {
+        performRealtimeAction({ kind: 'pass', auto: true });
+        return;
+    }
+    const randomKey = affordable[Math.floor(Math.random() * affordable.length)];
+    performRealtimeAction({ kind: 'skill', key: randomKey, auto: true });
 }
 
 // -----------------------------------------------------
@@ -593,8 +694,7 @@ function renderRealtimeBattleSkills(state) {
     const mySlot = REALTIME_BATTLE.mySlot;
     const me = getRealtimeActiveUnit(state, mySlot);
     const opp = getRealtimeActiveUnit(state, REALTIME_BATTLE.oppSlot);
-    const isMyTurn = state.status === 'active' && state.turnOwner === mySlot && !REALTIME_BATTLE.actionInProgress;
-    const gutsVal = Math.floor(me.guts);
+    const isMyTurn = state.status === 'active' && !(state.pendingActions && state.pendingActions[mySlot]) && !REALTIME_BATTLE.actionInProgress;
     const gutsModsForHit = getGutsModifiers(gutsVal);
 
     me.skills.forEach(skKey => {
@@ -726,7 +826,7 @@ function getRealtimeSwitchCandidates(state) {
 // --- 交代先選択メニューを技一覧エリアに一時的に表示する ---
 function openRealtimeSwitchMenu(state) {
     if (REALTIME_BATTLE.actionInProgress) return;
-    const isMyTurn = state.status === 'active' && state.turnOwner === REALTIME_BATTLE.mySlot;
+    const isMyTurn = state.status === 'active' && !(state.pendingActions && state.pendingActions[REALTIME_BATTLE.mySlot]);
     if (!isMyTurn) return;
 
     const candidates = getRealtimeSwitchCandidates(state);
@@ -810,8 +910,7 @@ function renderRealtimeBattleItems(state) {
     const counts = state.items[mySlot] || { mango: 0, kuri: 0, toro: 0 };
     const initial = state.itemsInitial ? state.itemsInitial[mySlot] : counts;
     const broughtKeys = Object.keys(MASMON_ITEM_DB).filter(key => (initial[key] || 0) > 0);
-    const isMyTurn = state.status === 'active' && state.turnOwner === mySlot && !REALTIME_BATTLE.actionInProgress;
-
+    const isMyTurn = state.status === 'active' && !(state.pendingActions && state.pendingActions[mySlot]) && !REALTIME_BATTLE.actionInProgress;
     container.innerHTML = '';
     container.classList.toggle('hidden', broughtKeys.length === 0);
     if (broughtKeys.length === 0) return;
@@ -872,10 +971,400 @@ function disableRealtimeActionButtons() {
     });
 }
 
+// --- ユニット＋行動 から、TurnOrderResolver に渡す行動情報オブジェクトを作る（リアルタイム対戦用） ---
+// リアルタイム対戦のユニットは stats.xxx ではなく xxx を直接持つフラットな構造のため、
+// masmon_battle.js の buildTurnActionDescriptor とは別に用意している。
+function buildRealtimeTurnActionDescriptor(unit, action) {
+    if (!unit || unit.life <= 0) {
+        return createTurnAction('none', 0, unit ? (unit.moveSpeed || 0) : 0);
+    }
+    const speed = unit.moveSpeed || 0;
+    if (!action) return createTurnAction('none', 0, speed);
+    if (action.kind === 'switch') return createTurnAction('switchOut', 0, speed);
+    if (action.kind === 'item') return createTurnAction('item', 0, speed);
+    if (action.kind === 'defend') return createTurnAction('defend', 0, speed);
+    if (action.kind === 'skill') {
+        const sk = SKILLS_DB[action.key];
+        return createTurnAction('skill', (sk && sk.priority) || 0, speed);
+    }
+    return createTurnAction('none', 0, speed); // 'pass' やタイムアウト時の未行動など
+}
+
+// --- 片方の陣営が戦闘不能になっていないかを判定し、必要なら自動交代／勝敗確定を行う ---
+// 戻り値: バトルが終了した場合は true
+function checkRealtimeFaintAndWin(current, teamSlot, otherSlot, resultLogs) {
+    const team = current.teams[teamSlot];
+    const unit = team.units[team.activeIdx];
+    if (!unit || unit.life > 0) return false;
+
+    resultLogs.push(`💥 ${unit.name} は戦闘不能になった！`);
+    const nextIdx = findFirstAliveIdx(team);
+    if (nextIdx === -1) {
+        current.status = 'finished';
+        current.winner = otherSlot;
+        current.winReason = 'ko';
+        const winnerTeam = current.teams[otherSlot];
+        const winnerUnit = winnerTeam.units[winnerTeam.activeIdx];
+        resultLogs.push(`${winnerUnit ? winnerUnit.name : (current.ownerNames && current.ownerNames[otherSlot])} の勝利！`);
+        return true;
+    }
+
+    team.activeIdx = nextIdx;
+    const newUnit = team.units[nextIdx];
+    const ownerLabel = current.ownerNames ? current.ownerNames[teamSlot] : '相手';
+    resultLogs.push(`${ownerLabel}は【${newUnit.name}】を繰り出した！`);
+    return false;
+}
+
+// --- 1体分の行動を実際に解決する（技効果計算・ガッツ消費・交代・アイテム使用など） ---
+// action は { kind: 'skill'|'defend'|'switch'|'item'|'pass', key?, targetIdx? }
+// ★ ガッツは実行「直前」の値で判定する：
+//    先攻側の行動でガッツを奪われた結果、後攻側がガッツ不足で技を出せなかった、というケースがここで発生する。
+function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, resultLogs) {
+    const actingTeam = current.teams[actingSlot];
+    const otherTeam = current.teams[otherSlot];
+    const me = actingTeam.units[actingTeam.activeIdx];
+    const opp = otherTeam.units[otherTeam.activeIdx];
+    const myItems = current.items[actingSlot];
+
+    if (!me || me.life <= 0) return; // 既に戦闘不能（このターンの前半で倒れた等）
+
+    // 混乱状態（サケビ声などで受けた場合）：このターンは何を選んでも行動に失敗する
+    // 怯み状態（黒ひざコンボ等で受けた場合）：このターンは何を選んでも行動に失敗する
+    if (me.isFlinchedThisTurn) {
+        me.isFlinchedThisTurn = false;
+        resultLogs.push(`😨 ${me.name} は怯んでしまい、行動できなかった！`);
+        return;
+    }
+    if (me.isConfusedThisTurn) {
+        me.isConfusedThisTurn = false;
+        resultLogs.push(`❓ ${me.name} は混乱していて、行動できなかった！`);
+        return;
+    }
+
+    if (!action || action.kind === 'pass' || action.kind === 'none') {
+        if (action && action.reason === 'noguts') {
+            resultLogs.push(`💦 ${me.name} はガッツが足りず、何も行動できなかった！`);
+        }
+        return;
+    }
+
+    if (action.kind === 'skill') {
+        const rawSk = SKILLS_DB[action.key];
+        // ★ 実行直前の再チェック（提出時点では合法でも、先攻の行動でガッツを削られている場合がある）
+        if (!rawSk || !me.skills.includes(action.key) || me.guts < rawSk.cost) {
+            resultLogs.push(`💦 ${me.name} はガッツが足りず、技を繰り出せなかった！`);
+            return;
+        }
+        const sk = getRealtimeEffectiveSkill(me, action.key);
+        const mods = getGutsModifiers(me.guts);
+        me.guts -= sk.cost;
+        resultLogs.push(`${me.name} の【${sk.name}】！`);
+        // 技発動時（命中判定に関わらず）の自己強化効果（アサルトダンス等）
+        applySkillOnUseEffect(me, sk).forEach(msg => resultLogs.push(msg));
+
+        if (sk.type === 'pow' || sk.type === 'int') {
+            const isCertain = sk.hitRate === 100;
+            let hitChance = isCertain ? 100 : Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (me.hit - opp.spd) * 0.5 - getBlindHitPenalty(me)));
+            if (me.isShuchuActive && !isCertain) {
+                hitChance = Math.min(99, hitChance * 1.5);
+            }
+            let isHit;
+            let isGuaranteedDodge = false;
+            if (opp.dodgeNextGuaranteed) {
+                isHit = false;
+                isGuaranteedDodge = true;
+                opp.dodgeNextGuaranteed = false;
+            } else {
+                isHit = isCertain || (Math.random() * 100 < hitChance);
+            }
+
+            // 次技威力アップ（オーロラゲート等）の消費は命中判定に関わらず技を撃った時点で消費する
+            const usedForce = consumeForceBoost(me, sk.force);
+
+            if (isHit) {
+                const isPow = sk.type === 'pow';
+                const attackerStat = getBuffedAttackStat(me, getWeakenedStat(me, isPow ? me.pow : me.int)) * getEquipmentLowLifeAtkMultiplier(me);
+                // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（防御崩し状態を反映）
+                const defenderStat = getDefDownStat(opp, getBuffedDefenseStat(opp, opp.def)) * 1.5;
+                const statCap = Math.max(30, defenderStat * 2.5);
+                const effectiveAttacker = attackerStat > statCap ? statCap + (attackerStat - statCap) * 0.2 : attackerStat;
+                const defenderGutsDefenseMod = getGutsDefenseModifier(opp.guts);
+                const rawDmg = (effectiveAttacker * usedForce * mods.dmgMod) - (defenderStat * 0.35);
+                let damage = Math.floor(Math.max(10, (rawDmg * (0.9 + Math.random() * 0.2)) * defenderGutsDefenseMod));
+
+                let meExtraDmgMsg = "";
+                if (me.isSokojikaraActive) {
+                    damage = Math.floor(damage * 1.5);
+                    meExtraDmgMsg += " (底力×1.5)";
+                }
+                if (me.isShuchuActive) {
+                    damage = Math.floor(damage * 1.2);
+                    meExtraDmgMsg += " (集中×1.2)";
+                }
+                if (me.permaForceBoostActive) {
+                    damage = Math.floor(damage * 1.2);
+                    meExtraDmgMsg += " (天河天翔×1.2)";
+                }
+                if (isAuraAdvantageous(me.aura, opp.aura)) {
+                    damage = Math.floor(damage * 1.5);
+                    meExtraDmgMsg += ` (オーラ相性${AURA_TYPES[me.aura].emoji}→${AURA_TYPES[opp.aura].emoji}×1.5)`;
+                }
+                const monClassMod = getMonClassDamageMultiplier(me.monsterBaseName, opp.monsterBaseName);
+                if (monClassMod !== 1.0) {
+                    damage = Math.floor(damage * monClassMod);
+                    meExtraDmgMsg += monClassMod > 1.0 ? ` (モン類相性有利×${monClassMod})` : ` (モン類相性不利×${monClassMod})`;
+                }
+
+                const critChance = 0.10 + (me.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(me) + getSkillCritBonus(sk);
+                const isCrit = Math.random() < critChance;
+                if (isCrit) damage = Math.floor(damage * 1.5);
+
+                if (opp.isDefending) {
+                    damage = Math.floor(damage / 2);
+                    resultLogs.push(`${opp.name} は防御の構えでダメージを半減した！`);
+                }
+
+                damage = Math.max(1, Math.floor(damage * MASMON_BATTLE_DAMAGE_MULTIPLIER));
+
+                // 九重神眼等のシールドによる被ダメージ吸収
+                const shieldResult = applyShieldAbsorption(opp, damage);
+                damage = shieldResult.finalDamage;
+
+                opp.life = Math.max(0, opp.life - damage);
+                resultLogs.push(isCrit ? `★クリティカル！ ${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}` : `${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}`);
+                if (shieldResult.absorbed > 0) {
+                    resultLogs.push(`🛡️ ${opp.name} のシールドが ${shieldResult.absorbed} のダメージを吸収した！(シールド残量: ${opp.shieldValue})`);
+                }
+
+                // 根性・底力の発動判定（ダメージを受けた側）
+                if (opp.life === 0 && opp.statusEffect === "根性") {
+                    if (Math.random() < 0.50) {
+                        opp.life = 1;
+                        resultLogs.push(`✨ 根性が発動！ ${opp.name} は力尽きず、ライフ 1 で耐え抜いた！`);
+                    }
+                }
+                if (opp.statusEffect === "底力" && !opp.isSokojikaraFired) {
+                    if (opp.life > 0 && opp.life < opp.maxLife * 0.3) {
+                        opp.isSokojikaraFired = true;
+                        opp.isSokojikaraActive = true;
+                        resultLogs.push(`💪 底力が発動！ ${opp.name} は窮地に陥り、次の技のダメージが 1.5 倍に上昇！`);
+                    }
+                }
+                const oppLifesaverLog = checkAndApplyEquipmentLifesaverEffect(opp);
+                if (oppLifesaverLog) resultLogs.push(oppLifesaverLog);
+
+                let finalGutsDown = sk.gutsDown || 0;
+                if (me.isGyakujoActive && finalGutsDown > 0) {
+                    finalGutsDown = Math.floor(finalGutsDown * 1.2);
+                }
+                if (finalGutsDown > 0) {
+                    // 丈夫さ強化：丈夫さが高いほど受けるガッツダウン量を軽減する
+                    // 装備の「被ガッツダウンカット」効果もあわせて軽減する
+                    const mitigatedGutsDown = Math.floor(finalGutsDown * getGutsDownMitigation(opp.def) * (1 - getEquipmentGutsDownCutRate(opp)));
+                    const actualGutsDown = Math.min(opp.guts, mitigatedGutsDown);
+                    opp.guts = Math.max(0, opp.guts - actualGutsDown);
+                    if (actualGutsDown > 0) {
+                        resultLogs.push(`相手のガッツを ${actualGutsDown} 奪った！(現在: ${Math.floor(opp.guts)})`);
+                        // 逆上の発動判定（ガッツを奪われた側）
+                        if (opp.statusEffect === "逆上" && !opp.isGyakujoActive && Math.random() < 0.65) {
+                            opp.isGyakujoActive = true;
+                            resultLogs.push(`💢 逆上が発動！ ${opp.name} のガッツ回復速度と与えるガッツダウン量が 1.2 倍に上昇！`);
+                        }
+                        // ゲルの「マナドレイン」等：奪ったガッツ分だけ自身のガッツを回復する
+                        const gutsDrain = getGutsDrainAmount(sk, actualGutsDown);
+                        if (gutsDrain > 0) {
+                            me.guts = Math.min(100, me.guts + gutsDrain);
+                            resultLogs.push(`🔮 ${me.name} は奪ったガッツを吸収し、自身のガッツが ${gutsDrain} 回復した！(現在: ${Math.floor(me.guts)})`);
+                        }
+                    }
+                }
+
+                // モノリスの技等が持つ追加効果（衰弱／混乱付与／次技威力アップ）
+                applySkillOnHitEffect(me, opp, sk).forEach(msg => resultLogs.push(msg));
+
+                // プラントの「ドレイン」等：与えたダメージの一部を自身のライフに変換
+                const drainHeal = getDrainHealAmount(sk, damage);
+                if (drainHeal > 0) {
+                    me.life = Math.min(me.maxLife, me.life + drainHeal);
+                    resultLogs.push(`🌿 ${me.name} は相手の生命力を吸収し、ライフが ${drainHeal} 回復した！`);
+                }
+
+                me.isSokojikaraActive = false;
+                me.isShuchuActive = false;
+            } else {
+                if (isGuaranteedDodge) {
+                    resultLogs.push(`🌫️ ${opp.name} は陽炎の効果で攻撃を確実に回避した！`);
+                } else {
+                    resultLogs.push(`しかし攻撃はかわされた！`);
+                }
+            }
+        } else if (sk.type === 'buff_pow') {
+            me.pow += 15;
+            resultLogs.push(`${me.name} の闘志がみなぎる！ちからが15アップした！`);
+        } else if (sk.type === 'heal') {
+            const healAmount = Math.floor(me.maxLife * 0.35);
+            me.life = Math.min(me.maxLife, me.life + healAmount);
+            resultLogs.push(`${me.name} は癒された！ライフが ${healAmount} 回復！`);
+        }
+    } else if (action.kind === 'defend') {
+        me.isDefending = true;
+        resultLogs.push(`${me.name} は身を守るため防御の構えを取った！（被ダメ半減／ガッツ回復ペナルティ無し）`);
+    } else if (action.kind === 'switch') {
+        const targetIdx = action.targetIdx;
+        const target = actingTeam.units[targetIdx];
+        if (!target || targetIdx === actingTeam.activeIdx || target.life <= 0) {
+            resultLogs.push(`${me.name} は交代できなかった！`);
+            return;
+        }
+        const prevName = me.name;
+        actingTeam.activeIdx = targetIdx;
+        resultLogs.push(`${prevName} を引っ込め、【${target.name}】を繰り出した！`);
+    } else if (action.kind === 'item') {
+        const key = action.key;
+        if (!myItems || !myItems[key] || myItems[key] <= 0) {
+            resultLogs.push(`${me.name} はアイテムを使えなかった！`);
+            return;
+        }
+        myItems[key]--;
+        const item = MASMON_ITEM_DB[key];
+        if (key === 'mango') {
+            const heal = Math.floor(me.maxLife * 0.25);
+            me.life = Math.min(me.maxLife, me.life + heal);
+            resultLogs.push(`🥭 ${me.name} は【${item.name}】を使った！ライフが ${heal} 回復した！`);
+        } else if (key === 'kuri') {
+            me.critBonusTurns = 3;
+            resultLogs.push(`🌰 ${me.name} は【${item.name}】を使った！3ターンの間クリティカル率が上昇する！`);
+        } else if (key === 'toro') {
+            me.pow += 20;
+            me.int += 20;
+            const selfDmg = Math.floor(me.maxLife * 0.3);
+            me.life = Math.max(0, me.life - selfDmg);
+            resultLogs.push(`🧪 ${me.name} は【${item.name}】を使った！ちから・かしこさが上昇したが、反動で ${selfDmg} のダメージを受けた！`);
+            const meLifesaverLog = checkAndApplyEquipmentLifesaverEffect(me);
+            if (meLifesaverLog) resultLogs.push(meLifesaverLog);
+        }
+    }
+}
+
+// --- ターン開始処理（ガッツ回復・状態異常ティック等）を1体分だけ適用する ---
+function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs) {
+    if (!unit || unit.life <= 0) return;
+
+    if (unit.critBonusTurns > 0) unit.critBonusTurns--;
+    unit.isDefending = false;
+    if (unit.weakenTurns > 0) unit.weakenTurns--;
+    if (unit.defDownTurns > 0) unit.defDownTurns--;
+    if (unit.blindTurns > 0) unit.blindTurns--;
+    if (unit.hitDownTempTurns > 0) unit.hitDownTempTurns--;
+
+    // 継続ダメージ（レッグアーク・ダークホウスト等）の適用
+    if (unit.dotTurns > 0) {
+        const dotDamage = Math.max(1, Math.floor((unit.maxLife || 0) * (unit.dotPct || 0.08)));
+        unit.life = Math.max(0, unit.life - dotDamage);
+        unit.dotTurns--;
+        resultLogs.push(`🩸 ${unit.name} は継続ダメージで ${dotDamage} のダメージを受けた！(現在: ${Math.floor(unit.life)})`);
+    }
+
+    if (unit.confuseTurns > 0) {
+        unit.confuseTurns--;
+        unit.isConfusedThisTurn = Math.random() < 0.30;
+    } else {
+        unit.isConfusedThisTurn = false;
+    }
+    if (unit.flinchTurns > 0) {
+        unit.flinchTurns--;
+        unit.isFlinchedThisTurn = Math.random() < 0.5;
+    } else {
+        unit.isFlinchedThisTurn = false;
+    }
+
+    let recovery = 30;
+    if (unit.isGyakujoActive) {
+        recovery = Math.floor(recovery * 1.2);
+    }
+    if (unit.statusEffect === "闘魂" && opponentUnit && opponentUnit.guts > 70) {
+        recovery = Math.floor(recovery * 1.5);
+    }
+    recovery += getEquipmentGutsRecoveryBonus(unit);
+    unit.guts = Math.min(100, unit.guts + recovery);
+    if (unit.statusEffect === "集中" && unit.guts > 90 && !unit.isShuchuActive) {
+        unit.isShuchuActive = true;
+        resultLogs.push(`🎯 ${unit.name} に集中が発動！次の技の命中率・ダメージが上昇！`);
+    }
+}
+
+// --- 双方の行動が終わった後、次のターンの準備をする（両者同時にガッツ回復・状態ティック） ---
+function startRealtimeNextTurn(current, aSlot, bSlot, resultLogs) {
+    const aUnit = current.teams[aSlot].units[current.teams[aSlot].activeIdx];
+    const bUnit = current.teams[bSlot].units[current.teams[bSlot].activeIdx];
+
+    // 継続ダメージ等でどちらかが力尽きる可能性もあるため、両方に適用してからまとめて判定する
+    applyRealtimeTurnStartEffects(aUnit, bUnit, resultLogs);
+    applyRealtimeTurnStartEffects(bUnit, aUnit, resultLogs);
+
+    let battleOver = checkRealtimeFaintAndWin(current, aSlot, bSlot, resultLogs);
+    if (!battleOver) {
+        battleOver = checkRealtimeFaintAndWin(current, bSlot, aSlot, resultLogs);
+    }
+
+    if (!battleOver) {
+        current.pendingActions = { player1: null, player2: null };
+        current.turnNumber = (current.turnNumber || 1) + 1;
+        current.turnDeadline = Date.now() + REALTIME_TURN_TIME_LIMIT_MS;
+    }
+}
+
+// --- 双方の行動が揃った瞬間に呼ばれる：行動順を決定し、先攻→後攻の順に解決する ---
+// （固定のホストは存在せず、"揃えた"transactionがそのままこの関数を呼び出して解決役になる）
+function resolveRealtimeTurn(current, aSlot, bSlot, resultLogs) {
+    const pending = current.pendingActions;
+    const aAction = pending[aSlot];
+    const bAction = pending[bSlot];
+
+    const aUnit = current.teams[aSlot].units[current.teams[aSlot].activeIdx];
+    const bUnit = current.teams[bSlot].units[current.teams[bSlot].activeIdx];
+
+    const aDesc = buildRealtimeTurnActionDescriptor(aUnit, aAction);
+    const bDesc = buildRealtimeTurnActionDescriptor(bUnit, bAction);
+
+    // ---- 行動順決定（独立モジュール js/turn_order.js に委譲。CPU戦と全く同じロジック） ----
+    const result = TurnOrderResolver.resolve(aDesc, bDesc);
+    const order = result.order.map(tag => (tag === 'A') ? aSlot : bSlot);
+
+    let battleOver = false;
+    for (let i = 0; i < order.length && !battleOver; i++) {
+        const actingSlot = order[i];
+        const otherSlot = (actingSlot === aSlot) ? bSlot : aSlot;
+        const actingTeam = current.teams[actingSlot];
+        const actingUnit = actingTeam.units[actingTeam.activeIdx];
+        if (!actingUnit || actingUnit.life <= 0) continue; // 既に戦闘不能なら行動しない
+
+        resolveOneRealtimeAction(current, actingSlot, otherSlot, pending[actingSlot], resultLogs);
+
+        // 相手側→自分側の順にチェック（攻撃で相手が倒れていないか／反動等で自滅していないか）
+        battleOver = checkRealtimeFaintAndWin(current, otherSlot, actingSlot, resultLogs);
+        if (!battleOver) {
+            battleOver = checkRealtimeFaintAndWin(current, actingSlot, otherSlot, resultLogs);
+        }
+    }
+
+    if (!battleOver) {
+        startRealtimeNextTurn(current, aSlot, bSlot, resultLogs);
+    }
+}
+
+
+// --- 行動選択を送信する（同時選択エンジン） ---
+// 自分の行動を battleState.pendingActions.{mySlot} に書き込むだけで、まだ効果は計算しない。
+// 書き込んだ結果、両者の pendingActions が揃った場合は、この transaction がそのまま
+// resolveRealtimeTurn() を呼んで行動順の決定〜両者分の効果計算までを行う
+// （＝固定のホストは存在せず、"揃えた"側のtransactionが解決役になる）。
 async function performRealtimeAction(action) {
     if (!REALTIME_BATTLE.active || REALTIME_BATTLE.actionInProgress) return;
     const cached = REALTIME_BATTLE.cachedState;
-    if (!cached || cached.status !== 'active' || cached.turnOwner !== REALTIME_BATTLE.mySlot) return;
+    if (!cached || cached.status !== 'active') return;
+    if (cached.pendingActions && cached.pendingActions[REALTIME_BATTLE.mySlot]) return; // 既に行動送信済み
 
     beginActionLog();
 
@@ -896,292 +1385,38 @@ async function performRealtimeAction(action) {
 
     try {
         const txResult = await stateRef.transaction(current => {
-            if (!current || current.status !== 'active' || current.turnOwner !== mySlot) return; // abort：既に状況が変わっている
+            if (!current || current.status !== 'active') return; // abort：既にバトルが終了している
+
+            const pending = current.pendingActions || { player1: null, player2: null };
+            if (pending[mySlot]) return; // abort：既にこのターンの行動を送信済み（二重送信）
 
             resultLogs = [];
+
             const myTeam = current.teams[mySlot];
-            const oppTeam = current.teams[oppSlot];
             const me = myTeam.units[myTeam.activeIdx];
-            const opp = oppTeam.units[oppTeam.activeIdx];
             const myItems = current.items[mySlot];
 
-            // 混乱状態（サケビ声などで受けた場合）：このターンは何を選んでも行動に失敗する
-            // 怯み状態（黒ひざコンボ等で受けた場合）：このターンは何を選んでも行動に失敗する
-            if (me.isFlinchedThisTurn) {
-                me.isFlinchedThisTurn = false;
-                resultLogs.push(`😨 ${me.name} は怯んでしまい、行動できなかった！`);
-            } else if (me.isConfusedThisTurn) {
-                me.isConfusedThisTurn = false;
-                resultLogs.push(`❓ ${me.name} は混乱していて、行動できなかった！`);
-            } else if (action.kind === 'skill') {
+            // ---- 提出時点の軽い正当性チェック（ここで無効ならこの送信そのものをアボートする） ----
+            if (action.kind === 'skill') {
                 const rawSk = SKILLS_DB[action.key];
                 if (!rawSk || !me.skills.includes(action.key) || me.guts < rawSk.cost) return; // abort：無効な行動
-                const sk = getRealtimeEffectiveSkill(me, action.key);
-                const mods = getGutsModifiers(me.guts);
-                me.guts -= sk.cost;
-                resultLogs.push(`${me.name} の【${sk.name}】！`);
-                // 技発動時（命中判定に関わらず）の自己強化効果（アサルトダンス等）
-                applySkillOnUseEffect(me, sk).forEach(msg => resultLogs.push(msg));
-
-                if (sk.type === 'pow' || sk.type === 'int') {
-                    const isCertain = sk.hitRate === 100;
-                    let hitChance = isCertain ? 100 : Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (me.hit - opp.spd) * 0.5 - getBlindHitPenalty(me)));
-                    if (me.isShuchuActive && !isCertain) {
-                        hitChance = Math.min(99, hitChance * 1.5);
-                    }
-                    let isHit;
-                    let isGuaranteedDodge = false;
-                    if (opp.dodgeNextGuaranteed) {
-                        isHit = false;
-                        isGuaranteedDodge = true;
-                        opp.dodgeNextGuaranteed = false;
-                    } else {
-                        isHit = isCertain || (Math.random() * 100 < hitChance);
-                    }
-
-                    // 次技威力アップ（オーロラゲート等）の消費は命中判定に関わらず技を撃った時点で消費する
-                    const usedForce = consumeForceBoost(me, sk.force);
-
-                    if (isHit) {
-                        const isPow = sk.type === 'pow';
-                        const attackerStat = getBuffedAttackStat(me, getWeakenedStat(me, isPow ? me.pow : me.int)) * getEquipmentLowLifeAtkMultiplier(me);
-                        // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（防御崩し状態を反映）
-                        const defenderStat = getDefDownStat(opp, getBuffedDefenseStat(opp, opp.def)) * 1.5;
-                        const statCap = Math.max(30, defenderStat * 2.5);
-                        const effectiveAttacker = attackerStat > statCap ? statCap + (attackerStat - statCap) * 0.2 : attackerStat;
-                        const defenderGutsDefenseMod = getGutsDefenseModifier(opp.guts);
-                        const rawDmg = (effectiveAttacker * usedForce * mods.dmgMod) - (defenderStat * 0.35);
-                        let damage = Math.floor(Math.max(10, (rawDmg * (0.9 + Math.random() * 0.2)) * defenderGutsDefenseMod));
-
-                        let meExtraDmgMsg = "";
-                        if (me.isSokojikaraActive) {
-                            damage = Math.floor(damage * 1.5);
-                            meExtraDmgMsg += " (底力×1.5)";
-                        }
-                        if (me.isShuchuActive) {
-                            damage = Math.floor(damage * 1.2);
-                            meExtraDmgMsg += " (集中×1.2)";
-                        }
-                        if (me.permaForceBoostActive) {
-                            damage = Math.floor(damage * 1.2);
-                            meExtraDmgMsg += " (天河天翔×1.2)";
-                        }
-                        if (isAuraAdvantageous(me.aura, opp.aura)) {
-                            damage = Math.floor(damage * 1.5);
-                            meExtraDmgMsg += ` (オーラ相性${AURA_TYPES[me.aura].emoji}→${AURA_TYPES[opp.aura].emoji}×1.5)`;
-                        }
-                        const monClassMod = getMonClassDamageMultiplier(me.monsterBaseName, opp.monsterBaseName);
-                        if (monClassMod !== 1.0) {
-                            damage = Math.floor(damage * monClassMod);
-                            meExtraDmgMsg += monClassMod > 1.0 ? ` (モン類相性有利×${monClassMod})` : ` (モン類相性不利×${monClassMod})`;
-                        }
-
-                        const critChance = 0.10 + (me.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(me) + getSkillCritBonus(sk);
-                        const isCrit = Math.random() < critChance;
-                        if (isCrit) damage = Math.floor(damage * 1.5);
-
-                        if (opp.isDefending) {
-                            damage = Math.floor(damage / 2);
-                            resultLogs.push(`${opp.name} は防御の構えでダメージを半減した！`);
-                        }
-
-                        damage = Math.max(1, Math.floor(damage * MASMON_BATTLE_DAMAGE_MULTIPLIER));
-
-                        // 九重神眼等のシールドによる被ダメージ吸収
-                        const shieldResult = applyShieldAbsorption(opp, damage);
-                        damage = shieldResult.finalDamage;
-
-                        opp.life = Math.max(0, opp.life - damage);
-                        resultLogs.push(isCrit ? `★クリティカル！ ${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}` : `${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}`);
-                        if (shieldResult.absorbed > 0) {
-                            resultLogs.push(`🛡️ ${opp.name} のシールドが ${shieldResult.absorbed} のダメージを吸収した！(シールド残量: ${opp.shieldValue})`);
-                        }
-
-                        // 根性・底力の発動判定（ダメージを受けた側）
-                        if (opp.life === 0 && opp.statusEffect === "根性") {
-                            if (Math.random() < 0.50) {
-                                opp.life = 1;
-                                resultLogs.push(`✨ 根性が発動！ ${opp.name} は力尽きず、ライフ 1 で耐え抜いた！`);
-                            }
-                        }
-                        if (opp.statusEffect === "底力" && !opp.isSokojikaraFired) {
-                            if (opp.life > 0 && opp.life < opp.maxLife * 0.3) {
-                                opp.isSokojikaraFired = true;
-                                opp.isSokojikaraActive = true;
-                                resultLogs.push(`💪 底力が発動！ ${opp.name} は窮地に陥り、次の技のダメージが 1.5 倍に上昇！`);
-                            }
-                        }
-                        const oppLifesaverLog = checkAndApplyEquipmentLifesaverEffect(opp);
-                        if (oppLifesaverLog) resultLogs.push(oppLifesaverLog);
-
-                        let finalGutsDown = sk.gutsDown || 0;
-                        if (me.isGyakujoActive && finalGutsDown > 0) {
-                            finalGutsDown = Math.floor(finalGutsDown * 1.2);
-                        }
-                        if (finalGutsDown > 0) {
-                            // 丈夫さ強化：丈夫さが高いほど受けるガッツダウン量を軽減する
-                            // 装備の「被ガッツダウンカット」効果もあわせて軽減する
-                            const mitigatedGutsDown = Math.floor(finalGutsDown * getGutsDownMitigation(opp.def) * (1 - getEquipmentGutsDownCutRate(opp)));
-                            const actualGutsDown = Math.min(opp.guts, mitigatedGutsDown);
-                            opp.guts = Math.max(0, opp.guts - actualGutsDown);
-                            if (actualGutsDown > 0) {
-                                resultLogs.push(`相手のガッツを ${actualGutsDown} 奪った！(現在: ${Math.floor(opp.guts)})`);
-                                // 逆上の発動判定（ガッツを奪われた側）
-                                if (opp.statusEffect === "逆上" && !opp.isGyakujoActive && Math.random() < 0.65) {
-                                    opp.isGyakujoActive = true;
-                                    resultLogs.push(`💢 逆上が発動！ ${opp.name} のガッツ回復速度と与えるガッツダウン量が 1.2 倍に上昇！`);
-                                }
-                                // ゲルの「マナドレイン」等：奪ったガッツ分だけ自身のガッツを回復する
-                                const gutsDrain = getGutsDrainAmount(sk, actualGutsDown);
-                                if (gutsDrain > 0) {
-                                    me.guts = Math.min(100, me.guts + gutsDrain);
-                                    resultLogs.push(`🔮 ${me.name} は奪ったガッツを吸収し、自身のガッツが ${gutsDrain} 回復した！(現在: ${Math.floor(me.guts)})`);
-                                }
-                            }
-                        }
-
-                        // モノリスの技等が持つ追加効果（衰弱／混乱付与／次技威力アップ）
-                        applySkillOnHitEffect(me, opp, sk).forEach(msg => resultLogs.push(msg));
-
-                        // プラントの「ドレイン」等：与えたダメージの一部を自身のライフに変換
-                        const drainHeal = getDrainHealAmount(sk, damage);
-                        if (drainHeal > 0) {
-                            me.life = Math.min(me.maxLife, me.life + drainHeal);
-                            resultLogs.push(`🌿 ${me.name} は相手の生命力を吸収し、ライフが ${drainHeal} 回復した！`);
-                        }
-
-                        me.isSokojikaraActive = false;
-                        me.isShuchuActive = false;
-                    } else {
-                        if (isGuaranteedDodge) {
-                            resultLogs.push(`🌫️ ${opp.name} は陽炎の効果で攻撃を確実に回避した！`);
-                        } else {
-                            resultLogs.push(`しかし攻撃はかわされた！`);
-                        }
-                    }
-                } else if (sk.type === 'buff_pow') {
-                    me.pow += 15;
-                    resultLogs.push(`${me.name} の闘志がみなぎる！ちからが15アップした！`);
-                } else if (sk.type === 'heal') {
-                    const healAmount = Math.floor(me.maxLife * 0.35);
-                    me.life = Math.min(me.maxLife, me.life + healAmount);
-                    resultLogs.push(`${me.name} は癒された！ライフが ${healAmount} 回復！`);
-                }
-            } else if (action.kind === 'defend') {
-                me.isDefending = true;
-                resultLogs.push(`${me.name} は身を守るため防御の構えを取った！（被ダメ半減／ガッツ回復ペナルティ無し）`);
             } else if (action.kind === 'switch') {
-                const targetIdx = action.targetIdx;
-                const target = myTeam.units[targetIdx];
-                if (!target || targetIdx === myTeam.activeIdx || target.life <= 0) return; // abort：無効な交代先
-                const prevName = me.name;
-                myTeam.activeIdx = targetIdx;
-                resultLogs.push(`${prevName} を引っ込め、【${target.name}】を繰り出した！`);
+                const target = myTeam.units[action.targetIdx];
+                if (!target || action.targetIdx === myTeam.activeIdx || target.life <= 0) return; // abort：無効な交代先
             } else if (action.kind === 'item') {
-                const key = action.key;
-                if (!myItems || !myItems[key] || myItems[key] <= 0) return; // abort：アイテム切れ
-                myItems[key]--;
-                const item = MASMON_ITEM_DB[key];
-                if (key === 'mango') {
-                    const heal = Math.floor(me.maxLife * 0.25);
-                    me.life = Math.min(me.maxLife, me.life + heal);
-                    resultLogs.push(`🥭 ${me.name} は【${item.name}】を使った！ライフが ${heal} 回復した！`);
-                } else if (key === 'kuri') {
-                    me.critBonusTurns = 3;
-                    resultLogs.push(`🌰 ${me.name} は【${item.name}】を使った！3ターンの間クリティカル率が上昇する！`);
-                } else if (key === 'toro') {
-                    me.pow += 20;
-                    me.int += 20;
-                    const selfDmg = Math.floor(me.maxLife * 0.3);
-                    me.life = Math.max(0, me.life - selfDmg);
-                    resultLogs.push(`🧪 ${me.name} は【${item.name}】を使った！ちから・かしこさが上昇したが、反動で ${selfDmg} のダメージを受けた！`);
-                    const meLifesaverLog = checkAndApplyEquipmentLifesaverEffect(me);
-                    if (meLifesaverLog) resultLogs.push(meLifesaverLog);
-                }
-            } else {
+                if (!myItems || !myItems[action.key] || myItems[action.key] <= 0) return; // abort：アイテム切れ
+            } else if (action.kind !== 'defend' && action.kind !== 'pass') {
                 return; // abort：不明な行動
             }
 
-            // --- 戦闘不能判定＆自動交代（団体戦） ---
-            let battleOver = false;
-            const oppOwnerLabel = current.ownerNames ? current.ownerNames[oppSlot] : '相手';
+            pending[mySlot] = action;
+            current.pendingActions = pending;
 
-            if (opp.life <= 0) {
-                resultLogs.push(`💥 ${opp.name} は戦闘不能になった！`);
-                const nextIdx = findFirstAliveIdx(oppTeam);
-                if (nextIdx === -1) {
-                    current.status = 'finished';
-                    current.winner = mySlot;
-                    current.winReason = 'ko';
-                    resultLogs.push(`${me.name} の勝利！`);
-                    battleOver = true;
-                } else {
-                    oppTeam.activeIdx = nextIdx;
-                    const newOpp = oppTeam.units[nextIdx];
-                    resultLogs.push(`${oppOwnerLabel} は【${newOpp.name}】を繰り出した！`);
-                }
+            // ---- 双方の行動が揃った場合のみ、ここで行動順を決定して両者分を解決する ----
+            if (pending[oppSlot]) {
+                resolveRealtimeTurn(current, mySlot, oppSlot, resultLogs);
             }
 
-            if (!battleOver && me.life <= 0) {
-                resultLogs.push(`💥 ${me.name} は戦闘不能になった…`);
-                const nextIdx = findFirstAliveIdx(myTeam);
-                if (nextIdx === -1) {
-                    current.status = 'finished';
-                    current.winner = oppSlot;
-                    current.winReason = 'ko';
-                    battleOver = true;
-                } else {
-                    myTeam.activeIdx = nextIdx;
-                    const newMe = myTeam.units[nextIdx];
-                    resultLogs.push(`【${newMe.name}】を繰り出した！`);
-                }
-            }
-
-            if (!battleOver) {
-                // --- ターン交代：次に行動する相手側（場に出ているユニット）のガッツ回復・状態リセット ---
-                const oppNowActive = oppTeam.units[oppTeam.activeIdx];
-                if (oppNowActive.critBonusTurns > 0) oppNowActive.critBonusTurns--;
-                oppNowActive.isDefending = false;
-                // 衰弱・混乱の残ターン消化（混乱は次に行動を試みた時点で判定に使うフラグとして保存する）
-                if (oppNowActive.weakenTurns > 0) oppNowActive.weakenTurns--;
-                if (oppNowActive.defDownTurns > 0) oppNowActive.defDownTurns--;
-                if (oppNowActive.blindTurns > 0) oppNowActive.blindTurns--;
-                if (oppNowActive.hitDownTempTurns > 0) oppNowActive.hitDownTempTurns--;
-                // 継続ダメージ（レッグアーク・ダークホウスト等）の適用
-                if (oppNowActive.dotTurns > 0) {
-                    const dotDamage = Math.max(1, Math.floor((oppNowActive.maxLife || 0) * (oppNowActive.dotPct || 0.08)));
-                    oppNowActive.life = Math.max(0, oppNowActive.life - dotDamage);
-                    oppNowActive.dotTurns--;
-                    resultLogs.push(`🩸 ${oppNowActive.name} は継続ダメージで ${dotDamage} のダメージを受けた！(現在: ${Math.floor(oppNowActive.life)})`);
-                }
-                if (oppNowActive.confuseTurns > 0) {
-                    oppNowActive.confuseTurns--;
-                    oppNowActive.isConfusedThisTurn = Math.random() < 0.30;
-                } else {
-                    oppNowActive.isConfusedThisTurn = false;
-                }
-                if (oppNowActive.flinchTurns > 0) {
-                    oppNowActive.flinchTurns--;
-                    oppNowActive.isFlinchedThisTurn = Math.random() < 0.5;
-                } else {
-                    oppNowActive.isFlinchedThisTurn = false;
-                }
-                let recovery = 30;
-                if (oppNowActive.isGyakujoActive) {
-                    recovery = Math.floor(recovery * 1.2);
-                }
-                if (oppNowActive.statusEffect === "闘魂" && myTeam.units[myTeam.activeIdx].guts > 70) {
-                    recovery = Math.floor(recovery * 1.5);
-                }
-                recovery += getEquipmentGutsRecoveryBonus(oppNowActive);
-                oppNowActive.guts = Math.min(100, oppNowActive.guts + recovery);
-                if (oppNowActive.statusEffect === "集中" && oppNowActive.guts > 90 && !oppNowActive.isShuchuActive) {
-                    oppNowActive.isShuchuActive = true;
-                    resultLogs.push(`🎯 ${oppNowActive.name} に集中が発動！次の技の命中率・ダメージが上昇！`);
-                }
-                current.turnOwner = oppSlot;
-                current.turnNumber = (current.turnNumber || 1) + 1;
-            }
             current.lastActionAt = Date.now();
             return current;
         });
@@ -1204,7 +1439,7 @@ async function performRealtimeAction(action) {
         // disableRealtimeActionButtons()で無効化したボタンがそのまま固まってしまう
         // （＝技もアイテムも押せず、投了しかできなくなるバグ）。
         // 結果に関わらず、必ず最新のcachedStateでUIを再同期させることで、
-        // 実際には自分のターンのままなのにボタンが無効化され続ける状態を防ぐ。
+        // 実際には自分がまだ行動できるはずなのにボタンが無効化され続ける状態を防ぐ。
         if (REALTIME_BATTLE.active && REALTIME_BATTLE.cachedState) {
             renderRealtimeBattleUI(REALTIME_BATTLE.cachedState);
         }
@@ -1213,12 +1448,15 @@ async function performRealtimeAction(action) {
 
 // -----------------------------------------------------
 // 切断検知（60秒応答無しで不戦勝を宣言できる）
+// 同時選択エンジンでは「ターン」の概念が両者共通のため、
+// 「自分は既に行動を送信済みだが、相手がまだこのターンの行動を送信していない」場合にのみ判定する。
 // -----------------------------------------------------
 function checkOpponentDisconnect() {
     if (!REALTIME_BATTLE.active) return;
     const state = REALTIME_BATTLE.cachedState;
     if (!state || state.status !== 'active') return;
-    if (state.turnOwner !== REALTIME_BATTLE.oppSlot) return; // 自分のターン中は判定しない
+    const pending = state.pendingActions || {};
+    if (pending[REALTIME_BATTLE.oppSlot]) return; // 相手は既にこのターンの行動を送信済み
 
     const age = Date.now() - (REALTIME_BATTLE.oppLastSeen || 0);
     const banner = document.getElementById('realtime-disconnect-banner');
@@ -1237,7 +1475,9 @@ async function claimRealtimeDisconnectVictory() {
 
     try {
         const txResult = await stateRef.transaction(current => {
-            if (!current || current.status !== 'active' || current.turnOwner !== oppSlot) return;
+            if (!current || current.status !== 'active') return;
+            const pending = current.pendingActions || {};
+            if (pending[oppSlot]) return; // 相手は既にこのターンの行動を送信済み（切断していない）
             current.status = 'finished';
             current.winner = mySlot;
             current.winReason = 'disconnect';
@@ -1252,6 +1492,7 @@ async function claimRealtimeDisconnectVictory() {
         showToast('通信エラーが発生しました。');
     }
 }
+
 
 // -----------------------------------------------------
 // 投了
@@ -1396,6 +1637,10 @@ function detachRealtimeBattleListeners() {
         clearInterval(REALTIME_BATTLE.disconnectTimer);
         REALTIME_BATTLE.disconnectTimer = null;
     }
+    if (REALTIME_BATTLE.actionTimerInterval) {
+        clearInterval(REALTIME_BATTLE.actionTimerInterval);
+        REALTIME_BATTLE.actionTimerInterval = null;
+    }
 }
 
 function resetRealtimeBattleClientState() {
@@ -1412,13 +1657,15 @@ function resetRealtimeBattleClientState() {
     REALTIME_BATTLE.cachedState = null;
     REALTIME_BATTLE.actionInProgress = false;
     REALTIME_BATTLE.seenLogKeys = {};
-    REALTIME_BATTLE.lastRenderedTurnOwner = null;
+    REALTIME_BATTLE.lastCanActTurnNumber = null;
+    REALTIME_BATTLE.autoTimeoutTurnNumber = null;
     REALTIME_BATTLE.logRevealQueue = [];
     REALTIME_BATTLE.isRevealingLog = false;
 
     document.getElementById('battle-endturn-controls').classList.remove('hidden');
     document.getElementById('realtime-surrender-btn').classList.add('hidden');
     document.getElementById('realtime-turn-indicator').classList.add('hidden');
+    document.getElementById('realtime-action-timer').classList.add('hidden');
     document.getElementById('realtime-disconnect-banner').classList.add('hidden');
     document.getElementById('player-team-icons').classList.add('hidden');
     document.getElementById('player-team-icons').innerHTML = '';

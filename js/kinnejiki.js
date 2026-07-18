@@ -323,7 +323,7 @@ function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel) {
     return withEstimate[0].key;
 }
 
-// --- 敵の自動交代判定（AIレベル3以上のみ、executeMasmonEnemyTurn冒頭から呼ばれる） ---
+// --- 敵の自動交代判定（AIレベル3以上のみ、decideMasmonEnemyAction冒頭から呼ばれる） ---
 function maybeExecuteKinNejikiEnemySwitch() {
     if (MASMON_BATTLE_STATE.mode !== 'cpu_team') return false;
     const team = MASMON_BATTLE_STATE.enemyTeam;

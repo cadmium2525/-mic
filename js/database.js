@@ -286,6 +286,48 @@ Object.keys(MONSTER_TEMPLATES).forEach(templateId => {
     }
 });
 
+// =====================================================
+// 移動速度（Speed）ステータス
+// バトルの行動順（先攻/後攻）を決定するために使用する、種族固有のステータス。
+// ランク（S/A/B/C/D/E/F）で管理し、実際の比較には数値換算した値を使う。
+// 今後モンスターを追加する場合は MOVE_SPEED_RANK_BY_TEMPLATE にランクを追記するだけでよい。
+// =====================================================
+const MOVE_SPEED_RANK_VALUE = { S: 110, A: 95, B: 80, C: 65, D: 50, E: 35, F: 20 };
+
+function getMoveSpeedValueFromRank(rank) {
+    return (MOVE_SPEED_RANK_VALUE[rank] !== undefined) ? MOVE_SPEED_RANK_VALUE[rank] : MOVE_SPEED_RANK_VALUE.D;
+}
+
+const MOVE_SPEED_RANK_BY_TEMPLATE = {
+    mochi: 'D', suezo: 'F', dino: 'D', monolith: 'F', plant: 'F', kyubi: 'B',
+    ham: 'D', arrowhead: 'C', nendoro: 'F', henger: 'D', durahan: 'D', golem: 'F',
+    kawazumo: 'F', hinotori: 'B', gari: 'D', metalner: 'B', kijin: 'C', ghost: 'A',
+    gel: 'D', ark: 'A', illumine: 'A', liger: 'B', pixie: 'A', zan: 'A'
+};
+
+// 各テンプレートの stats に moveSpeedRank / moveSpeed（数値）を書き込む
+Object.keys(MONSTER_TEMPLATES).forEach(templateId => {
+    const tmpl = MONSTER_TEMPLATES[templateId];
+    if (tmpl && tmpl.stats) {
+        const rank = MOVE_SPEED_RANK_BY_TEMPLATE[templateId] || 'D';
+        tmpl.stats.moveSpeedRank = rank;
+        tmpl.stats.moveSpeed = getMoveSpeedValueFromRank(rank);
+    }
+});
+
+// --- 種族名からの移動速度取得（旧セーブデータ互換）---
+// masmonData.stats.moveSpeed が無い（＝この機能追加前に作成されたマスモン）場合でも、
+// 種族名からテンプレートを逆引きして正しい移動速度を返す。
+function getMoveSpeedForMasmon(masmonData) {
+    if (masmonData && masmonData.stats && typeof masmonData.stats.moveSpeed === 'number') {
+        return masmonData.stats.moveSpeed;
+    }
+    const speciesName = (masmonData && (masmonData.monsterBaseName || masmonData.name)) || '';
+    const templateId = Object.keys(MONSTER_TEMPLATES).find(id => MONSTER_TEMPLATES[id].name === speciesName);
+    const tmpl = templateId ? MONSTER_TEMPLATES[templateId] : null;
+    return (tmpl && typeof tmpl.stats.moveSpeed === 'number') ? tmpl.stats.moveSpeed : MOVE_SPEED_RANK_VALUE.D;
+}
+
 // --- 技データベース (ダメージランク対応) ---
 const SKILLS_DB = {
     // --- モッチー系統 ---

@@ -98,6 +98,7 @@
                         <div class="flex items-center flex-wrap gap-1.5">
                             <span id="player-defense-shield" class="hidden bg-blue-600 text-white font-bold text-[9px] px-1.5 py-0.5 rounded">🛡️ 防御中</span>
                             <span id="realtime-turn-indicator" class="hidden text-white font-bold text-[9px] px-1.5 py-0.5 rounded"></span>
+                            <span id="realtime-action-timer" class="hidden bg-amber-900 text-amber-200 font-bold text-[9px] px-1.5 py-0.5 rounded">⏱️ 30</span>
                             <span class="bg-[#1a120b] px-2 py-0.5 rounded text-white text-[10px] whitespace-nowrap">戦闘ターン: <span id="battle-turn-counter" class="text-amber-400 font-bold">0</span></span>
                         </div>
                     </div>
@@ -592,6 +593,33 @@
 
     </div>
 
+    <!-- 強制交代モーダル（自分のマスモンが戦闘不能になった時：控えの中から必ず1体選ぶ／キャンセル不可） -->
+    <div id="force-switch-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-[#2a1b15] w-full max-w-xs p-4 rounded-2xl border-2 border-amber-600 space-y-3 shadow-2xl">
+            <h4 class="text-base font-black text-white pixel-font border-b border-amber-800 pb-2">🔻 次のマスモンを選んでください</h4>
+            <div id="force-switch-list" class="space-y-2"></div>
+        </div>
+    </div>
+
+    <!-- 相手のマスモンを倒した後の交代確認モーダル（Yes/No → はいの場合は交代先選択へ） -->
+    <div id="post-victory-switch-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden">
+        <div class="bg-[#2a1b15] w-full max-w-xs p-4 rounded-2xl border-2 border-amber-600 space-y-3 shadow-2xl">
+            <div id="post-victory-confirm-phase">
+                <h4 class="text-base font-black text-white pixel-font border-b border-amber-800 pb-2">🔄 マスモンを交代しますか？</h4>
+                <p class="text-xs text-gray-300 leading-relaxed my-2">相手のマスモンが新しく繰り出された。こちらも交代する？</p>
+                <div class="grid grid-cols-2 gap-2 mt-2">
+                    <button id="post-victory-switch-yes" class="py-2 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-xl text-xs transition-all">交代する</button>
+                    <button id="post-victory-switch-no" class="py-2 bg-[#1a120b] border border-gray-600 text-gray-300 font-bold rounded-xl text-xs transition-all">しない</button>
+                </div>
+            </div>
+            <div id="post-victory-select-phase" class="hidden">
+                <h4 class="text-base font-black text-white pixel-font border-b border-amber-800 pb-2">🔄 交代先を選択</h4>
+                <div id="post-victory-select-list" class="space-y-2 mt-2"></div>
+                <button id="post-victory-select-back" class="w-full py-2 mt-2 bg-[#1a120b] border border-gray-600 text-gray-300 font-bold rounded-xl text-xs transition-all">↩️ もどる</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 技詳細モーダルウィンドウ -->
     <div id="skill-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeSkillModal()">
         <div class="bg-[#2a1b15] w-full max-w-xs p-4 rounded-2xl border-2 border-amber-600 space-y-3 shadow-2xl" onclick="event.stopPropagation()">
@@ -725,6 +753,7 @@
     <script src="js/database.js"></script>
     <script src="js/game_core.js"></script>
     <script src="js/game_ranking.js"></script>
+    <script src="js/turn_order.js"></script>
     <script src="js/masmon_battle.js"></script>
     <script src="js/masmon_rating.js"></script>
     <script src="js/masmon_realtime.js"></script>

@@ -2,9 +2,14 @@
 // マスモンバトル（対人マスモンデータを用いたCPU対戦）機能
 // フェーズ3: 個人戦（1vs1）＋ 団体戦（3vs3）＋ 対戦アイテム3種 対応
 //
-// バトル仕様はリアルタイム対戦（masmon_realtime_battle.js）と統一している：
-//   ・1回の行動（技 or 防御 or アイテム）で即座に相手のターンへ移る
-//     （育成中バトルのような「攻撃終了」「防御して終了」ボタンは無し）
+// 【行動順バトルエンジン】（js/turn_order.js と連携）
+//   ・プレイヤーとCPUは「同時に」行動を選択する
+//     （CPUはプレイヤーの選択内容を見ずに、ターン開始時点の状況だけで行動を決める。
+//       結果として同時選択と全く同じ挙動になる）
+//   ・行動順は 技優先度 → 移動速度（モンスター固有ステータス） → ランダム(同値時) の順で決定する
+//   ・防御は技優先度に関わらず必ず先攻する
+//   ・交代／アイテム使用は選択した瞬間に即座に解決される（既存仕様のまま）
+//   ・後攻側は、先攻側の行動でガッツを削られた結果、実行時にガッツ不足で行動できないことがある
 //   ・防御は技一覧の中の1コマンドとして選択する
 //     （被ダメージ軽減のみ。ガッツ回復量の減少ペナルティは無い）
 // =====================================================
@@ -39,6 +44,10 @@ const MASMON_BATTLE_STATE = {
     turn: 1,
     isDefending: false,
     usedSkillsThisTurn: {},
+    // --- 行動順バトルエンジン用：両者の「今ターンの行動」を一時保持する ---
+    // { actionType: 'skill'|'defend'|'item'|'switch'|'none', skKey?, itemKey?, switchIdx?, reason? }
+    pendingPlayerAction: null,
+    pendingEnemyAction: null,
     battleResult: null,     // 'win' | 'lose'
     opponentOwnerName: '',
     playerItemsInitial: { mango: 0, kuri: 0, toro: 0 }, // 持ち込み時点の初期所持数（UI表示用）
@@ -116,7 +125,9 @@ function convertMasmonToBattleUnit(masmonData, equippedItem) {
             hit: masmonData.stats.hit + equipBonus.hit + auraBonus.hit,
             spd: masmonData.stats.spd + equipBonus.spd + auraBonus.spd,
             def: masmonData.stats.def + equipBonus.def + auraBonus.def,
-            gutsSpeed: masmonData.stats.gutsSpeed || 14
+            gutsSpeed: masmonData.stats.gutsSpeed || 14,
+            // 移動速度（行動順決定用。旧セーブデータには存在しない場合があるため種族名から補完する）
+            moveSpeed: getMoveSpeedForMasmon(masmonData)
         },
         skills: [...(masmonData.skills || [])],
         skillEnhancements: JSON.parse(JSON.stringify(masmonData.skillEnhancements || {})) // 技の強化データ { skKey: { forceBonus, hitBonus, level } }
@@ -233,9 +244,13 @@ function renderTeamIcons() {
 }
 
 // -----------------------------------------------------
-// 戦闘不能判定＆チーム交代処理
+// 戦闘不能判定＆チーム交代処理（旧仕様：自動で最初の生存マスモンに交代する）
 // side: 'player' | 'enemy'
 // 戻り値: true の場合はバトル終了（呼び出し元は以降の処理を中断すること）
+//
+// ※ 現在は「対戦アイテムの反動による自滅」「混乱の継続ダメージによる自滅」など、
+//   プレイヤーの選択を挟む必要のない特殊ケースでのみ使用する。
+//   通常の戦闘（技を当てて倒す・倒される）の交代処理は、下の handleFaintAndSwitch() を使うこと。
 // -----------------------------------------------------
 function checkFaintAndProceed(side) {
     const team = side === 'player' ? MASMON_BATTLE_STATE.playerTeam : MASMON_BATTLE_STATE.enemyTeam;
@@ -258,54 +273,241 @@ function checkFaintAndProceed(side) {
         return true;
     }
 
-    // 次のマスモンを繰り出す
     if (side === 'player') {
-        MASMON_BATTLE_STATE.playerActiveIdx = nextIdx;
+        applyPlayerSwitch(nextIdx);
     } else {
-        MASMON_BATTLE_STATE.enemyActiveIdx = nextIdx;
+        applyEnemySwitch(nextIdx);
     }
-    MASMON_BATTLE_STATE.isDefending = false;
-
-    const newUnit = team[nextIdx];
-    const sideLabel = side === 'player' ? 'あなた' : (MASMON_BATTLE_STATE.opponentOwnerName || '相手');
-    addLog(`${sideLabel}は【${newUnit.name}】を繰り出した！`);
-
-    if (side === 'player') {
-        renderMonsterVisual(document.getElementById('battle-player-icon'), newUnit.monsterBaseName, newUnit.emoji, newUnit.isAwakened, true);
-        document.getElementById('battle-player-name').textContent = newUnit.name;
-        renderAuraBadge('player-aura-badge', newUnit.aura, newUnit.monsterBaseName);
-        renderMasmonBattleSkills();
-    } else {
-        document.getElementById('enemy-name').textContent = newUnit.name;
-        renderMonsterVisual(document.getElementById('battle-enemy-icon'), newUnit.visualName || newUnit.monsterBaseName, newUnit.emoji, newUnit.isAwakened);
-        document.getElementById('battle-enemy-type').textContent = newUnit.name;
-        renderAuraBadge('enemy-aura-badge', newUnit.aura, newUnit.monsterBaseName);
-    }
-
-    renderTeamIcons();
-    updateMasmonBattleStatsUI();
     return false;
 }
 
 // -----------------------------------------------------
-// バトル進行
+// 戦闘不能判定＆交代処理（新仕様：通常の戦闘で使用する）
+// side: 'player' | 'enemy'（今回チェックする側）
+// onResolved({ battleEnded, turnShouldEnd }) を呼び出して結果を通知する（モーダル表示のため非同期になる場合がある）
+//   - battleEnded: true → 勝敗が決した。呼び出し元は以降の処理を中断すること。
+//   - turnShouldEnd: true → 戦闘不能による交代が発生したため、このターンはここで打ち切り、
+//                    次のターンを最初からやり直す（ポケットモンスターのバトル仕様を踏襲）。
+//                    呼び出し元は、残りの行動（このターンのもう片方の行動）を実行してはいけない。
+//
+// ① 自分（player側）のマスモンが戦闘不能になった場合 → 控えの中からどれを出すか選択させる（キャンセル不可）
+// ② 相手（enemy側）のマスモンが戦闘不能になった場合 → CPUが自動で次のマスモンを繰り出した後、
+//    「こちらも交代するか」を確認する。いずれの場合もターンは仕切り直しになる。
+// -----------------------------------------------------
+function handleFaintAndSwitch(side, onResolved) {
+    const team = side === 'player' ? MASMON_BATTLE_STATE.playerTeam : MASMON_BATTLE_STATE.enemyTeam;
+    const activeIdx = side === 'player' ? MASMON_BATTLE_STATE.playerActiveIdx : MASMON_BATTLE_STATE.enemyActiveIdx;
+    const unit = team[activeIdx];
+
+    if (!unit || unit.stats.life > 0) {
+        onResolved({ battleEnded: false, turnShouldEnd: false });
+        return;
+    }
+
+    addLog(`💥 ${unit.name} は戦闘不能になった！`);
+
+    const candidates = team
+        .map((u, idx) => ({ idx, unit: u }))
+        .filter(({ idx, unit: u }) => idx !== activeIdx && u.stats.life > 0);
+
+    if (candidates.length === 0) {
+        // チーム全滅 → バトル終了
+        if (side === 'player') {
+            handleMasmonBattleLose();
+        } else {
+            handleMasmonBattleWin();
+        }
+        onResolved({ battleEnded: true, turnShouldEnd: false });
+        return;
+    }
+
+    if (side === 'player') {
+        // ① 控えの中からどれを出すか選ばせる（キャンセル不可）
+        openForceSwitchModal(candidates, (chosenIdx) => {
+            applyPlayerSwitch(chosenIdx);
+            onResolved({ battleEnded: false, turnShouldEnd: true });
+        });
+    } else {
+        // 相手側は自動で次のマスモンを繰り出す（既存仕様通り）
+        applyEnemySwitch(candidates[0].idx);
+
+        // ② こちらも交代するか確認する。ターンは必ず仕切り直しになる。
+        const playerSwitchCandidates = getMasmonSwitchCandidates();
+        if (playerSwitchCandidates.length === 0) {
+            onResolved({ battleEnded: false, turnShouldEnd: true });
+            return;
+        }
+        openPostVictorySwitchModal(playerSwitchCandidates, () => {
+            onResolved({ battleEnded: false, turnShouldEnd: true });
+        });
+    }
+}
+
+// --- 自分側のマスモンを交代する（UI更新込み。実際の入れ替えのみを担当） ---
+function applyPlayerSwitch(targetIdx) {
+    const team = MASMON_BATTLE_STATE.playerTeam;
+    const target = team[targetIdx];
+    if (!target) return;
+
+    MASMON_BATTLE_STATE.playerActiveIdx = targetIdx;
+    MASMON_BATTLE_STATE.isDefending = false;
+
+    addLog(`あなたは【${target.name}】を繰り出した！`);
+    renderMonsterVisual(document.getElementById('battle-player-icon'), target.monsterBaseName, target.emoji, target.isAwakened, true);
+    document.getElementById('battle-player-name').textContent = target.name;
+    renderAuraBadge('player-aura-badge', target.aura, target.monsterBaseName);
+    renderMasmonBattleSkills();
+
+    renderTeamIcons();
+    updateMasmonBattleStatsUI();
+}
+
+// --- 相手側のマスモンを交代する（UI更新込み） ---
+function applyEnemySwitch(targetIdx) {
+    const team = MASMON_BATTLE_STATE.enemyTeam;
+    const target = team[targetIdx];
+    if (!target) return;
+
+    MASMON_BATTLE_STATE.enemyActiveIdx = targetIdx;
+
+    const sideLabel = MASMON_BATTLE_STATE.opponentOwnerName || '相手';
+    addLog(`${sideLabel}は【${target.name}】を繰り出した！`);
+    document.getElementById('enemy-name').textContent = target.name;
+    renderMonsterVisual(document.getElementById('battle-enemy-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened);
+    document.getElementById('battle-enemy-type').textContent = target.name;
+    renderAuraBadge('enemy-aura-badge', target.aura, target.monsterBaseName);
+
+    renderTeamIcons();
+    updateMasmonBattleStatsUI();
+}
+
+// --- 交代候補ボタン用：オーラ・モン類バッジのHTMLを生成する ---
+function buildSwitchCandidateBadgesHtml(unit) {
+    const aura = AURA_TYPES[unit.aura];
+    const monClassKey = getMonClassKeyForName(unit.monsterBaseName);
+    const monClass = monClassKey ? MON_CLASS_TYPES[monClassKey] : null;
+
+    const auraBadge = aura
+        ? `<span class="px-1 py-0.5 rounded text-[8px] font-bold text-slate-900 ${aura.colorClass}">${aura.emoji}${aura.name}</span>`
+        : '';
+    const monClassBadge = monClass
+        ? `<span class="px-1 py-0.5 rounded text-[8px] font-bold bg-slate-700 text-slate-200">${monClass.emoji}${monClass.name}</span>`
+        : '';
+
+    return `${auraBadge}${monClassBadge}`;
+}
+
+// --- ① 強制交代モーダル（キャンセル不可：控えの中から必ず1体選ぶ） ---
+function openForceSwitchModal(candidates, onSelect) {
+    const modal = document.getElementById('force-switch-modal');
+    const list = document.getElementById('force-switch-list');
+    list.innerHTML = '';
+
+    candidates.forEach(({ idx, unit }) => {
+        const lifePct = Math.max(0, Math.floor((unit.stats.life / unit.stats.maxLife) * 100));
+        const btn = document.createElement('button');
+        btn.className = 'w-full text-left p-2 rounded border transition-all active:scale-95 flex flex-col gap-1 bg-emerald-950/40 border-emerald-700 text-emerald-200';
+        btn.innerHTML = `
+            <div class="flex justify-between items-center w-full">
+                <span class="font-bold text-xs">${unit.name}</span>
+                <span class="text-[9px] font-bold">HP ${unit.stats.life}/${unit.stats.maxLife} (${lifePct}%)</span>
+            </div>
+            <div class="flex gap-1">${buildSwitchCandidateBadgesHtml(unit)}</div>
+        `;
+        btn.onclick = () => {
+            modal.classList.add('hidden');
+            onSelect(idx);
+        };
+        list.appendChild(btn);
+    });
+
+    modal.classList.remove('hidden');
+}
+
+// --- ② 敵撃破後の交代確認モーダル（はい/いいえ → はいの場合は交代先選択へ） ---
+function openPostVictorySwitchModal(candidates, onDone) {
+    const modal = document.getElementById('post-victory-switch-modal');
+    const confirmPhase = document.getElementById('post-victory-confirm-phase');
+    const selectPhase = document.getElementById('post-victory-select-phase');
+    const list = document.getElementById('post-victory-select-list');
+
+    confirmPhase.classList.remove('hidden');
+    selectPhase.classList.add('hidden');
+
+    const closeAndFinish = () => {
+        modal.classList.add('hidden');
+        onDone();
+    };
+
+    document.getElementById('post-victory-switch-yes').onclick = () => {
+        list.innerHTML = '';
+        candidates.forEach(({ idx, unit }) => {
+            const lifePct = Math.max(0, Math.floor((unit.stats.life / unit.stats.maxLife) * 100));
+            const btn = document.createElement('button');
+            btn.className = 'w-full text-left p-2 rounded border transition-all active:scale-95 flex flex-col gap-1 bg-emerald-950/40 border-emerald-700 text-emerald-200';
+            btn.innerHTML = `
+                <div class="flex justify-between items-center w-full">
+                    <span class="font-bold text-xs">${unit.name}</span>
+                    <span class="text-[9px] font-bold">HP ${unit.stats.life}/${unit.stats.maxLife} (${lifePct}%)</span>
+                </div>
+                <div class="flex gap-1">${buildSwitchCandidateBadgesHtml(unit)}</div>
+            `;
+            btn.onclick = () => {
+                applyPlayerSwitch(idx);
+                closeAndFinish();
+            };
+            list.appendChild(btn);
+        });
+        confirmPhase.classList.add('hidden');
+        selectPhase.classList.remove('hidden');
+    };
+
+    document.getElementById('post-victory-switch-no').onclick = () => {
+        closeAndFinish();
+    };
+
+    document.getElementById('post-victory-select-back').onclick = () => {
+        confirmPhase.classList.remove('hidden');
+        selectPhase.classList.add('hidden');
+    };
+
+    modal.classList.remove('hidden');
+}
+
+// -----------------------------------------------------
+// バトル進行（行動順バトルエンジン）
+//
+// 新仕様のターンの流れ：
+//   1. ターン開始処理（両者同時にガッツ回復・状態異常ティック）
+//   2. プレイヤーが行動を選択 → submitMasmonPlayerAction()
+//   3. その時点でCPUも「ターン開始時点の状況」だけを見て行動を決定する
+//      （プレイヤーの選択内容そのものは見ないため、実質的に同時選択と同じ結果になる）
+//   4. TurnOrderResolver で行動順（優先度→速度→ランダム）を決定
+//   5. 先攻の行動を実行 → 後攻の行動を実行（実行直前にガッツを再チェック）
+//   6. ターン終了 → 1へ戻る
 // -----------------------------------------------------
 function startMasmonPlayerTurn(isFirstTurn = false) {
     hideBattleLog();
     MASMON_BATTLE_STATE.isPlayerTurnActive = true;
     MASMON_BATTLE_STATE.usedSkillsThisTurn = {};
+    MASMON_BATTLE_STATE.pendingPlayerAction = null;
+    MASMON_BATTLE_STATE.pendingEnemyAction = null;
 
     document.getElementById('player-defense-shield').classList.add('hidden');
 
     const p = getPlayerActive();
+    const e = getEnemyActive();
 
     if (p.critBonusTurns > 0) {
         p.critBonusTurns--;
         if (p.critBonusTurns === 0) addLog(`${p.name} のクリティカル率上昇効果が切れた。`);
     }
+    if (e && e.critBonusTurns > 0) {
+        e.critBonusTurns--;
+    }
 
     if (!isFirstTurn) {
-        const e = getEnemyActive();
+        // --- ターン開始時点で、両者同時にガッツが回復する ---
         let recovery = 30;
         if (p.isGyakujoActive) {
             recovery = Math.floor(recovery * 1.2);
@@ -314,33 +516,52 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
             recovery = Math.floor(recovery * 1.5);
         }
         recovery += getEquipmentGutsRecoveryBonus(p);
-        addLog(`--- あなたのターン ---`);
+        addLog(`--- ターン ${MASMON_BATTLE_STATE.turn} ---`);
         p.guts = Math.min(100, p.guts + recovery);
-        addLog(`ガッツが ${recovery} 回復した！(現在: ${Math.floor(p.guts)})`);
-        showEffect('🔥 YOUR TURN 🔥');
+        addLog(`${p.name} のガッツが ${recovery} 回復した！(現在: ${Math.floor(p.guts)})`);
+
+        if (e) {
+            let enemyRecovery = 30;
+            if (e.isGyakujoActive) {
+                enemyRecovery = Math.floor(enemyRecovery * 1.2);
+            }
+            if (e.statusEffect === "闘魂" && p.guts > 70) {
+                enemyRecovery = Math.floor(enemyRecovery * 1.5);
+            }
+            enemyRecovery += getEquipmentGutsRecoveryBonus(e);
+            e.guts = Math.min(100, e.guts + enemyRecovery);
+            addLog(`${e.name} のガッツが ${enemyRecovery} 回復した！(現在: ${Math.floor(e.guts)})`);
+        }
+        showEffect('⚔️ TURN START ⚔️');
     } else {
-        addLog(`--- あなたのターン (初期GUTS: 50) ---`);
+        addLog(`--- バトル開始 (初期GUTS: 50) ---`);
     }
 
     MASMON_BATTLE_STATE.isDefending = false;
     updateMasmonBattleStatsUI();
 
-    // 混乱状態（サケビ声などで付与）の残ターン消化と行動失敗判定
+    // 混乱状態（サケビ声などで付与）の残ターン消化と行動失敗判定（プレイヤー側）
     const confusionResult = tickStatusTurnsAndCheckConfusion(p);
     if (confusionResult.dotDamage > 0) {
         p.stats.life = Math.max(0, p.stats.life - confusionResult.dotDamage);
         addLog(`🩸 ${p.name} は傷跡の継続ダメージで ${confusionResult.dotDamage} のダメージを受けた！(現在: ${Math.floor(p.stats.life)})`);
         updateMasmonBattleStatsUI();
-        if (checkFaintAndProceed('player')) return;
+        handleFaintAndSwitch('player', (result) => {
+            if (result.battleEnded) return;
+            finishMasmonPlayerTurnSetup(confusionResult);
+        });
+        return;
     }
+
+    finishMasmonPlayerTurnSetup(confusionResult);
+}
+
+// --- startMasmonPlayerTurn() の後半部分（自分の戦闘不能チェック後に必ず通る処理） ---
+function finishMasmonPlayerTurnSetup(confusionResult) {
     if (confusionResult.confused) {
-        addLog(`❓ ${p.name} は混乱していて、行動できなかった！`);
-        showEffect('❓ 混乱... ❓');
-        MASMON_BATTLE_STATE.isPlayerTurnActive = false;
+        // 混乱中は技を選択できないため、「行動不能」の行動として即座に確定させる
         toggleMasmonSkillButtons(false);
-        setTimeout(() => {
-            executeMasmonEnemyTurn();
-        }, 1000);
+        submitMasmonPlayerAction({ actionType: 'none', reason: 'confused' });
         return;
     }
 
@@ -673,6 +894,7 @@ function openMasmonSwitchMenu() {
                 <span class="font-bold text-xs">${unit.name}</span>
                 <span class="text-[9px] font-bold">HP ${unit.stats.life}/${unit.stats.maxLife} (${lifePct}%)</span>
             </div>
+            <div class="flex gap-1 mt-1">${buildSwitchCandidateBadgesHtml(unit)}</div>
         `;
         container.appendChild(btn);
     });
@@ -707,7 +929,9 @@ function executeMasmonSwitch(targetIdx) {
     updateMasmonBattleStatsUI();
     renderMasmonBattleSkills();
 
-    proceedToMasmonEnemyTurn();
+    // 交代は行動順に関わらず必ず先に処理される（既存仕様のまま）。
+    // 交代自体はここで既に完了しているので、行動順エンジンには「済み」の行動として渡す。
+    submitMasmonPlayerAction({ actionType: 'switch', alreadyResolved: true });
 }
 
 // -----------------------------------------------------
@@ -820,268 +1044,83 @@ function useMasmonItem(itemKey) {
     renderBattleItems();
 
     if (itemKey === 'toro') {
-        const ended = checkFaintAndProceed('player');
-        if (ended) return;
+        handleFaintAndSwitch('player', (result) => {
+            if (result.battleEnded) return;
+            // アイテム使用は行動順に関わらず必ず先に処理される（既存仕様のまま）。
+            // 効果自体はここで既に完了しているので、行動順エンジンには「済み」の行動として渡す。
+            submitMasmonPlayerAction({ actionType: 'item', alreadyResolved: true });
+        });
+        return;
     }
 
-    proceedToMasmonEnemyTurn();
+    // アイテム使用は行動順に関わらず必ず先に処理される（既存仕様のまま）。
+    // 効果自体はここで既に完了しているので、行動順エンジンには「済み」の行動として渡す。
+    submitMasmonPlayerAction({ actionType: 'item', alreadyResolved: true });
 }
 
+// =====================================================
+// バトル演出用UI設定（プレイヤー側／敵側で異なるDOM要素・エフェクト文言をまとめたもの）
+// 攻撃系の処理そのものは buildAttackSkillSteps() 側で共通化し、
+// 表示に関わる部分だけをこのテーブルで吸収する。
+// =====================================================
+const SIDE_UI = {
+    player: {
+        spriteContainer: 'battle-player-sprite-container',
+        spriteAnim: 'translate-x-6',
+        oppSpriteContainer: 'battle-enemy-sprite-container',
+        oppSpriteAnim: 'shake',
+        dmgPopup: 'enemy-dmg-popup',
+        hitEffect: '💥 HIT! 💥',
+        critEffect: '💥 CRITICAL!! 💥',
+        missEffect: '💨 MISS 💨',
+        buffEffect: '💪 ちからUP! 💪',
+        healEffect: '💚 ライフ回復! 💚'
+    },
+    enemy: {
+        spriteContainer: 'battle-enemy-sprite-container',
+        spriteAnim: '-translate-x-6',
+        oppSpriteContainer: 'battle-player-sprite-container',
+        oppSpriteAnim: 'shake',
+        dmgPopup: 'player-dmg-popup',
+        hitEffect: '⚡ 被弾!! ⚡',
+        critEffect: '⚡ 会心の一撃!! ⚡',
+        missEffect: '💨 回避!! 💨',
+        buffEffect: '💪 相手の攻撃UP! 💪',
+        healEffect: '💚 相手回復! 💚'
+    }
+};
+
+// --- プレイヤーの行動選択（技） ---
+// 技の実行そのものはここでは行わず、「今ターンの行動」として確定させるだけにする。
+// 実際の効果計算・演出は、行動順が決まった後 executeMasmonSideAction() で行う。
 function executeMasmonPlayerSkill(skKey) {
     if (MASMON_BATTLE_STATE.isBattleEnd || !MASMON_BATTLE_STATE.isPlayerTurnActive) return;
 
     const rawSk = SKILLS_DB[skKey];
     if (!rawSk) return;
 
-    beginActionLog();
-
     const p = getPlayerActive();
-    const e = getEnemyActive();
     const sk = getMasmonEffectiveSkill(p, skKey);
+    if (p.guts < sk.cost) return; // ターン開始時点のガッツを基準に使用可否を判定する
 
-    if (p.guts < sk.cost) return;
-
-    const mods = getGutsModifiers(p.guts);
-    p.guts -= sk.cost;
-    updateMasmonBattleStatsUI();
-
-    // ---- ここから先の計算は全て即座に行うが、実際の演出（ログ・エフェクト表示）は
-    //      「技名 → 命中/エフェクト → ダメージ → 追加効果」の順に間を空けて見せる ----
-    const steps = [];
-    steps.push({
-        run: () => {
-            addLog(`${p.name} の 【${sk.name}】！`);
-            animateSprite('battle-player-sprite-container', 'translate-x-6');
-            // 技発動時（命中判定に関わらず）の自己強化効果（アサルトダンス等）
-            applySkillOnUseEffect(p, sk).forEach(msg => addLog(msg));
-        },
-        wait: BATTLE_STEP_DELAY.afterSkillName
-    });
-
-    if (sk.type === 'pow' || sk.type === 'int') {
-        const isCertain = sk.hitRate === 100;
-        let hitChance = isCertain ? 100 : Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (p.stats.hit - e.stats.spd) * 0.5 - getBlindHitPenalty(p)));
-        if (p.isShuchuActive && !isCertain) {
-            hitChance = Math.min(99, hitChance * 1.5);
-        }
-        let isHit;
-        let isGuaranteedDodge = false;
-        if (e.dodgeNextGuaranteed) {
-            isHit = false;
-            isGuaranteedDodge = true;
-            e.dodgeNextGuaranteed = false;
-        } else {
-            isHit = isCertain || (Math.random() * 100 < hitChance);
-        }
-
-        // 次技威力アップ（オーロラゲート等）の消費は命中判定に関わらず技を撃った時点で消費する
-        const usedForce = consumeForceBoost(p, sk.force);
-
-        if (isHit) {
-            const isPow = sk.type === 'pow';
-            const attackerStat = getBuffedAttackStat(p, getWeakenedStat(p, isPow ? p.stats.pow : p.stats.int)) * getEquipmentLowLifeAtkMultiplier(p);
-            // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（地震・テイルブレード等の防御崩し状態を反映）
-            const defenderStat = getDefDownStat(e, getBuffedDefenseStat(e, e.stats.def)) * 1.5;
-            const statCap = Math.max(30, defenderStat * 2.5);
-            let effectiveAttacker = attackerStat;
-            if (attackerStat > statCap) {
-                effectiveAttacker = statCap + (attackerStat - statCap) * 0.2;
-            }
-
-            const defenderGutsDefenseMod = getGutsDefenseModifier(e.guts);
-            let rawDmg = ((effectiveAttacker * usedForce) * mods.dmgMod) - (defenderStat * 0.35);
-            let damage = Math.floor(Math.max(10, (rawDmg * (0.9 + Math.random() * 0.2)) * defenderGutsDefenseMod));
-
-            let extraDmgMsg = "";
-            if (p.isSokojikaraActive) {
-                damage = Math.floor(damage * 1.5);
-                extraDmgMsg += " (底力×1.5)";
-            }
-            if (p.isShuchuActive) {
-                damage = Math.floor(damage * 1.2);
-                extraDmgMsg += " (集中×1.2)";
-            }
-            if (p.permaForceBoostActive) {
-                damage = Math.floor(damage * 1.2);
-                extraDmgMsg += " (天河天翔×1.2)";
-            }
-            if (isAuraAdvantageous(p.aura, e.aura)) {
-                damage = Math.floor(damage * 1.5);
-                extraDmgMsg += ` (オーラ相性${AURA_TYPES[p.aura].emoji}→${AURA_TYPES[e.aura].emoji}×1.5)`;
-            }
-            const monClassMod = getMonClassDamageMultiplier(p.monsterBaseName, e.monsterBaseName);
-            if (monClassMod !== 1.0) {
-                damage = Math.floor(damage * monClassMod);
-                extraDmgMsg += monClassMod > 1.0 ? ` (モン類相性有利×${monClassMod})` : ` (モン類相性不利×${monClassMod})`;
-            }
-
-            const critChance = 0.10 + (p.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(p) + getSkillCritBonus(sk);
-            let isCrit = Math.random() < critChance;
-            if (isCrit) {
-                damage = Math.floor(damage * 1.5);
-            }
-            damage = Math.max(1, Math.floor(damage * MASMON_BATTLE_DAMAGE_MULTIPLIER));
-
-            // 九重神眼等のシールドによる被ダメージ吸収
-            const shieldResult = applyShieldAbsorption(e, damage);
-            damage = shieldResult.finalDamage;
-
-            // ステップ1: HIT/クリティカルの演出のみ、まだダメージ数値は見せない
-            steps.push({
-                run: () => {
-                    showEffect(isCrit ? '💥 CRITICAL!! 💥' : '💥 HIT! 💥');
-                    animateSprite('battle-enemy-sprite-container', 'shake');
-                },
-                wait: BATTLE_STEP_DELAY.afterHitEffect
-            });
-
-            // ステップ2: ダメージ数値・ログを表示し、実際にライフを減算する
-            steps.push({
-                run: () => {
-                    if (isCrit) {
-                        addLog(`★クリティカルヒット！ ${e.name} に ${damage} ダメージ！${extraDmgMsg}`);
-                    } else {
-                        addLog(`${e.name} に ${damage} ダメージ！${extraDmgMsg}`);
-                    }
-                    if (shieldResult.absorbed > 0) {
-                        addLog(`🛡️ ${e.name} のシールドが ${shieldResult.absorbed} のダメージを吸収した！(シールド残量: ${e.shieldValue})`);
-                    }
-                    e.stats.life = Math.max(0, e.stats.life - damage);
-                    updateMasmonBattleStatsUI();
-                    showDamagePopup('enemy-dmg-popup', damage, isCrit);
-                    checkMasmonDefenseStatusTriggers(e);
-                    const eLifesaverLog = checkAndApplyEquipmentLifesaverEffect(e);
-                    if (eLifesaverLog) addLog(eLifesaverLog);
-                },
-                wait: BATTLE_STEP_DELAY.afterDamage
-            });
-
-            // ステップ3以降: ガッツダウン・追加効果・ドレインを1件ずつ間を空けて表示
-            let finalGutsDown = sk.gutsDown || 0;
-            if (p.isGyakujoActive && finalGutsDown > 0) {
-                finalGutsDown = Math.floor(finalGutsDown * 1.2);
-            }
-            if (finalGutsDown > 0) {
-                steps.push({
-                    run: () => {
-                        // 丈夫さ強化：丈夫さが高いほど受けるガッツダウン量を軽減する
-                        // 装備の「被ガッツダウンカット」効果もあわせて軽減する
-                        const mitigatedGutsDown = Math.floor(finalGutsDown * getGutsDownMitigation(e.stats.def) * (1 - getEquipmentGutsDownCutRate(e)));
-                        const actualGutsDown = Math.min(e.guts, mitigatedGutsDown);
-                        e.guts = Math.max(0, e.guts - actualGutsDown);
-                        addLog(`さらに！相手のガッツを ${actualGutsDown} 奪い取った！${p.isGyakujoActive ? " (逆上×1.2)" : ""} (現在: ${Math.floor(e.guts)})`);
-                        // ゲルの「マナドレイン」等：奪ったガッツ分だけ自身のガッツを回復する
-                        const gutsDrain = getGutsDrainAmount(sk, actualGutsDown);
-                        if (gutsDrain > 0) {
-                            p.guts = Math.min(100, p.guts + gutsDrain);
-                            addLog(`🔮 ${p.name} は奪ったガッツを吸収し、自身のガッツが ${gutsDrain} 回復した！(現在: ${Math.floor(p.guts)})`);
-                        }
-                        updateMasmonBattleStatsUI();
-                        checkMasmonGyakujoTrigger(e);
-                    },
-                    wait: BATTLE_STEP_DELAY.perExtraLog
-                });
-            }
-
-            // モノリスの技等が持つ追加効果（衰弱／混乱付与／次技威力アップ／継続ダメージ等）は
-            // 命中確定時点の状態を使って計算しておき、表示だけを1件ずつ後で行う
-            const onHitMsgs = applySkillOnHitEffect(p, e, sk);
-            onHitMsgs.forEach(msg => {
-                steps.push({ run: () => addLog(msg), wait: BATTLE_STEP_DELAY.perExtraLog });
-            });
-
-            // プラントの「ドレイン」等：与えたダメージの一部を自身のライフに変換
-            const drainHeal = getDrainHealAmount(sk, damage);
-            if (drainHeal > 0) {
-                steps.push({
-                    run: () => {
-                        p.stats.life = Math.min(p.stats.maxLife, p.stats.life + drainHeal);
-                        addLog(`🌿 ${p.name} は相手の生命力を吸収し、ライフが ${drainHeal} 回復した！(現在: ${Math.floor(p.stats.life)})`);
-                        updateMasmonBattleStatsUI();
-                    },
-                    wait: BATTLE_STEP_DELAY.perExtraLog
-                });
-            }
-
-            p.isSokojikaraActive = false;
-            p.isShuchuActive = false;
-        } else {
-            steps.push({
-                run: () => {
-                    if (isGuaranteedDodge) {
-                        addLog(`🌫️ ${e.name} は陽炎の効果で攻撃を確実に回避した！`);
-                    } else {
-                        addLog('しかし、攻撃はかわされた！');
-                    }
-                    showEffect('💨 MISS 💨');
-                    showDamagePopup('enemy-dmg-popup', 'MISS', false);
-                },
-                wait: BATTLE_STEP_DELAY.afterHitEffect
-            });
-        }
-    } else if (sk.type === 'buff_pow') {
-        steps.push({
-            run: () => {
-                p.stats.pow += 15;
-                addLog(`${p.name} の闘志がみなぎる！ちからが15アップした！`);
-                showEffect('💪 ちからUP! 💪');
-                updateMasmonBattleStatsUI();
-            },
-            wait: BATTLE_STEP_DELAY.afterHitEffect
-        });
-    } else if (sk.type === 'heal') {
-        steps.push({
-            run: () => {
-                const healAmount = Math.floor(p.stats.maxLife * 0.35);
-                p.stats.life = Math.min(p.stats.maxLife, p.stats.life + healAmount);
-                addLog(`${p.name} は癒された！ライフが ${healAmount} 回復！`);
-                showEffect('💚 ライフ回復! 💚');
-                updateMasmonBattleStatsUI();
-            },
-            wait: BATTLE_STEP_DELAY.afterHitEffect
-        });
-    }
-
-    runBattleStepSequence(steps, () => {
-        updateMasmonBattleStatsUI();
-        if (checkFaintAndProceed('enemy')) return;
-        setTimeout(() => proceedToMasmonEnemyTurn(), BATTLE_STEP_DELAY.beforeNextTurn);
-    });
+    beginActionLog();
+    submitMasmonPlayerAction({ actionType: 'skill', skKey: skKey });
 }
 
 // --- ターン終了ボタンのモード振り分けルーター ---
-// （マスモンCPU対戦・リアルタイム対戦は、いずれもPvP仕様＝1行動で即ターン交代のため
-//   このボタン自体が非表示になっており、育成中バトルからのみ呼び出される）
+// （育成中バトルからのみ呼び出される。マスモンCPU戦・PvPではこのボタン自体が非表示）
 function handleEndTurnClick(defendMode) {
     if (ACTIVE_BATTLE_MODE === 'adventure') {
         endPlayerTurn(defendMode);
     }
 }
 
-// --- 技・防御・アイテムいずれかの行動が終わったら、即座に相手のターンへ移る（PvP仕様） ---
-function proceedToMasmonEnemyTurn() {
-    if (MASMON_BATTLE_STATE.isBattleEnd || !MASMON_BATTLE_STATE.isPlayerTurnActive) return;
-    MASMON_BATTLE_STATE.isPlayerTurnActive = false;
-    toggleMasmonSkillButtons(false);
-
-    setTimeout(() => {
-        executeMasmonEnemyTurn();
-    }, 600);
-}
-
 // --- 防御コマンド（技一覧内から選択。被ダメ半減のみで、ガッツ回復ペナルティは無い） ---
+// 防御は行動順に関わらず必ず技より先攻する（技優先度の階層で保証している）。
 function executeMasmonDefend() {
     if (MASMON_BATTLE_STATE.isBattleEnd || !MASMON_BATTLE_STATE.isPlayerTurnActive) return;
-
     beginActionLog();
-
-    MASMON_BATTLE_STATE.isDefending = true;
-    document.getElementById('player-defense-shield').classList.remove('hidden');
-    addLog(`${getPlayerActive().name} は身を守るため防御の構えを取った！（被ダメ半減／ガッツ回復ペナルティ無し）`);
-    showEffect('🛡️ DEFENSE 🛡️');
-    updateMasmonBattleStatsUI();
-
-    proceedToMasmonEnemyTurn();
+    submitMasmonPlayerAction({ actionType: 'defend' });
 }
 
 // --- 敵CPUのアイテム使用AI（シンプルな条件判定） ---
@@ -1117,9 +1156,33 @@ function runEnemyItemAI() {
     }
 }
 
-function executeMasmonEnemyTurn() {
-    if (MASMON_BATTLE_STATE.isBattleEnd) return;
+// =====================================================
+// 行動順バトルエンジン 本体
+// =====================================================
 
+// --- ユニット＋行動 から、TurnOrderResolver に渡す行動情報オブジェクトを作る ---
+function buildTurnActionDescriptor(unit, action) {
+    if (!unit || unit.stats.life <= 0) {
+        return createTurnAction('none', 0, unit ? (unit.stats.moveSpeed || 0) : 0);
+    }
+    const speed = unit.stats.moveSpeed || 0;
+    if (!action || action.actionType === 'none') {
+        return createTurnAction('none', 0, speed);
+    }
+    if (action.actionType === 'switch') return createTurnAction('switchOut', 0, speed);
+    if (action.actionType === 'item') return createTurnAction('item', 0, speed);
+    if (action.actionType === 'defend') return createTurnAction('defend', 0, speed);
+    if (action.actionType === 'skill') {
+        const sk = SKILLS_DB[action.skKey];
+        return createTurnAction('skill', (sk && sk.priority) || 0, speed);
+    }
+    return createTurnAction('none', 0, speed);
+}
+
+// --- CPU（対戦相手）の「今ターンの行動」を決定する ---
+// プレイヤーが何を選んだかは一切参照しない（ターン開始時点の状況だけで決める）ため、
+// 結果として「両者が同時に行動を選択した」場合と全く同じ挙動になる。
+function decideMasmonEnemyAction() {
     // 「ガッツファクトリー」AIレベル3以上：状況が不利な場合、行動前に控えのモンスターへ自動交代する
     if (MASMON_BATTLE_STATE.kinNejiki && (MASMON_BATTLE_STATE.kinNejiki.aiLevel || 1) >= 3 && typeof maybeExecuteKinNejikiEnemySwitch === 'function') {
         const switched = maybeExecuteKinNejikiEnemySwitch();
@@ -1129,286 +1192,462 @@ function executeMasmonEnemyTurn() {
         }
     }
 
-    let p = getPlayerActive();
     let e = getEnemyActive();
-
-    addLog(`--- ${e.name} のターン ---`);
-    showEffect('⚠️ ENEMY TURN ⚠️');
-
-    if (e.critBonusTurns > 0) {
-        e.critBonusTurns--;
-    }
-
-    let enemyRecovery = 30;
-    if (e.isGyakujoActive) {
-        enemyRecovery = Math.floor(enemyRecovery * 1.2);
-    }
-    if (e.statusEffect === "闘魂" && p && p.guts > 70) {
-        enemyRecovery = Math.floor(enemyRecovery * 1.5);
-    }
-    enemyRecovery += getEquipmentGutsRecoveryBonus(e);
-    e.guts = Math.min(100, e.guts + enemyRecovery);
-    addLog(`${e.name} のガッツが ${enemyRecovery} 回復した！(現在: ${Math.floor(e.guts)})`);
+    if (!e || e.stats.life <= 0) return { actionType: 'none' };
 
     runEnemyItemAI();
     updateMasmonBattleStatsUI();
 
-    if (checkFaintAndProceed('enemy')) return; // トロカチンの反動で自滅した場合
+    // アイテムの反動（トロカチン）で自滅した場合
+    if (checkFaintAndProceed('enemy')) {
+        return { actionType: 'none', battleEnded: true };
+    }
+    e = getEnemyActive();
+    if (!e || e.stats.life <= 0) return { actionType: 'none' };
 
-    setTimeout(() => {
-        // アイテム使用やチーム交代後の最新ユニットを再取得
-        p = getPlayerActive();
-        e = getEnemyActive();
-
-        // 混乱状態（サケビ声などで受けた場合）の残ターン消化と行動失敗判定
-        const enemyConfusionResult = tickStatusTurnsAndCheckConfusion(e);
-        if (enemyConfusionResult.dotDamage > 0) {
-            e.stats.life = Math.max(0, e.stats.life - enemyConfusionResult.dotDamage);
-            addLog(`🩸 ${e.name} は傷跡の継続ダメージで ${enemyConfusionResult.dotDamage} のダメージを受けた！(現在: ${Math.floor(e.stats.life)})`);
-            updateMasmonBattleStatsUI();
-            if (checkFaintAndProceed('enemy')) return;
+    // 混乱状態（サケビ声などで受けた場合）の残ターン消化と行動失敗判定
+    const enemyConfusionResult = tickStatusTurnsAndCheckConfusion(e);
+    if (enemyConfusionResult.dotDamage > 0) {
+        e.stats.life = Math.max(0, e.stats.life - enemyConfusionResult.dotDamage);
+        addLog(`🩸 ${e.name} は傷跡の継続ダメージで ${enemyConfusionResult.dotDamage} のダメージを受けた！(現在: ${Math.floor(e.stats.life)})`);
+        updateMasmonBattleStatsUI();
+        if (checkFaintAndProceed('enemy')) {
+            return { actionType: 'none', battleEnded: true };
         }
-        if (enemyConfusionResult.confused) {
-            addLog(`❓ ${e.name} は混乱していて、行動できなかった！`);
-            showEffect('❓ 混乱... ❓');
-            updateMasmonBattleStatsUI();
-            setTimeout(() => {
-                if (checkFaintAndProceed('player')) return;
-                MASMON_BATTLE_STATE.turn++;
-                document.getElementById('battle-turn-counter').textContent = MASMON_BATTLE_STATE.turn;
-                startMasmonPlayerTurn(false);
-            }, 800);
+    }
+    e = getEnemyActive();
+    if (!e || e.stats.life <= 0) return { actionType: 'none' };
+    if (enemyConfusionResult.confused) {
+        return { actionType: 'none', reason: 'confused' };
+    }
+
+    const p = getPlayerActive();
+    const affordableSkills = e.skills
+        .map(skKey => ({ key: skKey, info: getMasmonEffectiveSkill(e, skKey) }))
+        .filter(skObj => skObj.info && e.guts >= skObj.info.cost);
+
+    if (affordableSkills.length === 0) {
+        return { actionType: 'none', reason: 'noguts' };
+    }
+
+    // 「ガッツファクトリー」レンタルバトル中はAIレベルに応じた判断ロジックを使用し、
+    // それ以外（従来のマスモンCPU戦）は従来通り「最もガッツ消費が大きい技」を選ぶ簡易AIのままとする。
+    // ※ AIはここで「自分が先攻になるか後攻になるか」を考慮したい場合、
+    //    chooseKinNejikiEnemySkill 側で MASMON_BATTLE_STATE の速度比較結果を参照する形で拡張できる。
+    const skKey = (MASMON_BATTLE_STATE.kinNejiki && typeof chooseKinNejikiEnemySkill === 'function')
+        ? chooseKinNejikiEnemySkill(e, p, affordableSkills, MASMON_BATTLE_STATE.kinNejiki.aiLevel || 1)
+        : affordableSkills.slice().sort((a, b) => b.info.cost - a.info.cost)[0].key;
+
+    return { actionType: 'skill', skKey: skKey };
+}
+
+// --- プレイヤーの行動が確定した際に呼ばれる共通の入り口 ---
+// switch/item は既に効果を適用済みの状態で { alreadyResolved: true } として渡ってくる。
+function submitMasmonPlayerAction(action) {
+    if (MASMON_BATTLE_STATE.isBattleEnd) return;
+
+    MASMON_BATTLE_STATE.isPlayerTurnActive = false;
+    toggleMasmonSkillButtons(false);
+    MASMON_BATTLE_STATE.pendingPlayerAction = action;
+
+    MASMON_BATTLE_STATE.pendingEnemyAction = decideMasmonEnemyAction();
+    if (MASMON_BATTLE_STATE.isBattleEnd) return; // CPU側の処理中にバトルが終了した場合（自滅等）
+
+    setTimeout(() => resolveMasmonTurn(), 500);
+}
+
+// --- 双方の行動が確定した後、行動順を決定して実行を開始する ---
+function resolveMasmonTurn() {
+    if (MASMON_BATTLE_STATE.isBattleEnd) return;
+
+    const p = getPlayerActive();
+    const e = getEnemyActive();
+    const playerAction = MASMON_BATTLE_STATE.pendingPlayerAction || { actionType: 'none' };
+    const enemyAction = MASMON_BATTLE_STATE.pendingEnemyAction || { actionType: 'none' };
+
+    const pDesc = buildTurnActionDescriptor(p, playerAction);
+    const eDesc = buildTurnActionDescriptor(e, enemyAction);
+
+    // ---- 行動順決定（独立モジュール js/turn_order.js に委譲） ----
+    const result = TurnOrderResolver.resolve(pDesc, eDesc);
+    const order = result.order.map(tag => (tag === 'A') ? 'player' : 'enemy');
+
+    // 交代／アイテムのように既に処理済みの行動は自明に先攻となるため、案内ログは出さない
+    const isTrivialFirst = (pDesc.actionType === 'switchOut' || pDesc.actionType === 'item');
+    if (pDesc.actionType !== 'none' && eDesc.actionType !== 'none' && !isTrivialFirst) {
+        const firstName = (order[0] === 'player') ? p.name : e.name;
+        addLog(`⚡ ${firstName} が先に行動する！`);
+    }
+
+    runMasmonActionInOrder(order, 0);
+}
+
+// --- 決定された行動順に沿って、1体ずつ順番に行動を実行していく ---
+function runMasmonActionInOrder(order, idx) {
+    if (MASMON_BATTLE_STATE.isBattleEnd) return;
+    if (idx >= order.length) {
+        finishMasmonTurn();
+        return;
+    }
+
+    const side = order[idx];
+    const unit = (side === 'player') ? getPlayerActive() : getEnemyActive();
+    const opponent = (side === 'player') ? getEnemyActive() : getPlayerActive();
+    const action = (side === 'player') ? MASMON_BATTLE_STATE.pendingPlayerAction : MASMON_BATTLE_STATE.pendingEnemyAction;
+
+    // 先攻の行動で既に戦闘不能になっている場合は行動をスキップする
+    if (!unit || unit.stats.life <= 0) {
+        runMasmonActionInOrder(order, idx + 1);
+        return;
+    }
+
+    if (side === 'enemy' && action && (action.actionType === 'skill' || action.actionType === 'none')) {
+        addLog(`--- ${unit.name} のターン ---`);
+        showEffect('⚠️ ENEMY TURN ⚠️');
+    }
+
+    executeMasmonSideAction(side, unit, opponent, action, () => {
+        if (MASMON_BATTLE_STATE.isBattleEnd) return;
+        const opponentSide = (side === 'player') ? 'enemy' : 'player';
+
+        // 相手が戦闘不能になったかチェック（① 自分側なら選択交代 / ② 相手側なら自動交代＋こちらの交代確認）
+        handleFaintAndSwitch(opponentSide, (r1) => {
+            if (r1.battleEnded) return; // 勝敗判定済み
+            if (r1.turnShouldEnd) {
+                // 交代が発生した場合、このターンの残りの行動（後攻側の行動）は実行せず、
+                // ターンを仕切り直す（ポケットモンスターのバトル仕様を踏襲）
+                setTimeout(() => finishMasmonTurn(), BATTLE_STEP_DELAY.beforeNextTurn);
+                return;
+            }
+
+            // 自分自身が反動等で戦闘不能になったかチェック
+            handleFaintAndSwitch(side, (r2) => {
+                if (r2.battleEnded) return;
+                if (r2.turnShouldEnd) {
+                    setTimeout(() => finishMasmonTurn(), BATTLE_STEP_DELAY.beforeNextTurn);
+                    return;
+                }
+                setTimeout(() => runMasmonActionInOrder(order, idx + 1), BATTLE_STEP_DELAY.beforeNextTurn);
+            });
+        });
+    });
+}
+
+// --- 両者の行動が終わったらターンを進める ---
+function finishMasmonTurn() {
+    if (MASMON_BATTLE_STATE.isBattleEnd) return;
+    MASMON_BATTLE_STATE.turn++;
+    document.getElementById('battle-turn-counter').textContent = MASMON_BATTLE_STATE.turn;
+    startMasmonPlayerTurn(false);
+}
+
+// --- 1体分の行動を実際に実行する（技効果計算・演出・ガッツ消費など） ---
+// 実行「直前」に改めてガッツを再チェックする点がポイント：
+// 先攻の攻撃でガッツを削られた結果、後攻がガッツ不足で技を出せなかった、というケースが発生する。
+function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
+    if (!action || action.actionType === 'none') {
+        let msg = null;
+        let effect = '💨 NO ACTION 💨';
+        if (action && action.reason === 'confused') {
+            msg = `❓ ${unit.name} は混乱していて、行動できなかった！`;
+            effect = '❓ 混乱... ❓';
+        } else if (action && action.reason === 'noguts') {
+            msg = (side === 'enemy')
+                ? `しかし ${unit.name} はガッツが著しく不足しており、何も行動できない！`
+                : `💦 ${unit.name} はガッツが足りず、何も行動できなかった！`;
+        }
+        if (msg) {
+            addLog(msg);
+            showEffect(effect);
+        }
+        setTimeout(onComplete, BATTLE_STEP_DELAY.afterHitEffect);
+        return;
+    }
+
+    // 交代／アイテムは選択した瞬間に効果を適用済み（既存仕様のまま）。行動順上は「済み」として扱う。
+    if (action.actionType === 'switch' || action.actionType === 'item') {
+        onComplete();
+        return;
+    }
+
+    if (action.actionType === 'defend') {
+        MASMON_BATTLE_STATE.isDefending = true;
+        document.getElementById('player-defense-shield').classList.remove('hidden');
+        addLog(`${unit.name} は身を守るため防御の構えを取った！（被ダメ半減／ガッツ回復ペナルティ無し）`);
+        showEffect('🛡️ DEFENSE 🛡️');
+        updateMasmonBattleStatsUI();
+        setTimeout(onComplete, BATTLE_STEP_DELAY.afterHitEffect);
+        return;
+    }
+
+    if (action.actionType === 'skill') {
+        const rawSk = SKILLS_DB[action.skKey];
+        if (!rawSk) { onComplete(); return; }
+        const sk = getMasmonEffectiveSkill(unit, action.skKey);
+
+        // ★ ここが新仕様の要：実行直前のガッツで再判定する
+        if (unit.guts < sk.cost) {
+            addLog(`💦 ${unit.name} はガッツが足りず、【${sk.name}】を繰り出せなかった！`);
+            showEffect('💨 NO ACTION 💨');
+            setTimeout(onComplete, BATTLE_STEP_DELAY.afterHitEffect);
             return;
         }
 
-        const affordableSkills = e.skills
-            .map(skKey => ({ key: skKey, info: getMasmonEffectiveSkill(e, skKey) }))
-            .filter(skObj => skObj.info && e.guts >= skObj.info.cost);
+        unit.guts -= sk.cost;
+        updateMasmonBattleStatsUI();
 
-        if (affordableSkills.length === 0) {
-            addLog(`しかし ${e.name} はガッツが著しく不足しており、何も行動できない！`);
-            showEffect('💨 NO ACTION 💨');
-            setTimeout(() => {
-                if (checkFaintAndProceed('player')) return;
-                setTimeout(() => {
-                    MASMON_BATTLE_STATE.turn++;
-                    document.getElementById('battle-turn-counter').textContent = MASMON_BATTLE_STATE.turn;
-                    startMasmonPlayerTurn(false);
-                }, BATTLE_STEP_DELAY.beforeNextTurn);
-            }, BATTLE_STEP_DELAY.afterHitEffect);
-        } else {
-            // 「ガッツファクトリー」レンタルバトル中はAIレベルに応じた判断ロジックを使用し、
-            // それ以外（従来のマスモンCPU戦）は従来通り「最もガッツ消費が大きい技」を選ぶ簡易AIのままとする
-            const skKey = (MASMON_BATTLE_STATE.kinNejiki && typeof chooseKinNejikiEnemySkill === 'function')
-                ? chooseKinNejikiEnemySkill(e, p, affordableSkills, MASMON_BATTLE_STATE.kinNejiki.aiLevel || 1)
-                : affordableSkills.slice().sort((a, b) => b.info.cost - a.info.cost)[0].key;
-            const sk = getMasmonEffectiveSkill(e, skKey);
-            e.guts -= sk.cost;
+        const steps = [];
+        buildSkillNameStep(steps, side, unit, sk);
+
+        if (sk.type === 'pow' || sk.type === 'int') {
+            buildAttackSkillSteps(steps, side, unit, opponent, sk);
+        } else if (sk.type === 'buff_pow') {
+            buildBuffPowSteps(steps, side, unit);
+        } else if (sk.type === 'heal') {
+            buildHealSteps(steps, side, unit);
+        }
+
+        runBattleStepSequence(steps, () => {
             updateMasmonBattleStatsUI();
+            onComplete();
+        });
+        return;
+    }
 
-            const enemySteps = [];
-            enemySteps.push({
+    onComplete();
+}
+
+// --- 技名表示ステップ（技発動時の自己強化効果もここで解決する） ---
+function buildSkillNameStep(steps, side, unit, sk) {
+    const cfg = SIDE_UI[side];
+    steps.push({
+        run: () => {
+            addLog(`${unit.name} の 【${sk.name}】！`);
+            animateSprite(cfg.spriteContainer, cfg.spriteAnim);
+            applySkillOnUseEffect(unit, sk).forEach(msg => addLog(msg));
+        },
+        wait: BATTLE_STEP_DELAY.afterSkillName
+    });
+}
+
+// --- 攻撃技（ちから／かしこさ技）のダメージ計算・演出ステップ ---
+// プレイヤー側・敵側で完全に共通のロジック。
+// 既存仕様との互換性維持のため、以下の非対称な仕様だけは side によって残している：
+//   ・ガッツによる命中/威力補正（getGutsModifiers）はプレイヤー側にのみ適用される
+//   ・最低保証ダメージはプレイヤー側10、敵側8
+//   ・「防御」コマンドによる被ダメージ半減は、現状プレイヤーのみが選択できる
+function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
+    const cfg = SIDE_UI[side];
+    const useGutsMods = (side === 'player');
+    const mods = getGutsModifiers(attacker.guts);
+
+    const isCertain = sk.hitRate === 100;
+    let hitChance = isCertain
+        ? 100
+        : Math.max(10, Math.min(99, (sk.hitRate + (useGutsMods ? mods.hitMod : 0)) + (attacker.stats.hit - defender.stats.spd) * 0.5 - getBlindHitPenalty(attacker)));
+    if (attacker.isShuchuActive && !isCertain) {
+        hitChance = Math.min(99, hitChance * 1.5);
+    }
+
+    let isHit;
+    let isGuaranteedDodge = false;
+    if (defender.dodgeNextGuaranteed) {
+        isHit = false;
+        isGuaranteedDodge = true;
+        defender.dodgeNextGuaranteed = false;
+    } else {
+        isHit = isCertain || (Math.random() * 100 < hitChance);
+    }
+
+    // 次技威力アップ（オーロラゲート等）の消費は命中判定に関わらず技を撃った時点で消費する
+    const usedForce = consumeForceBoost(attacker, sk.force);
+
+    if (isHit) {
+        const isPow = sk.type === 'pow';
+        const attackerStat = getBuffedAttackStat(attacker, getWeakenedStat(attacker, isPow ? attacker.stats.pow : attacker.stats.int)) * getEquipmentLowLifeAtkMultiplier(attacker);
+        // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（地震・テイルブレード等の防御崩し状態を反映）
+        const defenderStat = getDefDownStat(defender, getBuffedDefenseStat(defender, defender.stats.def)) * 1.5;
+        const statCap = Math.max(30, defenderStat * 2.5);
+        let effectiveAttacker = attackerStat;
+        if (attackerStat > statCap) {
+            effectiveAttacker = statCap + (attackerStat - statCap) * 0.2;
+        }
+
+        const defenderGutsDefenseMod = getGutsDefenseModifier(defender.guts);
+        let rawDmg = ((effectiveAttacker * usedForce) * (useGutsMods ? mods.dmgMod : 1)) - (defenderStat * 0.35);
+        const floorVal = (side === 'player') ? 10 : 8;
+        let damage = Math.floor(Math.max(floorVal, (rawDmg * (0.9 + Math.random() * 0.2)) * defenderGutsDefenseMod));
+
+        let extraDmgMsg = "";
+        if (attacker.isSokojikaraActive) {
+            damage = Math.floor(damage * 1.5);
+            extraDmgMsg += " (底力×1.5)";
+        }
+        if (attacker.isShuchuActive) {
+            damage = Math.floor(damage * 1.2);
+            extraDmgMsg += " (集中×1.2)";
+        }
+        if (attacker.permaForceBoostActive) {
+            damage = Math.floor(damage * 1.2);
+            extraDmgMsg += " (天河天翔×1.2)";
+        }
+        if (isAuraAdvantageous(attacker.aura, defender.aura)) {
+            damage = Math.floor(damage * 1.5);
+            extraDmgMsg += ` (オーラ相性${AURA_TYPES[attacker.aura].emoji}→${AURA_TYPES[defender.aura].emoji}×1.5)`;
+        }
+        const monClassMod = getMonClassDamageMultiplier(attacker.monsterBaseName, defender.monsterBaseName);
+        if (monClassMod !== 1.0) {
+            damage = Math.floor(damage * monClassMod);
+            extraDmgMsg += monClassMod > 1.0 ? ` (モン類相性有利×${monClassMod})` : ` (モン類相性不利×${monClassMod})`;
+        }
+
+        const critChance = 0.10 + (attacker.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(attacker) + getSkillCritBonus(sk);
+        let isCrit = Math.random() < critChance;
+        if (isCrit) {
+            damage = Math.floor(damage * 1.5);
+        }
+
+        // 防御コマンドによる被ダメージ半減（既存仕様通り、現状は「敵の攻撃をプレイヤーが防御する」場合のみ）
+        if (side === 'enemy' && MASMON_BATTLE_STATE.isDefending) {
+            damage = Math.floor(damage / 2);
+        }
+
+        damage = Math.max(1, Math.floor(damage * MASMON_BATTLE_DAMAGE_MULTIPLIER));
+
+        // 九重神眼等のシールドによる被ダメージ吸収
+        const shieldResult = applyShieldAbsorption(defender, damage);
+        damage = shieldResult.finalDamage;
+
+        steps.push({
+            run: () => {
+                showEffect(isCrit ? cfg.critEffect : cfg.hitEffect);
+                animateSprite(cfg.oppSpriteContainer, cfg.oppSpriteAnim);
+            },
+            wait: BATTLE_STEP_DELAY.afterHitEffect
+        });
+
+        steps.push({
+            run: () => {
+                if (isCrit) {
+                    addLog(side === 'player'
+                        ? `★クリティカルヒット！ ${defender.name} に ${damage} ダメージ！${extraDmgMsg}`
+                        : `★相手のクリティカル！ ${defender.name} は ${damage} ダメージを受けた！${extraDmgMsg}`);
+                } else {
+                    addLog(side === 'player'
+                        ? `${defender.name} に ${damage} ダメージ！${extraDmgMsg}`
+                        : `${defender.name} は ${damage} ダメージを受けた！${extraDmgMsg}`);
+                }
+                if (side === 'enemy' && MASMON_BATTLE_STATE.isDefending) {
+                    addLog(`【防御効果】攻撃を盾で受け流し、ダメージを半減した！`);
+                }
+                if (shieldResult.absorbed > 0) {
+                    addLog(`🛡️ ${defender.name} のシールドが ${shieldResult.absorbed} のダメージを吸収した！(シールド残量: ${defender.shieldValue})`);
+                }
+                defender.stats.life = Math.max(0, defender.stats.life - damage);
+                updateMasmonBattleStatsUI();
+                showDamagePopup(cfg.dmgPopup, damage, isCrit);
+                checkMasmonDefenseStatusTriggers(defender);
+                const lifesaverLog = checkAndApplyEquipmentLifesaverEffect(defender);
+                if (lifesaverLog) addLog(lifesaverLog);
+            },
+            wait: BATTLE_STEP_DELAY.afterDamage
+        });
+
+        let finalGutsDown = sk.gutsDown || 0;
+        if (attacker.isGyakujoActive && finalGutsDown > 0) {
+            finalGutsDown = Math.floor(finalGutsDown * 1.2);
+        }
+        if (finalGutsDown > 0) {
+            steps.push({
                 run: () => {
-                    addLog(`${e.name} の 【${sk.name}】！`);
-                    animateSprite('battle-enemy-sprite-container', '-translate-x-6');
-                    // 技発動時（命中判定に関わらず）の自己強化効果（アサルトダンス等）
-                    applySkillOnUseEffect(e, sk).forEach(msg => addLog(msg));
+                    // 丈夫さ強化：丈夫さが高いほど受けるガッツダウン量を軽減する
+                    // 装備の「被ガッツダウンカット」効果もあわせて軽減する
+                    const mitigatedGutsDown = Math.floor(finalGutsDown * getGutsDownMitigation(defender.stats.def) * (1 - getEquipmentGutsDownCutRate(defender)));
+                    const actualGutsDown = Math.min(defender.guts, mitigatedGutsDown);
+                    defender.guts = Math.max(0, defender.guts - actualGutsDown);
+                    addLog(side === 'player'
+                        ? `さらに！相手のガッツを ${actualGutsDown} 奪い取った！${attacker.isGyakujoActive ? " (逆上×1.2)" : ""} (現在: ${Math.floor(defender.guts)})`
+                        : `さらに！ ${defender.name} のガッツが ${actualGutsDown} 奪われた！(現在: ${Math.floor(defender.guts)})`);
+                    // ゲルの「マナドレイン」等：奪ったガッツ分だけ自身のガッツを回復する
+                    const gutsDrain = getGutsDrainAmount(sk, actualGutsDown);
+                    if (gutsDrain > 0) {
+                        attacker.guts = Math.min(100, attacker.guts + gutsDrain);
+                        addLog(`🔮 ${attacker.name} は奪ったガッツを吸収し、自身のガッツが ${gutsDrain} 回復した！(現在: ${Math.floor(attacker.guts)})`);
+                    }
+                    updateMasmonBattleStatsUI();
+                    checkMasmonGyakujoTrigger(defender);
                 },
-                wait: BATTLE_STEP_DELAY.afterSkillName
-            });
-
-            if (sk.type === 'pow' || sk.type === 'int') {
-                const isCertain = sk.hitRate === 100;
-                let hitChance = isCertain ? 100 : Math.max(10, Math.min(99, sk.hitRate + (e.stats.hit - p.stats.spd) * 0.5 - getBlindHitPenalty(e)));
-                if (e.isShuchuActive && !isCertain) {
-                    hitChance = Math.min(99, hitChance * 1.5);
-                }
-                let isHit;
-                let isGuaranteedDodge = false;
-                if (p.dodgeNextGuaranteed) {
-                    isHit = false;
-                    isGuaranteedDodge = true;
-                    p.dodgeNextGuaranteed = false;
-                } else {
-                    isHit = isCertain || (Math.random() * 100 < hitChance);
-                }
-
-                // 次技威力アップの消費は命中判定に関わらず技を撃った時点で消費する
-                const enemyUsedForce = consumeForceBoost(e, sk.force);
-
-                if (isHit) {
-                    const isPow = sk.type === 'pow';
-                    const attackerStat = getBuffedAttackStat(e, getWeakenedStat(e, isPow ? e.stats.pow : e.stats.int)) * getEquipmentLowLifeAtkMultiplier(e);
-                    // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（地震・テイルブレード等の防御崩し状態を反映）
-                    const defenderStat = getDefDownStat(p, getBuffedDefenseStat(p, p.stats.def)) * 1.5;
-                    const statCap = Math.max(30, defenderStat * 2.5);
-                    let effectiveAttacker = attackerStat;
-                    if (attackerStat > statCap) {
-                        effectiveAttacker = statCap + (attackerStat - statCap) * 0.2;
-                    }
-
-                    const playerGutsDefenseMod = getGutsDefenseModifier(p.guts);
-                    let rawDmg = (effectiveAttacker * enemyUsedForce) - (defenderStat * 0.35);
-                    let damage = Math.floor(Math.max(8, (rawDmg * (0.9 + Math.random() * 0.2)) * playerGutsDefenseMod));
-
-                    let enemyExtraDmgMsg = "";
-                    if (e.isSokojikaraActive) {
-                        damage = Math.floor(damage * 1.5);
-                        enemyExtraDmgMsg += " (底力×1.5)";
-                    }
-                    if (e.isShuchuActive) {
-                        damage = Math.floor(damage * 1.2);
-                        enemyExtraDmgMsg += " (集中×1.2)";
-                    }
-                    if (e.permaForceBoostActive) {
-                        damage = Math.floor(damage * 1.2);
-                        enemyExtraDmgMsg += " (天河天翔×1.2)";
-                    }
-                    if (isAuraAdvantageous(e.aura, p.aura)) {
-                        damage = Math.floor(damage * 1.5);
-                        enemyExtraDmgMsg += ` (オーラ相性${AURA_TYPES[e.aura].emoji}→${AURA_TYPES[p.aura].emoji}×1.5)`;
-                    }
-                    const enemyMonClassMod = getMonClassDamageMultiplier(e.monsterBaseName, p.monsterBaseName);
-                    if (enemyMonClassMod !== 1.0) {
-                        damage = Math.floor(damage * enemyMonClassMod);
-                        enemyExtraDmgMsg += enemyMonClassMod > 1.0 ? ` (モン類相性有利×${enemyMonClassMod})` : ` (モン類相性不利×${enemyMonClassMod})`;
-                    }
-
-                    const critChance = 0.10 + (e.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(e) + getSkillCritBonus(sk);
-                    const isCrit = Math.random() < critChance;
-                    if (isCrit) damage = Math.floor(damage * 1.5);
-
-                    if (MASMON_BATTLE_STATE.isDefending) {
-                        damage = Math.floor(damage / 2);
-                    }
-
-                    damage = Math.max(1, Math.floor(damage * MASMON_BATTLE_DAMAGE_MULTIPLIER));
-
-                    // 九重神眼等のシールドによる被ダメージ吸収
-                    const shieldResult = applyShieldAbsorption(p, damage);
-                    damage = shieldResult.finalDamage;
-
-                    enemySteps.push({
-                        run: () => {
-                            showEffect(isCrit ? '⚡ 会心の一撃!! ⚡' : '⚡ 被弾!! ⚡');
-                            animateSprite('battle-player-sprite-container', 'shake');
-                        },
-                        wait: BATTLE_STEP_DELAY.afterHitEffect
-                    });
-
-                    enemySteps.push({
-                        run: () => {
-                            p.stats.life = Math.max(0, p.stats.life - damage);
-                            addLog(isCrit ? `★相手のクリティカル！ ${p.name} は ${damage} ダメージを受けた！${enemyExtraDmgMsg}` : `${p.name} は ${damage} ダメージを受けた！${enemyExtraDmgMsg}`);
-                            if (MASMON_BATTLE_STATE.isDefending) {
-                                addLog(`【防御効果】攻撃を盾で受け流し、ダメージを半減した！`);
-                            }
-                            if (shieldResult.absorbed > 0) {
-                                addLog(`🛡️ ${p.name} のシールドが ${shieldResult.absorbed} のダメージを吸収した！(シールド残量: ${p.shieldValue})`);
-                            }
-                            updateMasmonBattleStatsUI();
-                            showDamagePopup('player-dmg-popup', damage, isCrit);
-                            checkMasmonDefenseStatusTriggers(p);
-                            const pLifesaverLog = checkAndApplyEquipmentLifesaverEffect(p);
-                            if (pLifesaverLog) addLog(pLifesaverLog);
-                        },
-                        wait: BATTLE_STEP_DELAY.afterDamage
-                    });
-
-                    let finalGutsDown = sk.gutsDown || 0;
-                    if (e.isGyakujoActive && finalGutsDown > 0) {
-                        finalGutsDown = Math.floor(finalGutsDown * 1.2);
-                    }
-                    if (finalGutsDown > 0) {
-                        enemySteps.push({
-                            run: () => {
-                                // 丈夫さ強化：丈夫さが高いほど受けるガッツダウン量を軽減する
-                                // 装備の「被ガッツダウンカット」効果もあわせて軽減する
-                                const mitigatedGutsDown = Math.floor(finalGutsDown * getGutsDownMitigation(p.stats.def) * (1 - getEquipmentGutsDownCutRate(p)));
-                                const actualGutsDown = Math.min(p.guts, mitigatedGutsDown);
-                                p.guts = Math.max(0, p.guts - actualGutsDown);
-                                addLog(`さらに！ ${p.name} のガッツが ${actualGutsDown} 奪われた！(現在: ${Math.floor(p.guts)})`);
-                                // ゲルの「マナドレイン」等：奪ったガッツ分だけ自身のガッツを回復する
-                                const gutsDrain = getGutsDrainAmount(sk, actualGutsDown);
-                                if (gutsDrain > 0) {
-                                    e.guts = Math.min(100, e.guts + gutsDrain);
-                                    addLog(`🔮 ${e.name} は奪ったガッツを吸収し、自身のガッツが ${gutsDrain} 回復した！(現在: ${Math.floor(e.guts)})`);
-                                }
-                                updateMasmonBattleStatsUI();
-                                checkMasmonGyakujoTrigger(p);
-                            },
-                            wait: BATTLE_STEP_DELAY.perExtraLog
-                        });
-                    }
-
-                    const onHitMsgs = applySkillOnHitEffect(e, p, sk);
-                    onHitMsgs.forEach(msg => {
-                        enemySteps.push({ run: () => addLog(msg), wait: BATTLE_STEP_DELAY.perExtraLog });
-                    });
-
-                    // 相手マスモンが「ドレイン」等を使う場合：与えたダメージの一部を自身のライフに変換
-                    const enemyDrainHeal = getDrainHealAmount(sk, damage);
-                    if (enemyDrainHeal > 0) {
-                        enemySteps.push({
-                            run: () => {
-                                e.stats.life = Math.min(e.stats.maxLife, e.stats.life + enemyDrainHeal);
-                                addLog(`🌿 ${e.name} は相手の生命力を吸収し、ライフが ${enemyDrainHeal} 回復した！(現在: ${Math.floor(e.stats.life)})`);
-                                updateMasmonBattleStatsUI();
-                            },
-                            wait: BATTLE_STEP_DELAY.perExtraLog
-                        });
-                    }
-
-                    e.isSokojikaraActive = false;
-                    e.isShuchuActive = false;
-                } else {
-                    enemySteps.push({
-                        run: () => {
-                            if (isGuaranteedDodge) {
-                                addLog(`🌫️ ${p.name} は陽炎の効果で攻撃を確実に回避した！`);
-                            } else {
-                                addLog(`しかし ${p.name} は身軽にかわした！`);
-                            }
-                            showEffect('💨 回避!! 💨');
-                            showDamagePopup('player-dmg-popup', 'MISS', false);
-                        },
-                        wait: BATTLE_STEP_DELAY.afterHitEffect
-                    });
-                }
-            } else if (sk.type === 'buff_pow') {
-                enemySteps.push({
-                    run: () => {
-                        e.stats.pow += 15;
-                        addLog(`${e.name} は気合を入れて攻撃力を上げた！`);
-                        showEffect('💪 相手の攻撃UP! 💪');
-                        updateMasmonBattleStatsUI();
-                    },
-                    wait: BATTLE_STEP_DELAY.afterHitEffect
-                });
-            } else if (sk.type === 'heal') {
-                enemySteps.push({
-                    run: () => {
-                        const healAmount = Math.floor(e.stats.maxLife * 0.35);
-                        e.stats.life = Math.min(e.stats.maxLife, e.stats.life + healAmount);
-                        addLog(`${e.name} は癒された！ライフが ${healAmount} 回復！`);
-                        showEffect('💚 相手回復! 💚');
-                        updateMasmonBattleStatsUI();
-                    },
-                    wait: BATTLE_STEP_DELAY.afterHitEffect
-                });
-            }
-
-            runBattleStepSequence(enemySteps, () => {
-                if (checkFaintAndProceed('player')) return;
-                setTimeout(() => {
-                    MASMON_BATTLE_STATE.turn++;
-                    document.getElementById('battle-turn-counter').textContent = MASMON_BATTLE_STATE.turn;
-                    startMasmonPlayerTurn(false);
-                }, BATTLE_STEP_DELAY.beforeNextTurn);
+                wait: BATTLE_STEP_DELAY.perExtraLog
             });
         }
-    }, 600);
+
+        // モノリスの技等が持つ追加効果（衰弱／混乱付与／次技威力アップ／継続ダメージ等）は
+        // 命中確定時点の状態を使って計算しておき、表示だけを1件ずつ後で行う
+        const onHitMsgs = applySkillOnHitEffect(attacker, defender, sk);
+        onHitMsgs.forEach(msg => {
+            steps.push({ run: () => addLog(msg), wait: BATTLE_STEP_DELAY.perExtraLog });
+        });
+
+        // プラントの「ドレイン」等：与えたダメージの一部を自身のライフに変換
+        const drainHeal = getDrainHealAmount(sk, damage);
+        if (drainHeal > 0) {
+            steps.push({
+                run: () => {
+                    attacker.stats.life = Math.min(attacker.stats.maxLife, attacker.stats.life + drainHeal);
+                    addLog(`🌿 ${attacker.name} は相手の生命力を吸収し、ライフが ${drainHeal} 回復した！(現在: ${Math.floor(attacker.stats.life)})`);
+                    updateMasmonBattleStatsUI();
+                },
+                wait: BATTLE_STEP_DELAY.perExtraLog
+            });
+        }
+
+        attacker.isSokojikaraActive = false;
+        attacker.isShuchuActive = false;
+    } else {
+        steps.push({
+            run: () => {
+                if (isGuaranteedDodge) {
+                    addLog(`🌫️ ${defender.name} は陽炎の効果で攻撃を確実に回避した！`);
+                } else {
+                    addLog(side === 'player' ? 'しかし、攻撃はかわされた！' : `しかし ${defender.name} は身軽にかわした！`);
+                }
+                showEffect(cfg.missEffect);
+                showDamagePopup(cfg.dmgPopup, 'MISS', false);
+            },
+            wait: BATTLE_STEP_DELAY.afterHitEffect
+        });
+    }
 }
+
+// --- 補助技（ちからアップ）の演出ステップ ---
+function buildBuffPowSteps(steps, side, unit) {
+    const cfg = SIDE_UI[side];
+    steps.push({
+        run: () => {
+            unit.stats.pow += 15;
+            addLog(side === 'player' ? `${unit.name} の闘志がみなぎる！ちからが15アップした！` : `${unit.name} は気合を入れて攻撃力を上げた！`);
+            showEffect(cfg.buffEffect);
+            updateMasmonBattleStatsUI();
+        },
+        wait: BATTLE_STEP_DELAY.afterHitEffect
+    });
+}
+
+// --- 回復技の演出ステップ ---
+function buildHealSteps(steps, side, unit) {
+    const cfg = SIDE_UI[side];
+    steps.push({
+        run: () => {
+            const healAmount = Math.floor(unit.stats.maxLife * 0.35);
+            unit.stats.life = Math.min(unit.stats.maxLife, unit.stats.life + healAmount);
+            addLog(`${unit.name} は癒された！ライフが ${healAmount} 回復！`);
+            showEffect(cfg.healEffect);
+            updateMasmonBattleStatsUI();
+        },
+        wait: BATTLE_STEP_DELAY.afterHitEffect
+    });
+}
+
 
 // -----------------------------------------------------
 // バトル終了処理
