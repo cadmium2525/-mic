@@ -111,8 +111,8 @@ function setupBattle(isBoss = false) {
     initBattleLog([`${GAME_STATE.enemy.type}の ${GAME_STATE.enemy.name} が現れた！`]);
 
     // オーラバッジの表示更新（味方は儀式で決めたオーラ、敵はランダム付与されたオーラ）
-    renderAuraBadge('player-aura-badge', GAME_STATE.player.aura);
-    renderAuraBadge('enemy-aura-badge', GAME_STATE.enemy.aura);
+    renderAuraBadge('player-aura-badge', GAME_STATE.player.aura, GAME_STATE.player.name);
+    renderAuraBadge('enemy-aura-badge', GAME_STATE.enemy.aura, GAME_STATE.enemy.type);
     if (GAME_STATE.player.aura && GAME_STATE.enemy.aura) {
         const aura = AURA_TYPES[GAME_STATE.player.aura];
         addLog(`✨ あなたのオーラ${aura.emoji}${aura.name}と、相手のオーラ${AURA_TYPES[GAME_STATE.enemy.aura].emoji}${AURA_TYPES[GAME_STATE.enemy.aura].name}が共鳴する…`);

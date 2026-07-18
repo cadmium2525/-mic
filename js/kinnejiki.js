@@ -352,7 +352,7 @@ function maybeExecuteKinNejikiEnemySwitch() {
     document.getElementById('enemy-name').textContent = `${newUnit.name}（${enemyMetaOwner}）`;
     renderMonsterVisual(document.getElementById('battle-enemy-icon'), newUnit.monsterBaseName, newUnit.emoji, newUnit.isAwakened);
     document.getElementById('battle-enemy-type').textContent = newUnit.name;
-    renderAuraBadge('enemy-aura-badge', newUnit.aura);
+    renderAuraBadge('enemy-aura-badge', newUnit.aura, newUnit.monsterBaseName);
     return true;
 }
 
@@ -398,7 +398,9 @@ function renderKinNejikiSelectScreen() {
         const skillNames = m.skills.map(sk => (SKILLS_DB[sk] ? SKILLS_DB[sk].name : sk)).join('、');
         const equipText = m.equip ? getEquipmentDisplayName(m.equip) : '未装備';
         const aura = AURA_TYPES[m.aura];
-        const auraBadge = aura ? `<span class="ml-1 px-1 py-0.5 rounded text-[8px] font-bold text-slate-900 ${aura.colorClass}">${aura.emoji}${aura.name}</span>` : '';
+        const monClassKey = getMonClassKeyForName(m.monsterBaseName);
+        const monClassInfo = monClassKey ? MON_CLASS_TYPES[monClassKey] : null;
+        const auraBadge = aura ? `<span class="ml-1 px-1 py-0.5 rounded text-[8px] font-bold text-slate-900 ${aura.colorClass}">${aura.emoji}${monClassInfo ? monClassInfo.emoji : ''}</span>` : '';
 
         const iconWrap = document.createElement('div');
         iconWrap.className = 'w-10 h-10 flex items-center justify-center text-2xl flex-shrink-0 bg-[#1a120b] rounded-full border border-amber-900/40 overflow-hidden';
@@ -597,7 +599,9 @@ function renderKinNejikiSwapLists() {
             const visualId = `kinnejiki-swap-visual-${keyPrefix}-${idx}`;
 
             const auraInfo = m.aura ? AURA_TYPES[m.aura] : null;
-            const auraText = auraInfo ? `${auraInfo.emoji} ${auraInfo.name}オーラ` : 'オーラなし';
+            const monClassKeySwap = getMonClassKeyForName(m.monsterBaseName);
+            const monClassInfoSwap = monClassKeySwap ? MON_CLASS_TYPES[monClassKeySwap] : null;
+            const auraText = (auraInfo ? auraInfo.emoji : '') + (monClassInfoSwap ? monClassInfoSwap.emoji : '');
 
             const equipText = m.equip
                 ? `${(EQUIPMENT_DB[m.equip.equipId] || {}).icon || '⚙️'} ${getEquipmentDisplayName(m.equip)}（${getEquipmentDisplayDesc(m.equip)}）`

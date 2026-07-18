@@ -30,7 +30,7 @@ function updateAdventureUI() {
     const advIconEl = document.getElementById('adventure-monster-icon');
     renderMonsterVisual(advIconEl, p.name, p.emoji, GAME_STATE.isAwakened, true);
     document.getElementById('adventure-monster-name').textContent = p.name;
-    renderAuraBadge('adventure-aura-badge', p.aura);
+    renderAuraBadge('adventure-aura-badge', p.aura, p.name);
     
     document.getElementById('adv-stat-life').textContent = `${p.stats.life}/${p.stats.maxLife}`;
     document.getElementById('adv-stat-pow').textContent = p.stats.pow;

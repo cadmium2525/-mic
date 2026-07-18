@@ -323,7 +323,7 @@ function renderRealtimeBattleUI(state) {
     document.getElementById('enemy-name').textContent = `${opp.name}（${oppOwnerName}）`;
     renderMonsterVisual(document.getElementById('battle-enemy-icon'), opp.monsterBaseName, opp.emoji, opp.isAwakened);
     document.getElementById('battle-enemy-type').textContent = opp.name;
-    renderAuraBadge('enemy-aura-badge', opp.aura);
+    renderAuraBadge('enemy-aura-badge', opp.aura, opp.monsterBaseName);
     document.getElementById('enemy-hp-text').textContent = `HP: ${opp.life}/${opp.maxLife}`;
     document.getElementById('enemy-hp-bar').style.width = `${Math.max(0, (opp.life / opp.maxLife) * 100)}%`;
     document.getElementById('enemy-guts-text').textContent = Math.floor(opp.guts);
@@ -331,7 +331,7 @@ function renderRealtimeBattleUI(state) {
 
     renderMonsterVisual(document.getElementById('battle-player-icon'), me.monsterBaseName, me.emoji, me.isAwakened, true);
     document.getElementById('battle-player-name').textContent = me.name;
-    renderAuraBadge('player-aura-badge', me.aura);
+    renderAuraBadge('player-aura-badge', me.aura, me.monsterBaseName);
     document.getElementById('player-hp-text').textContent = `${me.life}/${me.maxLife}`;
     document.getElementById('player-hp-bar').style.width = `${Math.max(0, (me.life / me.maxLife) * 100)}%`;
     document.getElementById('guts-number').textContent = Math.floor(me.guts);

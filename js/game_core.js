@@ -86,7 +86,7 @@ function renderMonsterVisual(containerEl, name, emoji, isAwakened = false, isPar
 
 
 // --- オーラバッジ表示ヘルパー（バトル画面の名前横に色付きバッジを表示する） ---
-function renderAuraBadge(elId, auraKey) {
+function renderAuraBadge(elId, auraKey, monsterRawName) {
     const el = document.getElementById(elId);
     if (!el) return;
     const aura = AURA_TYPES[auraKey];
@@ -95,7 +95,9 @@ function renderAuraBadge(elId, auraKey) {
         el.textContent = '';
         return;
     }
-    el.textContent = `${aura.emoji}${aura.name}`;
+    const monClassKey = typeof getMonClassKeyForName === 'function' ? getMonClassKeyForName(monsterRawName) : null;
+    const monClassInfo = monClassKey ? MON_CLASS_TYPES[monClassKey] : null;
+    el.textContent = monClassInfo ? `${aura.emoji}${monClassInfo.emoji}` : aura.emoji;
     el.className = `px-1 py-0.5 rounded text-[8px] font-bold text-slate-900 ${aura.colorClass}`;
 }
 

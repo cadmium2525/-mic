@@ -178,11 +178,11 @@ function startMasmonBattleCommon(floorText) {
     document.getElementById('enemy-name').textContent = e.name;
     renderMonsterVisual(document.getElementById('battle-enemy-icon'), e.monsterBaseName, e.emoji, e.isAwakened);
     document.getElementById('battle-enemy-type').textContent = e.name;
-    renderAuraBadge('enemy-aura-badge', e.aura);
+    renderAuraBadge('enemy-aura-badge', e.aura, e.monsterBaseName);
 
     renderMonsterVisual(document.getElementById('battle-player-icon'), p.monsterBaseName, p.emoji, p.isAwakened, true);
     document.getElementById('battle-player-name').textContent = p.name;
-    renderAuraBadge('player-aura-badge', p.aura);
+    renderAuraBadge('player-aura-badge', p.aura, p.monsterBaseName);
 
     const initialLogEntries = [`${enemyOwner}の【${e.name}】が立ちはだかった！`];
     if (isTeam) {
@@ -274,13 +274,13 @@ function checkFaintAndProceed(side) {
     if (side === 'player') {
         renderMonsterVisual(document.getElementById('battle-player-icon'), newUnit.monsterBaseName, newUnit.emoji, newUnit.isAwakened, true);
         document.getElementById('battle-player-name').textContent = newUnit.name;
-        renderAuraBadge('player-aura-badge', newUnit.aura);
+        renderAuraBadge('player-aura-badge', newUnit.aura, newUnit.monsterBaseName);
         renderMasmonBattleSkills();
     } else {
         document.getElementById('enemy-name').textContent = newUnit.name;
         renderMonsterVisual(document.getElementById('battle-enemy-icon'), newUnit.monsterBaseName, newUnit.emoji, newUnit.isAwakened);
         document.getElementById('battle-enemy-type').textContent = newUnit.name;
-        renderAuraBadge('enemy-aura-badge', newUnit.aura);
+        renderAuraBadge('enemy-aura-badge', newUnit.aura, newUnit.monsterBaseName);
     }
 
     renderTeamIcons();
@@ -703,7 +703,7 @@ function executeMasmonSwitch(targetIdx) {
 
     renderMonsterVisual(document.getElementById('battle-player-icon'), target.monsterBaseName, target.emoji, target.isAwakened, true);
     document.getElementById('battle-player-name').textContent = target.name;
-    renderAuraBadge('player-aura-badge', target.aura);
+    renderAuraBadge('player-aura-badge', target.aura, target.monsterBaseName);
     renderTeamIcons();
     updateMasmonBattleStatsUI();
     renderMasmonBattleSkills();
