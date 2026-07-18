@@ -910,6 +910,11 @@ function executeMasmonPlayerSkill(skKey) {
                 damage = Math.floor(damage * 1.5);
                 extraDmgMsg += ` (オーラ相性${AURA_TYPES[p.aura].emoji}→${AURA_TYPES[e.aura].emoji}×1.5)`;
             }
+            const monClassMod = getMonClassDamageMultiplier(p.monsterBaseName, e.monsterBaseName);
+            if (monClassMod !== 1.0) {
+                damage = Math.floor(damage * monClassMod);
+                extraDmgMsg += monClassMod > 1.0 ? ` (モン類相性有利×${monClassMod})` : ` (モン類相性不利×${monClassMod})`;
+            }
 
             const critChance = 0.10 + (p.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(p) + getSkillCritBonus(sk);
             let isCrit = Math.random() < critChance;
@@ -1257,6 +1262,11 @@ function executeMasmonEnemyTurn() {
                     if (isAuraAdvantageous(e.aura, p.aura)) {
                         damage = Math.floor(damage * 1.5);
                         enemyExtraDmgMsg += ` (オーラ相性${AURA_TYPES[e.aura].emoji}→${AURA_TYPES[p.aura].emoji}×1.5)`;
+                    }
+                    const enemyMonClassMod = getMonClassDamageMultiplier(e.monsterBaseName, p.monsterBaseName);
+                    if (enemyMonClassMod !== 1.0) {
+                        damage = Math.floor(damage * enemyMonClassMod);
+                        enemyExtraDmgMsg += enemyMonClassMod > 1.0 ? ` (モン類相性有利×${enemyMonClassMod})` : ` (モン類相性不利×${enemyMonClassMod})`;
                     }
 
                     const critChance = 0.10 + (e.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(e) + getSkillCritBonus(sk);

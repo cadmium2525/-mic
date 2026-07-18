@@ -24,10 +24,64 @@ function getRandomAuraKey() {
     return keys[Math.floor(Math.random() * keys.length)];
 }
 
+// =====================================================
+// モン類データベース（新要素）
+// モンスターの種族ごとに固定で割り振られる分類。オーラとは異なり、
+// 育成中の付与や抽選ではなく、種族固有の性質として常に決まっている。
+// 相性: 獣族→怪物→無機→創造→幻霊→魔族→獣族 の順に有利（beatsで示すモン類に対して1.5倍ダメージ）
+// 自身が有利なモン類の場合、与ダメージ1.5倍・被ダメージ0.75倍となる。
+// =====================================================
+const MON_CLASS_TYPES = {
+    beast:     { key: 'beast',     name: '獣族', emoji: '🐾', beats: 'monster' },
+    monster:   { key: 'monster',   name: '怪物', emoji: '👹', beats: 'inorganic' },
+    inorganic: { key: 'inorganic', name: '無機', emoji: '⚙️', beats: 'creation' },
+    creation:  { key: 'creation',  name: '創造', emoji: '✨', beats: 'spirit' },
+    spirit:    { key: 'spirit',    name: '幻霊', emoji: '👻', beats: 'demon' },
+    demon:     { key: 'demon',     name: '魔族', emoji: '😈', beats: 'beast' }
+};
+
+// --- モンスター名（種族名）の表記ゆれを取り除き、MON_CLASS_BY_SPECIES照合用の素の種族名にする ---
+// 例: "中ボス：ゴビ" → "ゴビ"、"モッチー種" → "モッチー"、"モッチー (強敵)" → "モッチー"
+function cleanMonsterSpeciesName(rawName) {
+    if (!rawName) return '';
+    return String(rawName)
+        .replace('中ボス：', '')
+        .replace('伝説の邪神：', '')
+        .split(' ')[0]
+        .replace(/\s*\(強敵\)\s*/g, '')
+        .replace(/種$/, '');
+}
+
+// --- 種族名からモン類キー（beast/monster/inorganic/creation/spirit/demon）を取得 ---
+// MON_CLASS_BY_SPECIES は MONSTER_TEMPLATES 定義後に構築される（このファイル下部を参照）
+function getMonClassKeyForName(rawName) {
+    const cleanName = cleanMonsterSpeciesName(rawName);
+    return (typeof MON_CLASS_BY_SPECIES !== 'undefined' && MON_CLASS_BY_SPECIES[cleanName]) || null;
+}
+
+// --- 攻撃側の種族が防御側の種族に対してモン類的に有利かどうかを判定する ---
+function isMonClassAdvantageous(attackerRawName, defenderRawName) {
+    const atkClass = getMonClassKeyForName(attackerRawName);
+    const defClass = getMonClassKeyForName(defenderRawName);
+    if (!atkClass || !defClass) return false;
+    return MON_CLASS_TYPES[atkClass].beats === defClass;
+}
+
+// --- 攻撃側から見たモン類ダメージ倍率を返す（有利:1.5 / 不利(相手が自分に有利):0.75 / それ以外:1.0） ---
+function getMonClassDamageMultiplier(attackerRawName, defenderRawName) {
+    const atkClass = getMonClassKeyForName(attackerRawName);
+    const defClass = getMonClassKeyForName(defenderRawName);
+    if (!atkClass || !defClass || atkClass === defClass) return 1.0;
+    if (MON_CLASS_TYPES[atkClass].beats === defClass) return 1.5;
+    if (MON_CLASS_TYPES[defClass].beats === atkClass) return 0.75;
+    return 1.0;
+}
+
 // --- モンスターデータベース ---
 const MONSTER_TEMPLATES = {
     mochi: {
         id: 'mochi',
+        monClass: 'spirit',
         name: 'モッチー',
         emoji: '🍪',
         desc: '丸くて愛らしいが、バランスの取れた優秀な能力と強力なガッツ回復力を持つ。',
@@ -35,6 +89,7 @@ const MONSTER_TEMPLATES = {
     },
     suezo: {
         id: 'suezo',
+        monClass: 'demon',
         name: 'スエゾー',
         emoji: '👁️',
         desc: '単眼の奇妙なモンスター。かしこさと命中が非常に高く、トリッキーな技が得意。',
@@ -42,6 +97,7 @@ const MONSTER_TEMPLATES = {
     },
     dino: {
         id: 'dino',
+        monClass: 'beast',
         name: 'ディノ',
         emoji: '🦖',
         desc: '恐竜のような獰猛な外見。ちからと丈夫さに優れ、大ダメージを与える大技を放つ。',
@@ -49,6 +105,7 @@ const MONSTER_TEMPLATES = {
     },
     monolith: {
         id: 'monolith',
+        monClass: 'inorganic',
         name: 'モノリス',
         emoji: '🗿',
         desc: '古代より佇む謎の岩石生命体。動きは鈍く回避は苦手だが、岩の肉体は並外れた丈夫さを誇り、ちから・かしこさ両面の技を使いこなす。',
@@ -56,6 +113,7 @@ const MONSTER_TEMPLATES = {
     },
     plant: {
         id: 'plant',
+        monClass: 'spirit',
         name: 'プラント',
         emoji: '🌸',
         desc: '花を戴く植物系のモンスター。ちからはやや低めだが、驚異的な生命力を持ち、多彩なかしこさ技で相手を翻弄する。',
@@ -63,6 +121,7 @@ const MONSTER_TEMPLATES = {
     },
     kyubi: {
         id: 'kyubi',
+        monClass: 'beast',
         name: 'キュービ',
         emoji: '🦊',
         desc: '妖しい九尾を操る霊獣。ライフと丈夫さは低めだが、卓越したかしこさと俊敏さを併せ持ち、幻惑と防御術で戦況を操る。',
@@ -74,6 +133,7 @@ const MONSTER_TEMPLATES = {
     // =====================================================
     ham: {
         id: 'ham',
+        monClass: 'beast',
         name: 'ハム',
         emoji: '🐇',
         desc: '素早い身のこなしのウサギ型モンスター。命中と回避に優れ、格闘技主体の接近戦を得意とするが、ライフと丈夫さはやや低め。',
@@ -81,6 +141,7 @@ const MONSTER_TEMPLATES = {
     },
     arrowhead: {
         id: 'arrowhead',
+        monClass: 'monster',
         name: 'アローヘッド',
         emoji: '🦀',
         desc: '硬い甲殻を持つ蟹型モンスター。丈夫さと回避に優れ、ガッツ回復もそこそこ速いが、命中はやや低め。',
@@ -88,6 +149,7 @@ const MONSTER_TEMPLATES = {
     },
     nendoro: {
         id: 'nendoro',
+        monClass: 'demon',
         name: 'ネンドロ',
         emoji: '👤',
         desc: 'プロレスラーのような屈強な粘土質モンスター。ライフ・ちから・回避のすべてが高水準で、格闘技の連打で押し切る。かしこさは低い。',
@@ -95,6 +157,7 @@ const MONSTER_TEMPLATES = {
     },
     henger: {
         id: 'henger',
+        monClass: 'inorganic',
         name: 'ヘンガー',
         emoji: '🤖',
         desc: '機械仕掛けの人造モンスター。ちから・かしこさ・命中のバランスに優れ、レーザーや光線技を得意とするが丈夫さはやや低め。',
@@ -102,6 +165,7 @@ const MONSTER_TEMPLATES = {
     },
     durahan: {
         id: 'durahan',
+        monClass: 'demon',
         name: 'デュラハン',
         emoji: '🛡️',
         desc: '甲冑を纏う騎士型モンスター。ちからと丈夫さが非常に高く重厚な一撃を得意とするが、ガッツ回復と回避に難がある。',
@@ -109,6 +173,7 @@ const MONSTER_TEMPLATES = {
     },
     golem: {
         id: 'golem',
+        monClass: 'inorganic',
         name: 'ゴーレム',
         emoji: '🗿',
         desc: '岩石の巨体を持つゴーレム型モンスター。ちからと丈夫さは最高クラスだが、命中と回避が低く動きは非常に鈍い。',
@@ -116,6 +181,7 @@ const MONSTER_TEMPLATES = {
     },
     kawazumo: {
         id: 'kawazumo',
+        monClass: 'monster',
         name: 'カワズモー',
         emoji: '🐸',
         desc: '力士のような体躯を持つ蛙型モンスター。がっちりとした重い体と怪力を武器に、張り手や投げ技を得意とするが、見た目に反して舌や鳴き声を使ったかしこさ技も巧みに操る。動きはやや鈍重。',
@@ -123,6 +189,7 @@ const MONSTER_TEMPLATES = {
     },
     hinotori: {
         id: 'hinotori',
+        monClass: 'creation',
         name: 'ヒノトリ',
         emoji: '🐦‍🔥',
         desc: '身を炎に包んだ伝説の不死鳥。ちから・かしこさの両面で高い水準を誇り、多彩な炎の技を操って相手を焼き尽くすが、丈夫さはやや低い。',
@@ -130,6 +197,7 @@ const MONSTER_TEMPLATES = {
     },
     gari: {
         id: 'gari',
+        monClass: 'creation',
         name: 'ガリ',
         emoji: '👊',
         desc: '厳しい修行の末に神聖な力を会得した孤高の武闘家モンスター。ちから・かしこさともに高水準で、拳打と神聖魔法を織り交ぜた多彩な技を操るが、丈夫さはやや薄い。',
@@ -137,6 +205,7 @@ const MONSTER_TEMPLATES = {
     },
     metalner: {
         id: 'metalner',
+        monClass: 'creation',
         name: 'メタルナー',
         emoji: '🤖',
         desc: '全身を鋼のような金属質の肉体で覆った拳法家モンスター。ちからと丈夫さに優れ、変幻自在の掌打で相手を翻弄するが、かしこさはやや低め。',
@@ -144,6 +213,7 @@ const MONSTER_TEMPLATES = {
     },
     kijin: {
         id: 'kijin',
+        monClass: 'monster',
         name: 'キジン',
         emoji: '👹',
         desc: '鬼神の名を冠する怒りの戦鬼。並外れたちからと丈夫さを誇り、鬼気迫る技の数々で相手を圧倒するが、かしこさはほとんど持ち合わせていない。',
@@ -151,6 +221,7 @@ const MONSTER_TEMPLATES = {
     },
     ghost: {
         id: 'ghost',
+        monClass: 'monster',
         name: 'ゴースト',
         emoji: '👻',
         desc: '悪戯好きな幽霊モンスター。かしこさに優れ、驚かしや呪いを絡めた多彩な技で相手を翻弄するが、丈夫さは低め。',
@@ -158,6 +229,7 @@ const MONSTER_TEMPLATES = {
     },
     gel: {
         id: 'gel',
+        monClass: 'spirit',
         name: 'ゲル',
         emoji: '🍮',
         desc: 'ぷるぷると波打つ半透明の粘性生命体。ちから・かしこさともに高水準で、突き刺しから熱線・砲撃まで多彩な技を繰り出すが、重く粘つく体のため動きは非常に鈍い。',
@@ -165,6 +237,7 @@ const MONSTER_TEMPLATES = {
     },
     ark: {
         id: 'ark',
+        monClass: 'spirit',
         name: 'アーク',
         emoji: '😇',
         desc: '天より遣わされたと伝わる裁きの天使モンスター。かしこさが桁外れに高く、光と裁きを纏った荘厳な詠唱技の数々で相手を圧倒するが、ちから・丈夫さはかなり低い。',
@@ -172,6 +245,7 @@ const MONSTER_TEMPLATES = {
     },
     illumine: {
         id: 'illumine',
+        monClass: 'inorganic',
         name: 'イルミネ',
         emoji: '⚔️',
         desc: '光り輝く無数の武器を自在に操る戦士型モンスター。ちからに優れ、剣・盾・弓・爪など多彩な得物を使い分ける万能の戦闘スタイルを誇るが、かしこさはかなり低い。',
@@ -179,6 +253,7 @@ const MONSTER_TEMPLATES = {
     },
     liger: {
         id: 'liger',
+        monClass: 'beast',
         name: 'ライガー',
         emoji: '🐯',
         desc: 'ライオンと虎の力を併せ持つ俊敏な猛獣モンスター。ちからに優れ、鋭い爪と牙による接近戦に加え、雷や冷気を操る技も操る。動きは非常に俊敏だが、丈夫さはやや低め。',
@@ -186,6 +261,7 @@ const MONSTER_TEMPLATES = {
     },
     pixie: {
         id: 'pixie',
+        monClass: 'demon',
         name: 'ピクシー',
         emoji: '🧚',
         desc: '小さな羽で宙を舞う妖精モンスター。かしこさが非常に高く、光や雷を操る多彩な技とすばしっこさを持ち味とするが、ちからと丈夫さは低め。',
@@ -193,12 +269,22 @@ const MONSTER_TEMPLATES = {
     },
     zan: {
         id: 'zan',
+        monClass: 'creation',
         name: 'ザン',
         emoji: '🥷',
         desc: '全身に闘気を纏う凄腕の剣士型モンスター。ちからに極めて優れ、繰り出す斬撃のほとんどに強力な継続ダメージを付与する。かしこさはやや低め。',
         stats: { maxLife: 210, life: 210, pow: 100, int: 45, hit: 60, spd: 56, def: 38, gutsSpeed: 15 }
     }
 };
+
+// --- 種族名（例: 'モッチー'）→ モン類キー（例: 'spirit'）の対応表。MONSTER_TEMPLATESから自動生成 ---
+const MON_CLASS_BY_SPECIES = {};
+Object.keys(MONSTER_TEMPLATES).forEach(templateId => {
+    const tmpl = MONSTER_TEMPLATES[templateId];
+    if (tmpl && tmpl.name && tmpl.monClass) {
+        MON_CLASS_BY_SPECIES[tmpl.name] = tmpl.monClass;
+    }
+});
 
 // --- 技データベース (ダメージランク対応) ---
 const SKILLS_DB = {

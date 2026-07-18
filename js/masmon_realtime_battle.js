@@ -963,6 +963,11 @@ async function performRealtimeAction(action) {
                             damage = Math.floor(damage * 1.5);
                             meExtraDmgMsg += ` (オーラ相性${AURA_TYPES[me.aura].emoji}→${AURA_TYPES[opp.aura].emoji}×1.5)`;
                         }
+                        const monClassMod = getMonClassDamageMultiplier(me.monsterBaseName, opp.monsterBaseName);
+                        if (monClassMod !== 1.0) {
+                            damage = Math.floor(damage * monClassMod);
+                            meExtraDmgMsg += monClassMod > 1.0 ? ` (モン類相性有利×${monClassMod})` : ` (モン類相性不利×${monClassMod})`;
+                        }
 
                         const critChance = 0.10 + (me.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(me) + getSkillCritBonus(sk);
                         const isCrit = Math.random() < critChance;

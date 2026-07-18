@@ -519,6 +519,11 @@ function executePlayerSkill(skKey) {
                     damage = Math.floor(damage * 1.5);
                     extraDmgMsg += ` (オーラ相性${AURA_TYPES[p.aura].emoji}→${AURA_TYPES[e.aura].emoji}×1.5)`;
                 }
+                const monClassMod = getMonClassDamageMultiplier(p.name, e.type);
+                if (monClassMod !== 1.0) {
+                    damage = Math.floor(damage * monClassMod);
+                    extraDmgMsg += monClassMod > 1.0 ? ` (モン類相性有利×${monClassMod})` : ` (モン類相性不利×${monClassMod})`;
+                }
                 let isCrit = Math.random() < 0.10;
                 if (isCrit) {
                     damage = Math.floor(damage * 1.5);
@@ -735,6 +740,11 @@ function executeEnemyTurn() {
                         if (isAuraAdvantageous(e.aura, p.aura)) {
                             damage = Math.floor(damage * 1.5);
                             enemyAuraMsg = ` (オーラ相性${AURA_TYPES[e.aura].emoji}→${AURA_TYPES[p.aura].emoji}×1.5)`;
+                        }
+                        const enemyMonClassMod = getMonClassDamageMultiplier(e.type, p.name);
+                        if (enemyMonClassMod !== 1.0) {
+                            damage = Math.floor(damage * enemyMonClassMod);
+                            enemyAuraMsg += enemyMonClassMod > 1.0 ? ` (モン類相性有利×${enemyMonClassMod})` : ` (モン類相性不利×${enemyMonClassMod})`;
                         }
 
                         // 九重神眼等のシールドによる被ダメージ吸収

@@ -42,11 +42,15 @@ function renderMonsterDexList() {
         card.className = 'bg-[#2a1b15] border border-amber-900/50 rounded-xl p-2.5 flex items-center space-x-3 cursor-pointer active:scale-[0.98] transition-all';
         card.onclick = () => showMonsterDexDetail(speciesId);
 
+        const monClassInfo = MON_CLASS_TYPES[tmpl.monClass] || null;
         const visualId = `monster-dex-list-visual-${speciesId}`;
         card.innerHTML = `
             <div id="${visualId}" class="w-12 h-12 flex-shrink-0 flex items-center justify-center text-2xl"></div>
             <div class="flex-1 min-w-0">
-                <div class="text-xs font-bold text-amber-200">${tmpl.name}</div>
+                <div class="text-xs font-bold text-amber-200 flex items-center gap-1">
+                    <span>${tmpl.name}</span>
+                    ${monClassInfo ? `<span class="text-[9px] bg-[#1a120b] text-amber-300 px-1.5 py-0.5 rounded">${monClassInfo.emoji} ${monClassInfo.name}</span>` : ''}
+                </div>
                 <div class="text-[9px] text-gray-400 leading-relaxed line-clamp-2">${tmpl.desc}</div>
             </div>
             <i class="fa-solid fa-chevron-right text-amber-700 text-xs flex-shrink-0"></i>
@@ -90,7 +94,14 @@ function showMonsterDexDetail(speciesId) {
     document.getElementById('monster-dex-detail-view').classList.add('flex');
 
     document.getElementById('monster-dex-detail-name').textContent = tmpl.name;
-    document.getElementById('monster-dex-detail-desc').textContent = tmpl.desc;
+    const monClassInfo = MON_CLASS_TYPES[tmpl.monClass] || null;
+    if (monClassInfo) {
+        const beatsInfo = MON_CLASS_TYPES[monClassInfo.beats];
+        document.getElementById('monster-dex-detail-desc').textContent =
+            `【モン類：${monClassInfo.emoji}${monClassInfo.name}（${beatsInfo.name}に有利：与ダメージ×1.5・被ダメージ×0.75）】\n${tmpl.desc}`;
+    } else {
+        document.getElementById('monster-dex-detail-desc').textContent = tmpl.desc;
+    }
     renderMonsterVisual(document.getElementById('monster-dex-detail-visual'), tmpl.name, tmpl.emoji, false, true);
 
     const s = tmpl.stats;
