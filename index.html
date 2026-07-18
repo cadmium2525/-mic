@@ -303,23 +303,32 @@
                 </button>
             </div>
 
-            <!-- ==================== SCREEN 7.9: リアルタイム対戦 マッチング成立画面 ==================== -->
-            <div id="screen-masmon-realtime-matched" class="screen flex-col justify-between h-full p-4 bg-[#1a120b] space-y-3">
-                <div class="bg-sky-950/40 p-3 rounded-xl border border-sky-700 text-center">
-                    <div class="text-3xl mb-1">🤝</div>
-                    <h2 class="text-lg font-black text-sky-300 pixel-font">マッチング成立！</h2>
-                    <p class="text-[10px] text-gray-400 mt-1">対戦相手が見つかりました。</p>
+            <!-- ==================== SCREEN 7.9: PvP選出フェーズ（マッチング成立後、お互いの候補6体を見せ合って選出） ==================== -->
+            <div id="screen-masmon-realtime-matched" class="screen flex-col justify-between h-full p-4 bg-[#1a120b] space-y-2">
+                <div class="bg-sky-950/40 p-2.5 rounded-xl border border-sky-700 text-center">
+                    <div class="text-2xl mb-1">🤝</div>
+                    <h2 class="text-base font-black text-sky-300 pixel-font">マッチング成立！選出フェーズ<span id="pvp-pick-random-badge" class="hidden ml-1 text-[9px] text-purple-300">🎲 ランダムマッチング</span></h2>
+                    <p class="text-[9px] text-gray-400 mt-1">対戦相手「<span id="pvp-pick-opponent-name" class="text-sky-300 font-bold"></span>」の候補も見えています。実際に出すモンスターを選出してください。</p>
                 </div>
 
-                <div class="bg-[#2a1b15] p-4 rounded-2xl border border-sky-700/50 my-2 shadow-inner text-left space-y-2" id="realtime-matched-detail"></div>
+                <p id="pvp-pick-status-note" class="text-[10px] text-center text-amber-300 min-h-[1.2em]"></p>
 
-                <p class="text-[10px] text-center text-gray-400 leading-relaxed">準備ができたら「バトル開始」を押してください。<br>相手の準備が済み次第、行動できるようになります。</p>
+                <div class="flex-1 overflow-y-auto space-y-3 pr-1">
+                    <div>
+                        <div class="text-[10px] text-sky-300 font-bold mb-1">⚔️ あなたの候補（タップして選出）</div>
+                        <div class="space-y-2" id="pvp-pick-my-offer-container"></div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-rose-300 font-bold mb-1">🛡️ 相手の候補（最終的な選出内容は伏せられています）</div>
+                        <div class="space-y-2" id="pvp-pick-opp-offer-container"></div>
+                    </div>
+                </div>
 
                 <div class="space-y-2">
-                    <button id="realtime-begin-battle-btn" onclick="beginRealtimeBattle()" class="w-full py-3 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl text-sm transition-all active:scale-95">
-                        ⚔️ バトル開始
+                    <button id="pvp-pick-confirm-btn" onclick="confirmPvpPick()" disabled class="w-full py-3 bg-sky-600 hover:bg-sky-500 disabled:cursor-not-allowed text-white font-bold rounded-xl text-sm transition-all active:scale-95 opacity-50">
+                        モンスターを選択中 (0/3)
                     </button>
-                    <button onclick="leaveRealtimeRoom()" class="w-full py-2.5 bg-[#3c2a21] hover:bg-[#4a352a] text-white font-bold rounded-xl text-xs border border-amber-800 transition-all active:scale-95">
+                    <button onclick="cancelPvpPickPhase()" class="w-full py-2.5 bg-[#3c2a21] hover:bg-[#4a352a] text-white font-bold rounded-xl text-xs border border-amber-800 transition-all active:scale-95">
                         退出してマイマスモンに戻る
                     </button>
                 </div>
@@ -344,7 +353,7 @@
                 </div>
             </div>
 
-            <!-- ==================== SCREEN 8.5: PvP対戦 レンタルパーティ選出画面 ==================== -->
+            <!-- ==================== SCREEN 8.5: PvP対戦 候補プレビュー＆対戦形式選択画面 ==================== -->
             <div id="screen-pvp-rental-select" class="screen flex-col justify-between h-full p-4 bg-[#0a0f1a] space-y-3">
                 <div class="bg-sky-950/40 p-2.5 rounded-xl border border-sky-700 text-center space-y-2">
                     <h2 class="text-sm font-black text-sky-300 pixel-font">レンタルモンスターでPvP対戦！</h2>
@@ -352,16 +361,16 @@
                         <button id="pvp-rental-tab-solo" onclick="switchPvpRentalBattleType('solo')" class="flex-1 py-2 text-xs font-bold rounded-lg border transition-all bg-[#2a1b15] border-sky-950 text-gray-400">個人戦（1体）</button>
                         <button id="pvp-rental-tab-team" onclick="switchPvpRentalBattleType('team')" class="flex-1 py-2 text-xs font-bold rounded-lg border transition-all bg-sky-900 border-sky-600 text-sky-300">団体戦（3体）</button>
                     </div>
-                    <p class="text-[9px] text-gray-400">モンスターをタップして選択</p>
+                    <p class="text-[9px] text-gray-400 leading-relaxed">この6体の候補は対戦相手にも見えます。<br>実際に出すモンスターは、マッチング成立後にお互いの候補を確認しながら選出します。</p>
                 </div>
 
                 <div class="flex-1 overflow-y-auto space-y-2 pr-1" id="pvp-rental-offer-container">
-                    <!-- JSで6体のレンタルモンスターカードを生成 -->
+                    <!-- JSで6体のレンタルモンスター候補（プレビュー）を生成 -->
                 </div>
 
                 <div class="space-y-2">
-                    <button id="pvp-rental-confirm-btn" onclick="confirmPvpRentalParty()" disabled class="w-full py-3.5 bg-sky-600 hover:bg-sky-500 disabled:cursor-not-allowed text-white font-bold rounded-xl text-sm shadow-lg transform active:scale-95 transition-all pixel-font border-b-4 border-sky-800 opacity-50">
-                        パーティを選択中 (0/3)
+                    <button id="pvp-rental-confirm-btn" onclick="proceedToRealtimeMatchingFromRental()" class="w-full py-3.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl text-sm shadow-lg transform active:scale-95 transition-all pixel-font border-b-4 border-sky-800">
+                        この候補でマッチングへ進む
                     </button>
                     <button onclick="changeScreen('screen-title')" class="w-full py-2 bg-[#1a120b] hover:bg-[#2a1b15] text-gray-400 font-bold rounded-xl text-xs shadow border border-gray-700 transition-all active:scale-95">
                         タイトルに戻る

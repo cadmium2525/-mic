@@ -51,16 +51,17 @@ function getRealtimeActiveUnit(state, slot) {
 // -----------------------------------------------------
 // マッチング成立画面 →「バトル開始」ボタン
 // -----------------------------------------------------
+// 双方の選出（selectedTeam）が確定すると、pvp_rental.js の attachPvpPickListener から
+// 自動的に呼ばれる（以前あった「バトル開始」ボタンの手動押下は廃止）。
 function beginRealtimeBattle() {
     if (!realtimeRoomRef || !realtimeMySlot) {
         showToast('マッチング情報が見つかりません。');
         return;
     }
-    document.getElementById('realtime-begin-battle-btn').disabled = true;
-    document.getElementById('realtime-begin-battle-btn').textContent = '⏳ 対戦準備中...';
 
-    // フェーズ④の「ルーム削除監視」リスナーは以降このファイルが引き継ぐため解除
+    // マッチング／選出フェーズの「ルーム削除監視」リスナーは以降このファイルが引き継ぐため解除
     detachRealtimeListener();
+    if (typeof detachPvpPickListener === 'function') detachPvpPickListener();
 
     REALTIME_BATTLE.ref = realtimeRoomRef;
     REALTIME_BATTLE.keyword = realtimeRoomKeyword;
@@ -173,8 +174,8 @@ function getRealtimeEffectiveSkill(unit, skKey) {
 }
 
 function buildInitialRealtimeBattleState(roomData, ratingInfo) {
-    const p1Team = (roomData.player1.team || []).map(convertRoomMasmonToRealtimeUnit);
-    const p2Team = (roomData.player2.team || []).map(convertRoomMasmonToRealtimeUnit);
+    const p1Team = (roomData.player1.selectedTeam || []).map(convertRoomMasmonToRealtimeUnit);
+    const p2Team = (roomData.player2.selectedTeam || []).map(convertRoomMasmonToRealtimeUnit);
     const turnOwner = p2Team[0].spd > p1Team[0].spd ? 'player2' : 'player1';
 
     const p1Items = roomData.player1.items || { mango: 0, kuri: 0, toro: 0 };
