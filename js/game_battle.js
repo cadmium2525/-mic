@@ -97,7 +97,6 @@ function setupBattle(isBoss = false) {
     floorIndicator.textContent = battleTitle;
     
     document.getElementById('battle-turn-counter').textContent = GAME_STATE.battleTurn;
-    document.getElementById('battle-actions-counter').textContent = GAME_STATE.totalActions;
     
     document.getElementById('enemy-name').textContent = GAME_STATE.enemy.name;
     const enemyIconEl = document.getElementById('battle-enemy-icon');
@@ -236,8 +235,6 @@ function updateBattleStatsUI() {
     const gutsVal = Math.floor(p.guts);
     document.getElementById('guts-number').textContent = gutsVal;
     document.getElementById('guts-progress-bar').style.width = `${gutsVal}%`;
-
-    document.getElementById('battle-actions-counter').textContent = GAME_STATE.totalActions;
 
     p.skills.forEach(skKey => {
         const btn = document.getElementById(`skill-btn-${skKey}`);

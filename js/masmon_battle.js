@@ -164,7 +164,6 @@ function startMasmonBattleCommon(floorText) {
 
     document.getElementById('battle-floor-indicator').textContent = floorText;
     document.getElementById('battle-turn-counter').textContent = MASMON_BATTLE_STATE.turn;
-    document.getElementById('battle-actions-counter').textContent = 0;
 
     const isTeam = MASMON_BATTLE_STATE.mode === 'cpu_team';
     document.getElementById('player-team-icons').classList.toggle('hidden', !isTeam);
