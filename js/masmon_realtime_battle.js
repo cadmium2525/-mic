@@ -913,10 +913,12 @@ async function performRealtimeAction(action) {
                 const mods = getGutsModifiers(me.guts);
                 me.guts -= sk.cost;
                 resultLogs.push(`${me.name} の【${sk.name}】！`);
+                // 技発動時（命中判定に関わらず）の自己強化効果（アサルトダンス等）
+                applySkillOnUseEffect(me, sk).forEach(msg => resultLogs.push(msg));
 
                 if (sk.type === 'pow' || sk.type === 'int') {
                     const isCertain = sk.hitRate === 100;
-                    let hitChance = isCertain ? 100 : Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (me.hit - opp.spd) * 0.5));
+                    let hitChance = isCertain ? 100 : Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (me.hit - opp.spd) * 0.5 - getBlindHitPenalty(me)));
                     if (me.isShuchuActive && !isCertain) {
                         hitChance = Math.min(99, hitChance * 1.5);
                     }
@@ -935,9 +937,9 @@ async function performRealtimeAction(action) {
 
                     if (isHit) {
                         const isPow = sk.type === 'pow';
-                        const attackerStat = getWeakenedStat(me, isPow ? me.pow : me.int) * getEquipmentLowLifeAtkMultiplier(me);
-                        // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う
-                        const defenderStat = opp.def * 1.5;
+                        const attackerStat = getBuffedAttackStat(me, getWeakenedStat(me, isPow ? me.pow : me.int)) * getEquipmentLowLifeAtkMultiplier(me);
+                        // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（防御崩し状態を反映）
+                        const defenderStat = getDefDownStat(opp, opp.def) * 1.5;
                         const statCap = Math.max(30, defenderStat * 2.5);
                         const effectiveAttacker = attackerStat > statCap ? statCap + (attackerStat - statCap) * 0.2 : attackerStat;
                         const defenderGutsDefenseMod = getGutsDefenseModifier(opp.guts);
@@ -1124,6 +1126,16 @@ async function performRealtimeAction(action) {
                 oppNowActive.isDefending = false;
                 // 衰弱・混乱の残ターン消化（混乱は次に行動を試みた時点で判定に使うフラグとして保存する）
                 if (oppNowActive.weakenTurns > 0) oppNowActive.weakenTurns--;
+                if (oppNowActive.defDownTurns > 0) oppNowActive.defDownTurns--;
+                if (oppNowActive.blindTurns > 0) oppNowActive.blindTurns--;
+                if (oppNowActive.hitDownTempTurns > 0) oppNowActive.hitDownTempTurns--;
+                // 継続ダメージ（レッグアーク・ダークホウスト等）の適用
+                if (oppNowActive.dotTurns > 0) {
+                    const dotDamage = Math.max(1, Math.floor((oppNowActive.maxLife || 0) * (oppNowActive.dotPct || 0.08)));
+                    oppNowActive.life = Math.max(0, oppNowActive.life - dotDamage);
+                    oppNowActive.dotTurns--;
+                    resultLogs.push(`🩸 ${oppNowActive.name} は継続ダメージで ${dotDamage} のダメージを受けた！(現在: ${Math.floor(oppNowActive.life)})`);
+                }
                 if (oppNowActive.confuseTurns > 0) {
                     oppNowActive.confuseTurns--;
                     oppNowActive.isConfusedThisTurn = Math.random() < 0.30;

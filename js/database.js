@@ -183,6 +183,20 @@ const MONSTER_TEMPLATES = {
         emoji: '🐯',
         desc: 'ライオンと虎の力を併せ持つ俊敏な猛獣モンスター。ちからに優れ、鋭い爪と牙による接近戦に加え、雷や冷気を操る技も操る。動きは非常に俊敏だが、丈夫さはやや低め。',
         stats: { maxLife: 200, life: 200, pow: 92, int: 70, hit: 50, spd: 62, def: 36, gutsSpeed: 15 }
+    },
+    pixie: {
+        id: 'pixie',
+        name: 'ピクシー',
+        emoji: '🧚',
+        desc: '小さな羽で宙を舞う妖精モンスター。かしこさが非常に高く、光や雷を操る多彩な技とすばしっこさを持ち味とするが、ちからと丈夫さは低め。',
+        stats: { maxLife: 185, life: 185, pow: 40, int: 100, hit: 62, spd: 54, def: 30, gutsSpeed: 15 }
+    },
+    zan: {
+        id: 'zan',
+        name: 'ザン',
+        emoji: '🥷',
+        desc: '全身に闘気を纏う凄腕の剣士型モンスター。ちからに極めて優れ、繰り出す斬撃のほとんどに強力な継続ダメージを付与する。かしこさはやや低め。',
+        stats: { maxLife: 210, life: 210, pow: 100, int: 45, hit: 60, spd: 56, def: 38, gutsSpeed: 15 }
     }
 };
 
@@ -435,7 +449,35 @@ const SKILLS_DB = {
     kuuchu_kaiten_attack: { name: '空中回転アタック', cost: 26, type: 'pow', hitRate: 100, force: 1.58, gutsDown: 7, critBonus: 0.10, effect: 'self_dizzy', desc: '空高く跳躍し回転しながら急襲する【必中】技。相手GUTS-7。ただし勢い余って自身も目を回し、次の1ターン自身の命中率が低下する' },
     combination_liger: { name: 'コンビネーション', cost: 30, type: 'pow', hitRate: 60, force: 1.7, gutsDown: 4, critBonus: 0.10, effect: 'def_down_15', desc: '爪と牙を織り交ぜた連続コンビネーション攻撃。相手GUTS-4。さらに命中した場合、削られた守りにより3ターンの間相手の丈夫さを15%低下させる' },
     liger_raijinken: { name: '雷神剣', cost: 35, type: 'int', hitRate: 70, force: 2.2, gutsDown: 20, critBonus: 0.15, effect: 'weaken_pow_int', desc: '雷神の力を宿した爪牙による渾身の一撃。相手GUTS-20。さらに命中した場合、力を封じられ3ターンの間相手の「ちから」「かしこさ」が10%低下する' },
-    rakurai_kyoumei: { name: '落雷共鳴', cost: 50, type: 'int', hitRate: 80, force: 2.6, gutsDown: 4, critBonus: 0.15, effect: 'perma_dmg_up_20', desc: '大地に落雷を呼び、その衝撃を全身で共鳴させ叩き込む、この上ない最大の切り札。相手GUTS-4。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' }
+    rakurai_kyoumei: { name: '落雷共鳴', cost: 50, type: 'int', hitRate: 80, force: 2.6, gutsDown: 4, critBonus: 0.15, effect: 'perma_dmg_up_20', desc: '大地に落雷を呼び、その衝撃を全身で共鳴させ叩き込む、この上ない最大の切り札。相手GUTS-4。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
+
+    // --- ピクシー系統 ---
+    pixie_harite: { name: 'はり手', cost: 16, type: 'pow', hitRate: 82, force: 0.85, gutsDown: 5, critBonus: 0, effect: null, desc: '素早い手のひらで頬を軽やかに打つ基本技。相手GUTS-5' },
+    pixie_thunder: { name: 'サンダー', cost: 17, type: 'int', hitRate: 82, force: 0.85, gutsDown: 9, critBonus: 0, effect: 'paralyze_25', desc: '手のひらから小さな雷を放つ基本技。相手GUTS-9。さらに命中した場合、感電により2回の行動の間25%の確率で相手を行動不能にする' },
+    pixie_ray: { name: 'レイ', cost: 22, type: 'int', hitRate: 66, force: 1.15, gutsDown: 5, critBonus: 0.20, effect: null, desc: '収束させた光の粒子を撃ち出す。相手GUTS-5' },
+    pixie_lightning: { name: 'ライトニング', cost: 23, type: 'int', hitRate: 90, force: 1.15, gutsDown: 5, critBonus: 0.08, effect: 'blind_2', desc: '鋭い雷光を鞭のように打ち出す高命中技。相手GUTS-5。さらに命中した場合、閃光で2ターンの間相手の目を眩ませ命中率を下げる' },
+    pixie_megaray: { name: 'メガレイ', cost: 26, type: 'int', hitRate: 66, force: 1.5, gutsDown: 5, critBonus: 0.20, effect: 'def_down_15', desc: 'レイを強化した貫通力の高い光線。相手GUTS-5。さらに命中した場合、3ターンの間相手の丈夫さを15%低下させる' },
+    pixie_nagekiss: { name: 'なげキッス', cost: 21, type: 'int', hitRate: 82, force: 0.5, gutsDown: 40, critBonus: 0.04, effect: 'confuse_30', desc: '投げキッスに込めた魅了の力で相手の闘志を大きく削ぐ。相手GUTS-40。さらに命中した場合、うっとりと心を奪われ3回の行動の間30%の確率で相手を混乱させる' },
+    pixie_highkick: { name: 'ハイキック', cost: 20, type: 'pow', hitRate: 66, force: 1.5, gutsDown: 9, critBonus: 0, effect: 'selfcrit_up_3', desc: '高く跳び上がり繰り出す鋭い蹴り技。相手GUTS-9。さらに命中した場合、闘志が高まり3ターンの間自身のクリティカル率が25%アップする' },
+    pixie_van: { name: 'バン', cost: 34, type: 'int', hitRate: 66, force: 2.3, gutsDown: 25, critBonus: 0.16, effect: 'hitdown_stack_3', desc: '気合の声とともに放つ強烈な衝撃波。相手GUTS-25。さらに命中した場合、衝撃波の余波で相手の視界が乱れ命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
+    pixie_gigaray: { name: 'ギガレイ', cost: 30, type: 'int', hitRate: 66, force: 1.9, gutsDown: 14, critBonus: 0.24, effect: 'next_force_up', desc: 'レイをさらに巨大化させた極大の光線。相手GUTS-14。さらに命中した場合、収束させた力が残り、自身が次に繰り出す技の威力が50%アップする' },
+    pixie_healraid: { name: 'ヒールレイド', cost: 30, type: 'pow', hitRate: 58, force: 2.3, gutsDown: 32, critBonus: 0.08, effect: 'self_heal_15pct', desc: '回復の光をまとった体当たりで相手に迫る。相手GUTS-32。さらに命中した場合、癒しの波動で自身のライフを15%回復する' },
+    pixie_bigbang: { name: 'ビッグバン', cost: 38, type: 'int', hitRate: 66, force: 2.7, gutsDown: 32, critBonus: 0.20, effect: 'weaken_pow_int', desc: '全エネルギーを解き放つ大爆発。相手GUTS-32。さらに命中した場合、爆風により3ターンの間相手の「ちから」「かしこさ」が10%低下する' },
+    pixie_astralray: { name: 'アストラルレイ', cost: 52, type: 'int', hitRate: 74, force: 3.2, gutsDown: 5, critBonus: 0.24, effect: 'perma_dmg_up_20', desc: '星々の力を凝縮し解き放つ、この上ない最大の切り札。相手GUTS-5。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
+
+    // --- ザン系統 ---
+    zan_mirage_shift: { name: 'ミラージュシフト', cost: 21, type: 'pow', hitRate: 82, force: 1.5, gutsDown: 5, critBonus: 0.14, effect: null, desc: '残像を残すほどの速さで間合いを詰め斬りつける基本技。相手GUTS-5' },
+    zan_single_shot: { name: 'シングルショット', cost: 20, type: 'pow', hitRate: 82, force: 1.9, gutsDown: 5, critBonus: 0.08, effect: null, desc: '一撃必殺を狙って放つ鋭い斬撃。相手GUTS-5' },
+    zan_leg_arc: { name: 'レッグアーク', cost: 23, type: 'pow', hitRate: 70, force: 1.15, gutsDown: 25, critBonus: 0.12, effect: 'dot_mine', desc: '低く沈み込み脚を薙ぎ払う斬撃。相手GUTS-25。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与える' },
+    zan_stunner_blitz: { name: 'スタナーブリッツ', cost: 26, type: 'int', hitRate: 82, force: 1.9, gutsDown: 25, critBonus: 0.08, effect: 'stun_debuff_once', desc: '電光のような一閃で相手の体勢を崩す。相手GUTS-25。さらに命中した場合、相手の命中率を10%、丈夫さを15%下げる（バトル終了まで持続・重複不可）' },
+    zan_ohzantou: { name: '王惨刀', cost: 19, type: 'pow', hitRate: 86, force: 1.5, gutsDown: 5, critBonus: 0.24, effect: 'dot_mine', desc: '王の名を冠する惨たらしい一刀。相手GUTS-5。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与える' },
+    zan_double_summer: { name: 'ダブルサマー', cost: 28, type: 'pow', hitRate: 74, force: 2.1, gutsDown: 5, critBonus: 0.16, effect: 'dot_mine', desc: '二段構えで振り抜く豪快な斬撃。相手GUTS-5。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与える' },
+    zan_meteor_drive: { name: 'メテオドライブ', cost: 35, type: 'pow', hitRate: 74, force: 1.9, gutsDown: 14, critBonus: 0.24, effect: 'dot_mine_hitdown10_3t', desc: '隕石の如く撃ち込む渾身の突進斬り。相手GUTS-14。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与え、さらに3ターンの間相手の命中率を10%下げる' },
+    zan_assault_dance: { name: 'アサルトダンス', cost: 27, type: 'pow', hitRate: 82, force: 1.7, gutsDown: 9, critBonus: 0.14, effect: null, useEffect: 'self_atk_up_stack3', desc: '舞うように連続で斬りかかりながら闘気を練り上げる。相手GUTS-9。技を繰り出すたびに自身の攻撃ステータスが10%上昇する（3回まで重複可）' },
+    zan_assault_raid: { name: 'アサルトレイド', cost: 44, type: 'pow', hitRate: 90, force: 2.5, gutsDown: 14, critBonus: 0.16, effect: 'dot_mine', desc: '怒涛の連続斬撃で相手を切り刻む。相手GUTS-14。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与える' },
+    zan_rising_rave: { name: 'ライジングレイヴ', cost: 42, type: 'pow', hitRate: 82, force: 2.7, gutsDown: 40, critBonus: 0.24, effect: 'dot_mine_aura_bonus', desc: '闘気を纏いながら斬り上げる渾身の一撃。相手GUTS-40。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与える。オーラ相性が有利な場合、継続ダメージがさらに8%上乗せされる' },
+    zan_axis_bullet: { name: 'アクシズバレット', cost: 50, type: 'pow', hitRate: 66, force: 2.3, gutsDown: 9, critBonus: 0.28, effect: 'dot_mine_def_down10', desc: '回転を加えて撃ち込む貫通力の高い斬撃。相手GUTS-9。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与え、さらに3ターンの間相手の丈夫さを10%低下させる' },
+    zan_dark_haunt: { name: 'ダークホウスト', cost: 48, type: 'pow', hitRate: 95, force: 2.7, gutsDown: 5, critBonus: 0.22, effect: 'dot_mine', dotPct: 0.14, desc: '闇の力を宿した渾身の一刀両断。相手GUTS-5。さらに命中した場合、3ターンの間相手の最大ライフ14%の継続ダメージを与える' }
 };
 
 // --- ステータス獲得逓減システム (Diminishing Returns) ---
@@ -596,11 +638,12 @@ function applySkillOnHitEffect(caster, target, sk) {
         logs.push(`💨 ${target.name} は強烈な臭気で目が眩んだ！（2ターンの間、命中率が低下する）`);
     } else if (sk.effect === 'def_down_15') {
         target.defDownTurns = 3;
+        target.defDownPct = 15;
         logs.push(`💥 ${target.name} の防御が崩れた！（3ターンの間、丈夫さが15%低下する）`);
     } else if (sk.effect === 'dot_mine') {
         target.dotTurns = 3;
-        target.dotPct = 0.08;
-        logs.push(`🩸 ${target.name} に深い傷が刻まれた！（3ターンの間、毎ターン最大ライフの8%の継続ダメージを受ける）`);
+        target.dotPct = (typeof sk.dotPct === 'number') ? sk.dotPct : 0.08;
+        logs.push(`🩸 ${target.name} に深い傷が刻まれた！（3ターンの間、毎ターン最大ライフの${Math.round(target.dotPct * 100)}%の継続ダメージを受ける）`);
     } else if (sk.effect === 'paralyze_25') {
         target.paralyzeTurns = 2;
         logs.push(`⚡ ${target.name} は感電し痺れが走った！（2回の行動の間、25%の確率で行動に失敗する）`);
@@ -618,6 +661,57 @@ function applySkillOnHitEffect(caster, target, sk) {
         const healAmount = Math.floor(maxLifeVal * 0.15);
         caster.stats.life = Math.min(caster.stats.maxLife, caster.stats.life + healAmount);
         logs.push(`💚 ${caster.name} は自身のライフを ${healAmount} 回復した！(現在: ${Math.floor(caster.stats.life)})`);
+    // ---------- ザン専用の追加効果 ----------
+    } else if (sk.effect === 'stun_debuff_once') {
+        // スタナーブリッツ：命中率-10%・丈夫さ-15%をバトル終了まで付与する（1回のみ・重複不可）
+        if (target.stunnerDebuffApplied) {
+            logs.push(`（${target.name} はすでにスタナーブリッツの効果を受けているため、追加の効果は発生しなかった）`);
+        } else {
+            target.stunnerDebuffApplied = true;
+            target.permaHitDownPct = (target.permaHitDownPct || 0) + 10;
+            target.permaDefDownPct = (target.permaDefDownPct || 0) + 15;
+            logs.push(`⚡ ${target.name} は体勢を大きく崩された！（バトル終了まで、命中率が10%・丈夫さが15%低下する）`);
+        }
+    } else if (sk.effect === 'dot_mine_hitdown10_3t') {
+        // メテオドライブ：継続ダメージ＋3ターンの命中率-10%
+        target.dotTurns = 3;
+        target.dotPct = (typeof sk.dotPct === 'number') ? sk.dotPct : 0.08;
+        target.hitDownTempTurns = 3;
+        target.hitDownTempPct = 10;
+        logs.push(`☄️ ${target.name} に深い傷が刻まれた！（3ターンの間、毎ターン最大ライフの${Math.round(target.dotPct * 100)}%の継続ダメージを受け、さらに3ターンの間命中率が10%低下する）`);
+    } else if (sk.effect === 'dot_mine_aura_bonus') {
+        // ライジングレイヴ：継続ダメージ。オーラ有利時はさらに+8%上乗せ
+        target.dotTurns = 3;
+        let pct = (typeof sk.dotPct === 'number') ? sk.dotPct : 0.08;
+        let auraMsg = '';
+        if (isAuraAdvantageous(caster.aura, target.aura)) {
+            pct += 0.08;
+            auraMsg = '（オーラ相性が有利だったため、継続ダメージがさらに8%上乗せされた！）';
+        }
+        target.dotPct = pct;
+        logs.push(`🔥 ${target.name} に深い傷が刻まれた！（3ターンの間、毎ターン最大ライフの${Math.round(pct * 100)}%の継続ダメージを受ける）${auraMsg}`);
+    } else if (sk.effect === 'dot_mine_def_down10') {
+        // アクシズバレット：継続ダメージ＋3ターンの丈夫さ-10%
+        target.dotTurns = 3;
+        target.dotPct = (typeof sk.dotPct === 'number') ? sk.dotPct : 0.08;
+        target.defDownTurns = 3;
+        target.defDownPct = 10;
+        logs.push(`🎯 ${target.name} に深い傷が刻まれた！（3ターンの間、毎ターン最大ライフの${Math.round(target.dotPct * 100)}%の継続ダメージを受け、さらに3ターンの間丈夫さが10%低下する）`);
+    }
+    return logs;
+}
+
+// --- 技を発動した時点（命中判定に関わらず）で即座に適用される自己強化効果 ---
+// caster: 技を撃った側のユニット, sk: 実効技データ
+// 現状は「アサルトダンス」（自身の攻撃ステータスが10%上昇、3回まで重複可）のみ対応
+// 戻り値: 追加効果のログメッセージ配列
+function applySkillOnUseEffect(caster, sk) {
+    const logs = [];
+    if (!sk || !sk.useEffect || !caster) return logs;
+
+    if (sk.useEffect === 'self_atk_up_stack3') {
+        caster.atkUpStacks = Math.min(3, (caster.atkUpStacks || 0) + 1);
+        logs.push(`💪 ${caster.name} の攻撃ステータスが上昇した！（累積 ${caster.atkUpStacks}/3 ・ 1回につき10%アップ）`);
     }
     return logs;
 }
@@ -652,6 +746,7 @@ function tickStatusTurnsAndCheckConfusion(unit) {
     if (unit.weakenTurns > 0) unit.weakenTurns--;
     if (unit.defDownTurns > 0) unit.defDownTurns--;
     if (unit.blindTurns > 0) unit.blindTurns--;
+    if (unit.hitDownTempTurns > 0) unit.hitDownTempTurns--;
 
     let failed = false;
     if (unit.confuseTurns > 0) {
@@ -674,20 +769,37 @@ function getWeakenedStat(unit, statVal) {
     return statVal;
 }
 
-// --- 防御崩し状態（地震・地雷針等）を加味した実効「丈夫さ」を返す ---
+// --- 防御崩し状態（地震・地雷針・スタナーブリッツ等）を加味した実効「丈夫さ」を返す ---
 function getDefDownStat(unit, defVal) {
-    if (unit && unit.defDownTurns > 0) {
-        return Math.floor(defVal * 0.85);
+    if (!unit) return defVal;
+    let val = defVal;
+    if (unit.defDownTurns > 0) {
+        const pct = (typeof unit.defDownPct === 'number') ? unit.defDownPct : 15;
+        val = val * (1 - pct / 100);
     }
-    return defVal;
+    if (unit.permaDefDownPct) {
+        val = val * (1 - unit.permaDefDownPct / 100);
+    }
+    return Math.floor(val);
 }
 
-// --- 目眩まし状態（おなら・自滅めまい等）および累積命中低下（砂かけ等）による命中率補正（マイナス値）を返す ---
+// --- 目眩まし状態（おなら・自滅めまい等）、累積命中低下（砂かけ等）、
+//     一時的な命中低下（メテオドライブ等）、永続命中低下（スタナーブリッツ等）による命中率補正（マイナス値）を返す ---
 function getBlindHitPenalty(unit) {
     if (!unit) return 0;
     const blindPenalty = (unit.blindTurns > 0) ? 15 : 0;
     const stackPenalty = (unit.hitDownStacks || 0) * 10;
-    return blindPenalty + stackPenalty;
+    const tempPenalty = (unit.hitDownTempTurns > 0) ? (unit.hitDownTempPct || 0) : 0;
+    const permaPenalty = unit.permaHitDownPct || 0;
+    return blindPenalty + stackPenalty + tempPenalty + permaPenalty;
+}
+
+// --- 自己強化状態（アサルトダンス等）を加味した実効攻撃ステータス（ちから／かしこさ）を返す ---
+function getBuffedAttackStat(unit, statVal) {
+    if (unit && unit.atkUpStacks > 0) {
+        return Math.floor(statVal * (1 + unit.atkUpStacks * 0.1));
+    }
+    return statVal;
 }
 
 // --- 次技威力アップ（オーロラゲート等）を加味した実効forceを返し、フラグを消費する ---
@@ -1033,7 +1145,7 @@ const BOSS_TEMPLATES = {
 // ・KIN_NEJIKI_SPECIES_POOL: 「6体提示」の抽選対象となる全12種族
 // ・KIN_NEJIKI_SKILL_POOL: 各種族が使用できる固有技の候補（ここから4つをランダム抽選）
 // =====================================================
-const KIN_NEJIKI_SPECIES_POOL = ['mochi', 'suezo', 'dino', 'monolith', 'plant', 'kyubi', 'ham', 'arrowhead', 'nendoro', 'henger', 'durahan', 'golem', 'kawazumo', 'hinotori', 'gari', 'metalner', 'kijin', 'ghost', 'gel', 'ark', 'illumine', 'liger'];
+const KIN_NEJIKI_SPECIES_POOL = ['mochi', 'suezo', 'dino', 'monolith', 'plant', 'kyubi', 'ham', 'arrowhead', 'nendoro', 'henger', 'durahan', 'golem', 'kawazumo', 'hinotori', 'gari', 'metalner', 'kijin', 'ghost', 'gel', 'ark', 'illumine', 'liger', 'pixie', 'zan'];
 
 const KIN_NEJIKI_SKILL_POOL = {
     mochi:     ['monta', 'mochiki', 'gaccho', 'sakurafubuki', 'cho_rollinmochi', 'cho_mochihou', 'mossama', 'yaezakura'],
@@ -1057,7 +1169,9 @@ const KIN_NEJIKI_SKILL_POOL = {
     gel:       ['tsukisashi', 'kushizashi', 'mana_drain', 'muchi', 'g_cube', 'gel_press', 'hae_tataki', 'parabola_beam', 'cho_parabola_beam', 'koma_attack', 'taihou', 'gel_copter'],
     ark:       ['waga_hitomi', 'sekai_wo_yurase', 'tobe_shinritsu_no_yaiba', 'shinkou_yo_kegare_wo_harae', 'ima_koso_shin_naru_mezame', 'aoki_ibara_yo_toga_wo_ugate', 'sabaki_no_hikari_yo_kudare', 'shuuen_ni_sukui_wo_ataeyo', 'shiten_no_tsurugi_yo_oritate', 'seiya_no_kane_yo_narihibike', 'inore_rinne_no_wa_yo', 'ten_no_jihi_yo_shimesareyo'],
     illumine:  ['plasma', 'shield_bash', 'straight_punch', 'venom_edge', 'assassin_claw', 'morning_star', 'arcana_flare', 'assault_arrow', 'buster_sword', 'ars_magna', 'blade_dance', 'requiem_end', 'mirage_claw', 'crimson_nova'],
-    liger:     ['liger_hikkaki', 'liger_kamitsuki', 'body_slam', 'raigeki', 'one_two', 'reikidan', 'kagegeki', 'cho_raigeki', 'kuuchu_kaiten_attack', 'combination_liger', 'liger_raijinken', 'rakurai_kyoumei']
+    liger:     ['liger_hikkaki', 'liger_kamitsuki', 'body_slam', 'raigeki', 'one_two', 'reikidan', 'kagegeki', 'cho_raigeki', 'kuuchu_kaiten_attack', 'combination_liger', 'liger_raijinken', 'rakurai_kyoumei'],
+    pixie:     ['pixie_harite', 'pixie_thunder', 'pixie_ray', 'pixie_lightning', 'pixie_megaray', 'pixie_nagekiss', 'pixie_highkick', 'pixie_van', 'pixie_gigaray', 'pixie_healraid', 'pixie_bigbang', 'pixie_astralray'],
+    zan:       ['zan_mirage_shift', 'zan_single_shot', 'zan_leg_arc', 'zan_stunner_blitz', 'zan_ohzantou', 'zan_double_summer', 'zan_meteor_drive', 'zan_assault_dance', 'zan_assault_raid', 'zan_rising_rave', 'zan_axis_bullet', 'zan_dark_haunt']
 };
 
 // =====================================================
@@ -1213,6 +1327,18 @@ const MONSTER_MOLDS = {
         { skills: ['体当たり', '影撃', '雷撃', 'コンビネーション'], equipment: '鷹の目レンズ' },
         { skills: ['冷気弾', '超雷撃', '空中回転アタック', 'コンビネーション'], equipment: '真眼のレンズ' },
         { skills: ['落雷共鳴', '雷神剣', '超雷撃', '空中回転アタック'], equipment: '竜牙の爪' }
+    ],
+    'ピクシー': [
+        { skills: ['はり手', 'サンダー', 'レイ', 'ハイキック'], equipment: '賢者の指輪' },
+        { skills: ['レイ', 'ライトニング', 'なげキッス', 'ハイキック'], equipment: '鷹の目レンズ' },
+        { skills: ['メガレイ', 'なげキッス', 'バン', 'ギガレイ'], equipment: '真眼のレンズ' },
+        { skills: ['アストラルレイ', 'ビッグバン', 'ギガレイ', 'ヒールレイド'], equipment: '大賢者の冠' }
+    ],
+    'ザン': [
+        { skills: ['ミラージュシフト', 'シングルショット', 'レッグアーク', '王惨刀'], equipment: '荒縄のガントレット' },
+        { skills: ['レッグアーク', 'スタナーブリッツ', 'ダブルサマー', 'アサルトダンス'], equipment: '鉄爪の欠片' },
+        { skills: ['メテオドライブ', 'アサルトダンス', 'スタナーブリッツ', 'アサルトレイド'], equipment: '竜牙の爪' },
+        { skills: ['ライジングレイヴ', 'アクシズバレット', 'ダークホウスト', 'アサルトレイド'], equipment: '牙獣のお守り' }
     ]
 };
 

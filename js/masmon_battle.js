@@ -853,6 +853,8 @@ function executeMasmonPlayerSkill(skKey) {
         run: () => {
             addLog(`${p.name} の 【${sk.name}】！`);
             animateSprite('battle-player-sprite-container', 'translate-x-6');
+            // 技発動時（命中判定に関わらず）の自己強化効果（アサルトダンス等）
+            applySkillOnUseEffect(p, sk).forEach(msg => addLog(msg));
         },
         wait: BATTLE_STEP_DELAY.afterSkillName
     });
@@ -878,7 +880,7 @@ function executeMasmonPlayerSkill(skKey) {
 
         if (isHit) {
             const isPow = sk.type === 'pow';
-            const attackerStat = getWeakenedStat(p, isPow ? p.stats.pow : p.stats.int) * getEquipmentLowLifeAtkMultiplier(p);
+            const attackerStat = getBuffedAttackStat(p, getWeakenedStat(p, isPow ? p.stats.pow : p.stats.int)) * getEquipmentLowLifeAtkMultiplier(p);
             // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（地震・テイルブレード等の防御崩し状態を反映）
             const defenderStat = getDefDownStat(e, e.stats.def) * 1.5;
             const statCap = Math.max(30, defenderStat * 2.5);
@@ -1199,6 +1201,8 @@ function executeMasmonEnemyTurn() {
                 run: () => {
                     addLog(`${e.name} の 【${sk.name}】！`);
                     animateSprite('battle-enemy-sprite-container', '-translate-x-6');
+                    // 技発動時（命中判定に関わらず）の自己強化効果（アサルトダンス等）
+                    applySkillOnUseEffect(e, sk).forEach(msg => addLog(msg));
                 },
                 wait: BATTLE_STEP_DELAY.afterSkillName
             });
@@ -1224,7 +1228,7 @@ function executeMasmonEnemyTurn() {
 
                 if (isHit) {
                     const isPow = sk.type === 'pow';
-                    const attackerStat = getWeakenedStat(e, isPow ? e.stats.pow : e.stats.int) * getEquipmentLowLifeAtkMultiplier(e);
+                    const attackerStat = getBuffedAttackStat(e, getWeakenedStat(e, isPow ? e.stats.pow : e.stats.int)) * getEquipmentLowLifeAtkMultiplier(e);
                     // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（地震・テイルブレード等の防御崩し状態を反映）
                     const defenderStat = getDefDownStat(p, p.stats.def) * 1.5;
                     const statCap = Math.max(30, defenderStat * 2.5);
