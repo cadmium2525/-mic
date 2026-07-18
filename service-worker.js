@@ -4,11 +4,13 @@
 // キャッシュのバージョンを上げると、ユーザー環境の古いキャッシュが破棄され、
 // 新しいファイル一式が再取得されます。js/images 等を更新した場合は
 // 必ず CACHE_VERSION の値を変更してください（変更しないと更新が反映されません）。
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v1';
 const CACHE_NAME = `guts-road-cache-${CACHE_VERSION}`;
 
 // 同一オリジンの静的アセット（アプリ本体）。ここに列挙したファイルは
 // インストール時に事前キャッシュされ、オフラインでも起動できるようになります。
+// ※ 育成（ダンジョン探索）・マスモン（保存モンスター）関連機能は廃止済みのため、
+//    それらに関連していたJSファイルは事前キャッシュ対象から除外しています。
 const PRECACHE_URLS = [
   './',
   'index.html',
@@ -20,22 +22,20 @@ const PRECACHE_URLS = [
   'icons/icon-maskable-512.png',
   'icons/apple-touch-icon.png',
   'js/database.js',
-  'js/game_adventure.js',
-  'js/game_battle.js',
   'js/game_core.js',
   'js/game_ranking.js',
-  'js/masmon.js',
-  'js/equipment.js',
   'js/masmon_battle.js',
   'js/masmon_rating.js',
   'js/masmon_realtime.js',
   'js/masmon_realtime_battle.js',
-  'js/masmon_team.js',
-  'js/masmon_transfer.js',
-  'images/Rプラント.png',
+  'js/kinnejiki.js',
+  'js/pvp_rental.js',
+  'js/monster_dex.js',
+  'js/audio.js',
   'images/アローヘッド.png',
   'images/キュービ.png',
   'images/ゴビ.png',
+  'images/ゴーレム.png',
   'images/スエゾー.png',
   'images/ディノ.png',
   'images/デュラハン.png',
@@ -46,12 +46,6 @@ const PRECACHE_URLS = [
   'images/モスト.png',
   'images/モッチー.png',
   'images/モノリス.png',
-  'images/覚醒キュービ.png',
-  'images/覚醒スエゾー.png',
-  'images/覚醒ディノ.png',
-  'images/覚醒プラント.png',
-  'images/覚醒モッチー.png',
-  'images/覚醒モノリス.png',
 ];
 
 // --- インストール: アプリ本体を事前キャッシュ ---

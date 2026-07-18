@@ -1,7 +1,7 @@
 {
   "name": "モンスターファーム ガッツロード",
   "short_name": "ガッツロード",
-  "description": "30階の栄光を目指す、モンスター育成＆バトルRPG",
+  "description": "レンタルモンスターで挑む、ガッツファクトリー＆PvPバトルRPG",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
