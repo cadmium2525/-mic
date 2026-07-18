@@ -98,24 +98,6 @@ async function fetchPvpRanking(mode, season, limit = 100) {
     }
 }
 
-// --- 自分の対戦履歴を取得（直近N件、新しい順） ---
-async function fetchMyPvpMatchHistory(mode, playerId, limit = 30) {
-    if (!initFirebase()) return [];
-    try {
-        const snap = await firebaseDb.ref(`player_match_history/${mode}/${playerId}`)
-            .orderByChild('ts')
-            .limitToLast(limit)
-            .once('value');
-        const list = [];
-        snap.forEach(child => list.push({ key: child.key, ...child.val() }));
-        list.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-        return list;
-    } catch (e) {
-        console.error('[PvP対戦履歴] 取得エラー:', e);
-        return [];
-    }
-}
-
 // --- レート・勝敗数レコードの更新（transactionで安全に加算） ---
 async function updatePvpRatingRecord(mode, season, playerId, playerName, delta, isWin, reason) {
     const ref = firebaseDb.ref(`player_ratings/${mode}/${season}/${playerId}`);
@@ -307,9 +289,6 @@ async function loadPvpRankingView() {
                 <div>${stats.wins || 0}勝 ${stats.losses || 0}敗（勝率 ${winRate}%）</div>
             </div>
         </div>
-        <button onclick="openPvpHistoryModal()" class="mt-2 w-full py-1.5 bg-[#1a120b] hover:bg-[#2a1b15] text-[10px] text-gray-300 font-bold rounded-lg border border-amber-900 transition-all active:scale-95">
-            📜 対戦履歴を見る
-        </button>
     `;
 
     if (ranking.length === 0) {
@@ -337,51 +316,6 @@ async function loadPvpRankingView() {
             </div>
         `;
     }).join('');
-}
-
-async function openPvpHistoryModal() {
-    const modal = document.getElementById('pvp-history-modal');
-    const listEl = document.getElementById('pvp-history-list');
-    const titleEl = document.getElementById('pvp-history-modal-title');
-    if (!modal || !listEl) return;
-
-    if (titleEl) titleEl.textContent = `対戦履歴（${pvpRankingMode === 'solo' ? '個人戦' : '団体戦'}）`;
-    listEl.innerHTML = '<div class="text-center text-gray-500 text-xs py-6">読み込み中...</div>';
-    modal.classList.remove('hidden');
-
-    const history = await fetchMyPvpMatchHistory(pvpRankingMode, getMyPlayerId(), 30);
-    if (history.length === 0) {
-        listEl.innerHTML = '<div class="text-center text-gray-500 text-xs py-6">対戦履歴はまだありません。</div>';
-        return;
-    }
-
-    const reasonLabel = { ko: '通常勝敗', surrender: '投了', disconnect: '通信切断（不戦勝/不戦敗）' };
-    listEl.innerHTML = history.map(h => {
-        const d = new Date(h.ts);
-        const dateStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-        const isWin = h.result === 'win';
-        const delta = h.delta || 0;
-        const deltaStr = delta > 0 ? `+${delta}` : `${delta}`;
-        const safeOpp = (h.opponentName || '対戦相手').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        return `
-            <div class="bg-[#2a1b15] border ${isWin ? 'border-emerald-800' : 'border-red-900'} rounded-lg p-2 flex items-center justify-between">
-                <div class="min-w-0">
-                    <div class="text-xs font-bold ${isWin ? 'text-emerald-400' : 'text-red-400'}">${isWin ? '勝利' : '敗北'} <span class="text-[9px] text-gray-500 font-normal">（${reasonLabel[h.reason] || h.reason || ''}）</span></div>
-                    <div class="text-[9px] text-gray-400 truncate">vs ${safeOpp}</div>
-                    <div class="text-[8px] text-gray-600">${dateStr}</div>
-                </div>
-                <div class="text-right flex-shrink-0">
-                    <div class="text-xs font-bold ${delta >= 0 ? 'text-sky-400' : 'text-orange-400'}">${deltaStr}</div>
-                    <div class="text-[8px] text-gray-500">${h.ratingBefore} → ${h.ratingAfter}</div>
-                </div>
-            </div>
-        `;
-    }).join('');
-}
-
-function closePvpHistoryModal() {
-    const modal = document.getElementById('pvp-history-modal');
-    if (modal) modal.classList.add('hidden');
 }
 
 // -----------------------------------------------------

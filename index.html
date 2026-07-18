@@ -261,7 +261,7 @@
                     <p class="text-[10px] text-gray-400 mt-1">対戦相手とあらかじめ決めた「合言葉」で対戦するか、合言葉なしでランダムな相手と対戦できます。</p>
                 </div>
 
-                <div id="realtime-selected-masmon-preview" class="bg-[#2a1b15] border border-sky-900/50 rounded-xl p-2.5 flex items-center space-x-2"></div>
+                <div id="realtime-selected-masmon-preview" class="bg-[#2a1b15] border border-sky-900/50 rounded-xl p-2.5 text-center"></div>
 
                 <div class="flex items-center justify-between bg-[#1a120b] border border-amber-900/50 rounded-lg px-2.5 py-1.5">
                     <span id="realtime-my-rating-display" class="text-[10px] text-amber-300 font-bold"></span>
@@ -353,7 +353,7 @@
                 </div>
             </div>
 
-            <!-- ==================== SCREEN 8.5: PvP対戦 候補プレビュー＆対戦形式選択画面 ==================== -->
+            <!-- ==================== SCREEN 8.5: PvP対戦 対戦形式選択画面 ==================== -->
             <div id="screen-pvp-rental-select" class="screen flex-col justify-between h-full p-4 bg-[#0a0f1a] space-y-3">
                 <div class="bg-sky-950/40 p-2.5 rounded-xl border border-sky-700 text-center space-y-2">
                     <h2 class="text-sm font-black text-sky-300 pixel-font">レンタルモンスターでPvP対戦！</h2>
@@ -361,16 +361,19 @@
                         <button id="pvp-rental-tab-solo" onclick="switchPvpRentalBattleType('solo')" class="flex-1 py-2 text-xs font-bold rounded-lg border transition-all bg-[#2a1b15] border-sky-950 text-gray-400">個人戦（1体）</button>
                         <button id="pvp-rental-tab-team" onclick="switchPvpRentalBattleType('team')" class="flex-1 py-2 text-xs font-bold rounded-lg border transition-all bg-sky-900 border-sky-600 text-sky-300">団体戦（3体）</button>
                     </div>
-                    <p class="text-[9px] text-gray-400 leading-relaxed">この6体の候補は対戦相手にも見えます。<br>実際に出すモンスターは、マッチング成立後にお互いの候補を確認しながら選出します。</p>
+                    <p class="text-[9px] text-gray-400 leading-relaxed">対戦形式を選んでください。<br>モンスターの候補6体は、マッチングが成立するまでわかりません。<br>成立後にお互いの候補を確認しながら選出します。</p>
                 </div>
 
-                <div class="flex-1 overflow-y-auto space-y-2 pr-1" id="pvp-rental-offer-container">
-                    <!-- JSで6体のレンタルモンスター候補（プレビュー）を生成 -->
+                <div class="flex-1 flex items-center justify-center">
+                    <div class="text-center text-gray-500 text-xs leading-relaxed">
+                        <div class="text-4xl mb-2">❓</div>
+                        モンスター候補は<br>マッチング成立後に判明します
+                    </div>
                 </div>
 
                 <div class="space-y-2">
                     <button id="pvp-rental-confirm-btn" onclick="proceedToRealtimeMatchingFromRental()" class="w-full py-3.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl text-sm shadow-lg transform active:scale-95 transition-all pixel-font border-b-4 border-sky-800">
-                        この候補でマッチングへ進む
+                        次へ（愛言葉の入力へ）
                     </button>
                     <button onclick="changeScreen('screen-title')" class="w-full py-2 bg-[#1a120b] hover:bg-[#2a1b15] text-gray-400 font-bold rounded-xl text-xs shadow border border-gray-700 transition-all active:scale-95">
                         タイトルに戻る
@@ -701,16 +704,6 @@
 
 
 
-    <!-- PvP対戦履歴モーダル -->
-    <div id="pvp-history-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closePvpHistoryModal()">
-        <div class="bg-[#2a1b15] w-full max-w-xs max-h-[80vh] overflow-y-auto p-4 rounded-2xl border-2 border-sky-600 space-y-2 shadow-2xl" onclick="event.stopPropagation()">
-            <h4 id="pvp-history-modal-title" class="text-sm font-black text-sky-300 pixel-font border-b border-sky-800 pb-2">対戦履歴</h4>
-            <div id="pvp-history-list" class="space-y-1.5"></div>
-            <button onclick="closePvpHistoryModal()" class="w-full py-2 bg-sky-700 hover:bg-sky-600 text-white font-bold rounded-xl text-xs transition-all mt-2">
-                閉じる
-            </button>
-        </div>
-    </div>
 
     <!-- アカウント管理モーダル（端末固有IDの表示・別端末IDでの復帰） -->
     <div id="account-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeAccountModal()">

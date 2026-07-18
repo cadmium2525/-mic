@@ -6,17 +6,16 @@
 // （既存のリアルタイム対戦エンジン）へそのまま引き継ぐ。
 //
 // 選出フロー（読み合い方式）：
-//   1. ここで「対戦形式（個人戦/団体戦）」だけを決め、候補6体をその場で抽選する
-//      （この時点ではまだ実際に出すモンスターは選ばない）
-//   2. 候補6体はマッチング成立まで持ち越され、相手にも公開される
+//   1. タイトル→対戦形式（個人戦/団体戦）を選ぶ（この時点では候補は一切わからない）
+//   2. 愛言葉あり/なしを選んでマッチング開始。候補6体はこのタイミングで
+//      抽選されるが、本人にも非公開のまま扱う（masmon_realtime.js 側で保持）
 //   3. マッチング成立後、PVP_PICK_STATE（本ファイル下部）にて
-//      お互いの候補6体を見せ合いながら、実際に出す規定数を選出する
+//      お互いの候補6体を初めて見せ合いながら、実際に出す規定数を選出する
 //      （相手の最終選出は、お互い選出完了するまで伏せられる）
 // =====================================================
 
 const PVP_RENTAL_STATE = {
-    battleType: 'team', // 'solo' | 'team'
-    offer: []
+    battleType: 'team' // 'solo' | 'team'
 };
 
 // --- PvP用レンタル装備抽選：段階を設けず、ノーマル〜特殊効果まで幅広くミックスする ---
@@ -84,12 +83,11 @@ function generatePvpRentalOffer() {
     return shuffledSpecies.slice(0, 6).map(sp => generatePvpRentalMonster(sp));
 }
 
-// --- タイトルから：PvP対戦の候補プレビュー（対戦形式選択）画面へ ---
-// この時点では対戦形式（個人戦/団体戦）を決めて候補6体を抽選するのみで、
-// 実際に出すモンスターの選出はマッチング成立後（enterPvpPickPhase）に行う。
+// --- タイトルから：PvP対戦の対戦形式選択画面へ ---
+// この時点では対戦形式（個人戦/団体戦）を決めるのみ。候補6体はまだ抽選しない
+// （抽選はマッチング開始時、実際に出すモンスターの選出はマッチング成立後に行う）。
 function startPvpRentalEntry(battleType = 'team') {
     PVP_RENTAL_STATE.battleType = battleType;
-    PVP_RENTAL_STATE.offer = generatePvpRentalOffer();
     renderPvpRentalSelectScreen();
     changeScreen('screen-pvp-rental-select');
 }
@@ -97,7 +95,6 @@ function startPvpRentalEntry(battleType = 'team') {
 function switchPvpRentalBattleType(battleType) {
     if (PVP_RENTAL_STATE.battleType === battleType) return;
     PVP_RENTAL_STATE.battleType = battleType;
-    PVP_RENTAL_STATE.offer = generatePvpRentalOffer(); // 対戦形式を変えたら候補も引き直す
     renderPvpRentalSelectScreen();
 }
 
@@ -147,21 +144,12 @@ function renderPvpRentalSelectScreen() {
         soloBtn.className = PVP_RENTAL_STATE.battleType === 'solo' ? activeCls : inactiveCls;
         teamBtn.className = PVP_RENTAL_STATE.battleType === 'team' ? activeCls : inactiveCls;
     }
-
-    // この画面ではまだ選出しない（あくまで候補6体のプレビュー）ため、全カードを非クリックで表示する。
-    const container = document.getElementById('pvp-rental-offer-container');
-    if (container) {
-        container.innerHTML = '';
-        PVP_RENTAL_STATE.offer.forEach(m => {
-            if (!m) return;
-            container.appendChild(renderPvpMonsterOfferCard(m, { clickable: false, selected: false }));
-        });
-    }
 }
 
-// --- 候補6体が確定した状態でマッチング画面（合言葉/ランダム）へ進む ---
+// --- 対戦形式が確定した状態でマッチング画面（合言葉/ランダム）へ進む ---
+// 候補6体はまだ存在しない（マッチング開始時に初めて抽選される）。
 function proceedToRealtimeMatchingFromRental() {
-    showRealtimeKeywordScreen(PVP_RENTAL_STATE.offer, [], PVP_RENTAL_STATE.battleType);
+    showRealtimeKeywordScreen([], PVP_RENTAL_STATE.battleType);
 }
 
 // マッチング画面のキャンセル・退出・対戦相手切断等から戻ってきた際の共通の戻り先。
