@@ -26,13 +26,6 @@ function returnToTitleFromEquipmentDex() {
     changeScreen('screen-title');
 }
 
-// --- モード（ノーマル／ハード／両方）の表示バッジ情報 ---
-function getEquipmentDexModeBadge(mode) {
-    if (mode === 'hard') return { text: 'HARD産', cls: 'bg-red-950 text-red-300 border border-red-800' };
-    if (mode === 'normal') return { text: 'NORMAL産', cls: 'bg-sky-950 text-sky-300 border border-sky-800' };
-    return { text: '両方産', cls: 'bg-purple-950 text-purple-300 border border-purple-800' };
-}
-
 // --- レア度（★の数）に応じた色クラス ---
 function getEquipmentDexRarityColor(rarity) {
     const starCount = (rarity.match(/★/g) || []).length;
@@ -96,7 +89,6 @@ function renderEquipmentDexList() {
     }
 
     entries.forEach(base => {
-        const modeBadge = getEquipmentDexModeBadge(base.mode);
         const rarityColor = getEquipmentDexRarityColor(base.rarity);
         const effectText = getEquipmentDexEffectText(base);
 
@@ -111,7 +103,6 @@ function renderEquipmentDexList() {
                         <span class="text-[10px] ${rarityColor}">${base.rarity}</span>
                     </div>
                     <div class="flex items-center flex-wrap gap-1 mt-0.5">
-                        <span class="text-[9px] px-1.5 py-0.5 rounded ${modeBadge.cls}">${modeBadge.text}</span>
                         <span class="text-[9px] px-1.5 py-0.5 rounded bg-[#1a120b] text-gray-400 border border-gray-700">${base.type === 'stat' ? 'ステータス強化' : '特殊効果'}</span>
                     </div>
                 </div>

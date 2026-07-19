@@ -27,12 +27,12 @@ function pvpRentalRollEquipment() {
 }
 
 // --- PvP用レンタルモンスター1体を生成（ガッツファクトリーと同じ12種族プール・「型」データを使用） ---
-// PvPレンタル対戦には「周回」の概念が無いため、型は常に全4種（型1〜4）から抽選する。
+// PvPレンタル対戦には「周回」の概念が無いため、型は常に上位の型（型3・型4）のみから抽選する。
 function generatePvpRentalMonster(speciesId) {
     const tmpl = MONSTER_TEMPLATES[speciesId];
     if (!tmpl) return null;
 
-    const mold = (typeof pickMonsterMold === 'function') ? pickMonsterMold(speciesId, 4, null) : null;
+    const mold = (typeof pickMonsterMold === 'function') ? pickMonsterMold(speciesId, 4, null, 2) : null;
     let chosenSkills, equipInstance;
     if (mold) {
         chosenSkills = mold.skills;
