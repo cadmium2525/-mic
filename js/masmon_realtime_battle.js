@@ -151,6 +151,7 @@ function convertRoomMasmonToRealtimeUnit(masmon) {
         gutsSpeed: s.gutsSpeed || 14,
         // 移動速度（行動順決定用。旧セーブデータには存在しない場合があるため種族名から補完する）
         moveSpeed: getMoveSpeedForMasmon(masmon),
+        moveSpeedRank: getMoveSpeedRankForMasmon(masmon),
         guts: 50,
         critBonusTurns: 0,
         isDefending: false,
@@ -167,7 +168,9 @@ function convertRoomMasmonToRealtimeUnit(masmon) {
         shieldUsedThisBattle: false, // 九重神眼等の「バトル中1回限り」シールド技を使用済みか
         dodgeNextGuaranteed: false, // 陽炎等で得る「次の敵攻撃を確実に回避」フラグ
         permaForceBoostActive: false, // 天河天翔等で得る「今後のダメージ永続アップ」フラグ
-        isConfusedThisTurn: false, // このターンの行動が混乱によって失敗するか（ターン開始時に決定）
+        isConfusedThisTurn: false, // このターンの行動が混乱（意味不明）によって失敗するか（ターン開始時に決定）
+        isParalyzed: false,        // マヒ状態か（バトル終了まで治らない）
+        isParalyzedThisTurn: false, // このターンの行動がマヒによって失敗するか（ターン開始時に決定）
         isFlinchedThisTurn: false, // このターンの行動が怯みによって失敗するか（ターン開始時に決定）
         equippedItem: masmon.equip || null,  // 装備している装備アイテムインスタンス（PvP専用）
         equipLifesaverUsed: false,           // 装備の特殊効果を使用済みか
@@ -225,8 +228,8 @@ function buildInitialRealtimeBattleState(roomData, ratingInfo) {
         },
         ratingApplied: false,
         teams: {
-            player1: { units: p1Team, activeIdx: 0 },
-            player2: { units: p2Team, activeIdx: 0 }
+            player1: { units: p1Team, activeIdx: 0, substituteHits: 0 },
+            player2: { units: p2Team, activeIdx: 0, substituteHits: 0 }
         },
         items: { player1: { ...p1Items }, player2: { ...p2Items } },
         itemsInitial: { player1: { ...p1Items }, player2: { ...p2Items } },
@@ -354,6 +357,7 @@ function renderRealtimeBattleUI(state) {
     renderMonsterVisual(document.getElementById('battle-enemy-icon'), opp.monsterBaseName, opp.emoji, opp.isAwakened);
     document.getElementById('battle-enemy-type').textContent = opp.name;
     renderAuraBadge('enemy-aura-badge', opp.aura, opp.monsterBaseName);
+    renderStatusAilmentBadge('enemy-status-badge', opp);
     document.getElementById('enemy-hp-text').textContent = `HP: ${opp.life}/${opp.maxLife}`;
     document.getElementById('enemy-hp-bar').style.width = `${Math.max(0, (opp.life / opp.maxLife) * 100)}%`;
     document.getElementById('enemy-guts-text').textContent = Math.floor(opp.guts);
@@ -362,6 +366,7 @@ function renderRealtimeBattleUI(state) {
     renderMonsterVisual(document.getElementById('battle-player-icon'), me.monsterBaseName, me.emoji, me.isAwakened, true);
     document.getElementById('battle-player-name').textContent = me.name;
     renderAuraBadge('player-aura-badge', me.aura, me.monsterBaseName);
+    renderStatusAilmentBadge('player-status-badge', me);
     document.getElementById('player-hp-text').textContent = `${me.life}/${me.maxLife}`;
     document.getElementById('player-hp-bar').style.width = `${Math.max(0, (me.life / me.maxLife) * 100)}%`;
     document.getElementById('guts-number').textContent = Math.floor(me.guts);
@@ -549,14 +554,34 @@ function triggerRealtimeCombatEffects(entry) {
         return;
     }
 
-    // 混乱により行動失敗
-    if (text.includes('混乱していて、行動できなかった')) {
-        showEffect('❓ 混乱... ❓');
+    // 意味不明（混乱）により行動失敗
+    if (text.includes('意味不明で、行動できなかった')) {
+        showEffect('❔ 意味不明... ❔');
         return;
     }
-    // 混乱付与
-    if (text.includes('は混乱状態になった')) {
-        showEffect('❓ 混乱付与! ❓');
+    // 意味不明（混乱）付与
+    if (text.includes('は意味不明状態になった')) {
+        showEffect('❔ 意味不明付与! ❔');
+        return;
+    }
+    // マヒにより行動失敗
+    if (text.includes('はマヒして、行動できなかった')) {
+        showEffect('⚡ マヒ... ⚡');
+        return;
+    }
+    // マヒ付与
+    if (text.includes('感電しマヒ状態になった')) {
+        showEffect('⚡ マヒ付与! ⚡');
+        return;
+    }
+    // 出血付与
+    if (text.includes('は出血状態になった')) {
+        showEffect('🩸 出血付与! 🩸');
+        return;
+    }
+    // 怯みにより行動失敗
+    if (text.includes('怯んでしまい、行動できなかった')) {
+        showEffect('😨 怯み... 😨');
         return;
     }
     // 衰弱付与（ちから・かしこさ低下）
@@ -677,6 +702,14 @@ function renderRealtimeTeamIcons(state) {
                 icon.textContent = '💀';
             } else {
                 renderMonsterVisual(icon, unit.monsterBaseName, unit.emoji, unit.isAwakened, isPartnerSide);
+                const statusText = getStatusAilmentBadgeText(unit);
+                if (statusText) {
+                    const badge = document.createElement('div');
+                    badge.className = 'absolute -top-1 -right-1 text-[8px] leading-none bg-black/70 rounded px-0.5';
+                    badge.textContent = statusText;
+                    icon.style.position = 'relative';
+                    icon.appendChild(badge);
+                }
             }
             icon.title = unit.name;
             container.appendChild(icon);
@@ -747,13 +780,14 @@ function renderRealtimeBattleSkills(state) {
         if (sk.type === 'int') typeIcon = '🔮';
         if (sk.type.startsWith('buff')) typeIcon = '⭐';
         if (sk.type === 'heal') typeIcon = '💖';
+        if (sk.type === 'substitute') typeIcon = '🌸';
 
         const enhBadge = isEnhanced
             ? `<span class="text-[8px] bg-purple-900 text-purple-200 px-1 py-0.5 rounded font-bold ml-1">⚔️Lv.${enh.level}</span>`
             : '';
 
         let hitRateDisplay;
-        if (sk.type === 'heal' || sk.type.startsWith('buff')) {
+        if (sk.type === 'heal' || sk.type.startsWith('buff') || sk.type === 'substitute') {
             hitRateDisplay = `<span class="text-emerald-700 text-[9px] font-bold">必中</span>`;
         } else if (sk.hitRate === 100) {
             hitRateDisplay = `<span class="${style.textIntensity} text-[9px] font-bold font-mono">命中:必中</span>`;
@@ -877,7 +911,7 @@ function openRealtimeSkillModal(skKey, state) {
     document.getElementById('modal-skill-desc').textContent = sk.desc || "説明はありません。";
     document.getElementById('modal-current-guts').textContent = currentGuts;
 
-    if (sk.type === 'heal' || sk.type.startsWith('buff')) {
+    if (sk.type === 'heal' || sk.type.startsWith('buff') || sk.type === 'substitute') {
         document.getElementById('modal-guts-dmg-scale').textContent = "なし (補助)";
         document.getElementById('modal-guts-hit-rate').textContent = "必中";
     } else {
@@ -899,6 +933,7 @@ function openRealtimeSkillModal(skKey, state) {
     if (sk.type === 'int') typeStr = "かしこさ技";
     if (sk.type === 'heal') typeStr = "回復技";
     if (sk.type.startsWith('buff')) typeStr = "補助技";
+    if (sk.type === 'substitute') typeStr = "身代わり技";
     document.getElementById('modal-skill-type').textContent = typeStr;
 
     document.getElementById('skill-modal').classList.remove('hidden');
@@ -976,9 +1011,9 @@ function disableRealtimeActionButtons() {
 // masmon_battle.js の buildTurnActionDescriptor とは別に用意している。
 function buildRealtimeTurnActionDescriptor(unit, action) {
     if (!unit || unit.life <= 0) {
-        return createTurnAction('none', 0, unit ? (unit.moveSpeed || 0) : 0);
+        return createTurnAction('none', 0, unit ? getEffectiveMoveSpeed(unit) : 0);
     }
-    const speed = unit.moveSpeed || 0;
+    const speed = getEffectiveMoveSpeed(unit);
     if (!action) return createTurnAction('none', 0, speed);
     if (action.kind === 'switch') return createTurnAction('switchOut', 0, speed);
     if (action.kind === 'item') return createTurnAction('item', 0, speed);
@@ -1029,8 +1064,14 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
 
     if (!me || me.life <= 0) return; // 既に戦闘不能（このターンの前半で倒れた等）
 
-    // 混乱状態（サケビ声などで受けた場合）：このターンは何を選んでも行動に失敗する
+    // マヒ状態（感電技を受けた場合）：バトル終了まで治らず、毎ターン25%の確率で行動に失敗する
+    // 混乱＝意味不明状態（歌う等を受けた場合）：このターンは何を選んでも行動に失敗する
     // 怯み状態（黒ひざコンボ等で受けた場合）：このターンは何を選んでも行動に失敗する
+    if (me.isParalyzedThisTurn) {
+        me.isParalyzedThisTurn = false;
+        resultLogs.push(`⚡ ${me.name} はマヒして、行動できなかった！`);
+        return;
+    }
     if (me.isFlinchedThisTurn) {
         me.isFlinchedThisTurn = false;
         resultLogs.push(`😨 ${me.name} は怯んでしまい、行動できなかった！`);
@@ -1038,7 +1079,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
     }
     if (me.isConfusedThisTurn) {
         me.isConfusedThisTurn = false;
-        resultLogs.push(`❓ ${me.name} は混乱していて、行動できなかった！`);
+        resultLogs.push(`❔ ${me.name} は意味不明で、行動できなかった！`);
         return;
     }
 
@@ -1082,7 +1123,10 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             // 次技威力アップ（オーロラゲート等）の消費は命中判定に関わらず技を撃った時点で消費する
             const usedForce = consumeForceBoost(me, sk.force);
 
-            if (isHit) {
+            if (isHit && otherTeam.substituteHits > 0) {
+                otherTeam.substituteHits -= 1;
+                resultLogs.push(`🌸 桜餅の身代わりが${opp.name}の代わりに攻撃を受けた！（身代わりの残り回数: ${otherTeam.substituteHits}）`);
+            } else if (isHit) {
                 const isPow = sk.type === 'pow';
                 const attackerStat = getBuffedAttackStat(me, getWeakenedStat(me, isPow ? me.pow : me.int)) * getEquipmentLowLifeAtkMultiplier(me);
                 // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（防御崩し状態を反映）
@@ -1107,8 +1151,11 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                     meExtraDmgMsg += " (天河天翔×1.2)";
                 }
                 if (isAuraAdvantageous(me.aura, opp.aura)) {
-                    damage = Math.floor(damage * 1.5);
-                    meExtraDmgMsg += ` (オーラ相性${AURA_TYPES[me.aura].emoji}→${AURA_TYPES[opp.aura].emoji}×1.5)`;
+                    damage = Math.floor(damage * 2);
+                    meExtraDmgMsg += ` (オーラ相性${AURA_TYPES[me.aura].emoji}→${AURA_TYPES[opp.aura].emoji}×2)`;
+                } else if (isAuraAdvantageous(opp.aura, me.aura)) {
+                    damage = Math.floor(damage * 0.5);
+                    meExtraDmgMsg += ` (オーラ相性${AURA_TYPES[opp.aura].emoji}→${AURA_TYPES[me.aura].emoji}被ダメージ半減)`;
                 }
                 const monClassMod = getMonClassDamageMultiplier(me.monsterBaseName, opp.monsterBaseName);
                 if (monClassMod !== 1.0) {
@@ -1200,12 +1247,20 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                 }
             }
         } else if (sk.type === 'buff_pow') {
-            me.pow += 15;
-            resultLogs.push(`${me.name} の闘志がみなぎる！ちからが15アップした！`);
+            if (!sk.useEffect) {
+                me.pow += 15;
+                resultLogs.push(`${me.name} の闘志がみなぎる！ちからが15アップした！`);
+            }
         } else if (sk.type === 'heal') {
             const healAmount = Math.floor(me.maxLife * 0.35);
             me.life = Math.min(me.maxLife, me.life + healAmount);
             resultLogs.push(`${me.name} は癒された！ライフが ${healAmount} 回復！`);
+        } else if (sk.type === 'substitute') {
+            const already = actingTeam.substituteHits > 0;
+            actingTeam.substituteHits = 2;
+            resultLogs.push(already
+                ? `🌸 ${me.name} は新しい桜餅を設置し直した！（身代わりの残り回数が2回に更新された）`
+                : `🌸 ${me.name} は自身と同じ大きさの桜餅を設置した！（次の攻撃を2回まで防ぐ。モンスターを交換しても場に残り続ける）`);
         }
     } else if (action.kind === 'defend') {
         me.isDefending = true;
@@ -1218,6 +1273,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             return;
         }
         const prevName = me.name;
+        clearBattleStatModifiersOnSwitch(me);
         actingTeam.activeIdx = targetIdx;
         resultLogs.push(`${prevName} を引っ込め、【${target.name}】を繰り出した！`);
     } else if (action.kind === 'item') {
@@ -1258,12 +1314,12 @@ function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs) {
     if (unit.blindTurns > 0) unit.blindTurns--;
     if (unit.hitDownTempTurns > 0) unit.hitDownTempTurns--;
 
-    // 継続ダメージ（レッグアーク・ダークホウスト等）の適用
+    // 出血（レッグアーク・ダークホウスト等）の適用
     if (unit.dotTurns > 0) {
         const dotDamage = Math.max(1, Math.floor((unit.maxLife || 0) * (unit.dotPct || 0.08)));
         unit.life = Math.max(0, unit.life - dotDamage);
         unit.dotTurns--;
-        resultLogs.push(`🩸 ${unit.name} は継続ダメージで ${dotDamage} のダメージを受けた！(現在: ${Math.floor(unit.life)})`);
+        resultLogs.push(`🩸 ${unit.name} は出血ダメージで ${dotDamage} のダメージを受けた！(現在: ${Math.floor(unit.life)})`);
     }
 
     if (unit.confuseTurns > 0) {
@@ -1272,6 +1328,8 @@ function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs) {
     } else {
         unit.isConfusedThisTurn = false;
     }
+    // マヒ：ターンでは消化しない（試合終了まで治らない）。毎ターン25%の確率で行動不能になる。
+    unit.isParalyzedThisTurn = !!unit.isParalyzed && (Math.random() < 0.25);
     if (unit.flinchTurns > 0) {
         unit.flinchTurns--;
         unit.isFlinchedThisTurn = Math.random() < 0.5;
@@ -1287,6 +1345,10 @@ function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs) {
         recovery = Math.floor(recovery * 1.5);
     }
     recovery += getEquipmentGutsRecoveryBonus(unit);
+    if (unit.gutsRecoveryDownNext > 0) {
+        recovery = Math.max(0, recovery - unit.gutsRecoveryDownNext);
+        unit.gutsRecoveryDownNext = 0;
+    }
     unit.guts = Math.min(100, unit.guts + recovery);
     if (unit.statusEffect === "集中" && unit.guts > 90 && !unit.isShuchuActive) {
         unit.isShuchuActive = true;

@@ -4,7 +4,7 @@
 // ・育成モードを介さず、あらかじめ用意されたレンタルモンスターから
 //   6体提示→3体選出でパーティを組み、7戦1セット×7セット＝49連勝を目指す
 // ・1勝ごとに相手モンスター1体と手持ち1体を交換できる
-// ・3セット目・7セット目のクリア後（＝各セットの7戦目）にファクトリーヘッドが登場
+// ・3セット目・7セット目のクリア後（＝各セットの7戦目）にレジェンドブリーダー・コルトが登場
 // ・セットが進むほど相手のステータス・AIレベル・装備が強化される
 // ・既存の masmon_battle.js の3vs3バトルエンジンをそのまま再利用する
 //   （MASMON_BATTLE_STATE.kinNejiki フラグでガッツファクトリー実行中を識別）
@@ -25,6 +25,34 @@ const KIN_NEJIKI_STATE = {
     // { opponentTeam, floorLabel, isNejiki, aiLevel } または null
     nextBattlePrepared: null
 };
+
+// =====================================================
+// 対戦相手ブリーダー名鑑（ボス戦を除く通常戦の相手に順番に割り当てる二つ名付きブリーダー）
+// 通算バトル数（1〜49）に応じて、この配列を先頭からループしながら割り当てる。
+// =====================================================
+const KIN_NEJIKI_BREEDER_NAMES = [
+    '白銀の騎士アルベルト',
+    '飛燕のセシリア',
+    '鉄腕ガルシア',
+    '不敗のマキシム',
+    'エリートブリーダークロウ',
+    'ただのララ',
+    '怪老ゲンジ',
+    '幻惑のシルバ',
+    '熱血ブリーダーダイゴ',
+    'お嬢様カトリーヌ',
+    'ミスターG',
+    '迷子のトト',
+    '神速のレオン',
+    '冥府の門番ハデス',
+    '大地の母エレーナ'
+];
+
+// --- 通算バトル数（1〜）からブリーダー名を1つ割り当てる（15名を順番にループ） ---
+function getKinNejikiBreederName(totalBattleNumber) {
+    const idx = (Math.max(1, totalBattleNumber) - 1) % KIN_NEJIKI_BREEDER_NAMES.length;
+    return KIN_NEJIKI_BREEDER_NAMES[idx];
+}
 
 // =====================================================
 // 途中セーブ（一時中断・再開専用。コンティニューとしては使えない）
@@ -226,7 +254,7 @@ function generateKinNejikiOffer(setNumber, excludeSpeciesIds, excludeEquipIds, c
 
 // --- 対戦相手チーム（3体）を生成。ボス戦の場合は専用ボス＋帯同2体を返す ---
 // excludeSpeciesIds / excludeEquipIds: 「同じモンスター・同じ装備同士が対面しない」仕様のための除外リスト（省略可）
-function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, excludeEquipIds) {
+function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, excludeEquipIds, totalBattleNumber) {
     const excludeSpecies = excludeSpeciesIds || [];
     const excludeEquip = excludeEquipIds || [];
 
@@ -256,8 +284,9 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, e
         return [bossUnit, ...escorts.filter(Boolean)];
     }
 
+    const breederName = getKinNejikiBreederName(totalBattleNumber || 1);
     const team = generateKinNejikiOffer(setNumber, excludeSpecies, excludeEquip, 3);
-    team.forEach(m => { if (m) m.ownerName = `レンタル使い（第${setNumber}セット）`; });
+    team.forEach(m => { if (m) m.ownerName = breederName; });
     return team;
 }
 
@@ -345,6 +374,7 @@ function maybeExecuteKinNejikiEnemySwitch() {
     candidates.sort((a, b) => b.unit.stats.life - a.unit.stats.life);
     const chosen = candidates[0];
 
+    clearBattleStatModifiersOnSwitch(active);
     MASMON_BATTLE_STATE.enemyActiveIdx = chosen.i;
     const ownerLabel = MASMON_BATTLE_STATE.opponentOwnerName || '相手';
     addLog(`💦 ${active.name} は苦しい状況と判断し、${ownerLabel}は【${chosen.unit.name}】に交代した！`);
@@ -482,8 +512,8 @@ function buildKinNejikiExclusions(ownParty, opponentParty) {
 // --- 指定した set/battleInSet/isNejiki に対応するバトル情報一式（相手チーム・表示ラベル等）を組み立てる ---
 function buildKinNejikiBattlePackage(set, battleInSet, isNejiki, excludeSpecies, excludeEquip) {
     const aiLevel = kinNejikiAiLevelForSet(set);
-    const opponentTeam = generateKinNejikiOpponentTeam(set, isNejiki, excludeSpecies, excludeEquip);
     const totalBattleNumber = (set - 1) * 7 + battleInSet;
+    const opponentTeam = generateKinNejikiOpponentTeam(set, isNejiki, excludeSpecies, excludeEquip, totalBattleNumber);
     const floorLabel = isNejiki
         ? `⚔️ 第${set}セット・ボス戦（通算${totalBattleNumber}戦目）`
         : `⚔️ 第${set}セット ${battleInSet}戦目（通算${totalBattleNumber}戦目）`;
@@ -513,7 +543,33 @@ function advanceToNextKinNejikiBattle() {
 }
 
 // --- 既存の masmon_battle.js エンジン（3vs3対応）へ状態をセットしてバトル画面へ ---
+// バトル開始前に「対戦相手ブリーダーと対峙する」演出画面を挟み、ボタンタップで実際のバトルへ進む。
+let KIN_NEJIKI_PENDING_BATTLE = null; // { opponentTeamRaw, floorText, isNejiki, aiLevel }
+
 function startKinNejikiBattleEngine(opponentTeamRaw, floorText, isNejiki, aiLevel) {
+    KIN_NEJIKI_PENDING_BATTLE = { opponentTeamRaw, floorText, isNejiki, aiLevel };
+    const breederName = (opponentTeamRaw[0] || {}).ownerName || 'レンタル使い';
+    showKinNejikiEncounterScreen(breederName, isNejiki);
+}
+
+// --- 「○○が勝負を仕掛けてきた！」演出画面を表示する ---
+function showKinNejikiEncounterScreen(breederName, isNejiki) {
+    const msgEl = document.getElementById('kinnejiki-encounter-message');
+    if (msgEl) msgEl.textContent = `${breederName}が勝負を仕掛けてきた！`;
+    const iconEl = document.getElementById('kinnejiki-encounter-icon');
+    if (iconEl) iconEl.textContent = isNejiki ? '👑' : '🥊';
+    changeScreen('screen-kinnejiki-encounter');
+}
+
+// --- 演出画面の「バトル開始！」ボタンから呼ばれ、保留していたバトルを実際に開始する ---
+function confirmKinNejikiEncounter() {
+    if (!KIN_NEJIKI_PENDING_BATTLE) return;
+    const { opponentTeamRaw, floorText, isNejiki, aiLevel } = KIN_NEJIKI_PENDING_BATTLE;
+    KIN_NEJIKI_PENDING_BATTLE = null;
+    launchKinNejikiBattleEngine(opponentTeamRaw, floorText, isNejiki, aiLevel);
+}
+
+function launchKinNejikiBattleEngine(opponentTeamRaw, floorText, isNejiki, aiLevel) {
     MASMON_BATTLE_STATE.mode = 'cpu_team';
     MASMON_BATTLE_STATE.playerTeam = KIN_NEJIKI_STATE.playerParty.map(m => convertMasmonToBattleUnit(m, m.equip || null));
     MASMON_BATTLE_STATE.enemyTeam = opponentTeamRaw.map(m => convertMasmonToBattleUnit(m, m.equip || null));

@@ -50,6 +50,10 @@ const MASMON_BATTLE_STATE = {
     pendingEnemyAction: null,
     battleResult: null,     // 'win' | 'lose'
     opponentOwnerName: '',
+    // 「みがわり餅」で設置した身代わりの残り回数。ユニット単位ではなくチーム（陣営）単位で持続する
+    // （モンスターを交換しても消えない）。0なら身代わり無し。
+    playerSubstituteHits: 0,
+    enemySubstituteHits: 0,
     playerItemsInitial: { mango: 0, kuri: 0, toro: 0 }, // 持ち込み時点の初期所持数（UI表示用）
     // 「ガッツファクトリー」レンタルバトル進行中のみ使用する追加情報（js/kinnejiki.js が読み書きする）
     // { inRun: true, set: 1〜7, battleIndex: 1〜7, isNejiki: bool, aiLevel: 1〜4 }
@@ -127,7 +131,8 @@ function convertMasmonToBattleUnit(masmonData, equippedItem) {
             def: masmonData.stats.def + equipBonus.def + auraBonus.def,
             gutsSpeed: masmonData.stats.gutsSpeed || 14,
             // 移動速度（行動順決定用。旧セーブデータには存在しない場合があるため種族名から補完する）
-            moveSpeed: getMoveSpeedForMasmon(masmonData)
+            moveSpeed: getMoveSpeedForMasmon(masmonData),
+            moveSpeedRank: getMoveSpeedRankForMasmon(masmonData)
         },
         skills: [...(masmonData.skills || [])],
         skillEnhancements: JSON.parse(JSON.stringify(masmonData.skillEnhancements || {})) // 技の強化データ { skKey: { forceBonus, hitBonus, level } }
@@ -189,10 +194,12 @@ function startMasmonBattleCommon(floorText) {
     renderMonsterVisual(document.getElementById('battle-enemy-icon'), e.visualName || e.monsterBaseName, e.emoji, e.isAwakened);
     document.getElementById('battle-enemy-type').textContent = e.name;
     renderAuraBadge('enemy-aura-badge', e.aura, e.monsterBaseName);
+    renderStatusAilmentBadge('enemy-status-badge', e);
 
     renderMonsterVisual(document.getElementById('battle-player-icon'), p.monsterBaseName, p.emoji, p.isAwakened, true);
     document.getElementById('battle-player-name').textContent = p.name;
     renderAuraBadge('player-aura-badge', p.aura, p.monsterBaseName);
+    renderStatusAilmentBadge('player-status-badge', p);
 
     const initialLogEntries = [`${enemyOwner}の【${e.name}】が立ちはだかった！`];
     if (isTeam) {
@@ -233,6 +240,14 @@ function renderTeamIcons() {
                 icon.textContent = '💀';
             } else {
                 renderMonsterVisual(icon, unit.visualName || unit.monsterBaseName, unit.emoji, unit.isAwakened, isPartnerSide);
+                const statusText = getStatusAilmentBadgeText(unit);
+                if (statusText) {
+                    const badge = document.createElement('div');
+                    badge.className = 'absolute -top-1 -right-1 text-[8px] leading-none bg-black/70 rounded px-0.5';
+                    badge.textContent = statusText;
+                    icon.style.position = 'relative';
+                    icon.appendChild(badge);
+                }
             }
             icon.title = unit.name;
             container.appendChild(icon);
@@ -356,6 +371,7 @@ function applyPlayerSwitch(targetIdx) {
     renderMonsterVisual(document.getElementById('battle-player-icon'), target.monsterBaseName, target.emoji, target.isAwakened, true);
     document.getElementById('battle-player-name').textContent = target.name;
     renderAuraBadge('player-aura-badge', target.aura, target.monsterBaseName);
+    renderStatusAilmentBadge('player-status-badge', target);
     renderMasmonBattleSkills();
 
     renderTeamIcons();
@@ -376,6 +392,7 @@ function applyEnemySwitch(targetIdx) {
     renderMonsterVisual(document.getElementById('battle-enemy-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened);
     document.getElementById('battle-enemy-type').textContent = target.name;
     renderAuraBadge('enemy-aura-badge', target.aura, target.monsterBaseName);
+    renderStatusAilmentBadge('enemy-status-badge', target);
 
     renderTeamIcons();
     updateMasmonBattleStatsUI();
@@ -516,6 +533,10 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
             recovery = Math.floor(recovery * 1.5);
         }
         recovery += getEquipmentGutsRecoveryBonus(p);
+        if (p.gutsRecoveryDownNext > 0) {
+            recovery = Math.max(0, recovery - p.gutsRecoveryDownNext);
+            p.gutsRecoveryDownNext = 0;
+        }
         addLog(`--- ターン ${MASMON_BATTLE_STATE.turn} ---`);
         p.guts = Math.min(100, p.guts + recovery);
         addLog(`${p.name} のガッツが ${recovery} 回復した！(現在: ${Math.floor(p.guts)})`);
@@ -529,6 +550,10 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
                 enemyRecovery = Math.floor(enemyRecovery * 1.5);
             }
             enemyRecovery += getEquipmentGutsRecoveryBonus(e);
+            if (e.gutsRecoveryDownNext > 0) {
+                enemyRecovery = Math.max(0, enemyRecovery - e.gutsRecoveryDownNext);
+                e.gutsRecoveryDownNext = 0;
+            }
             e.guts = Math.min(100, e.guts + enemyRecovery);
             addLog(`${e.name} のガッツが ${enemyRecovery} 回復した！(現在: ${Math.floor(e.guts)})`);
         }
@@ -540,11 +565,11 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
     MASMON_BATTLE_STATE.isDefending = false;
     updateMasmonBattleStatsUI();
 
-    // 混乱状態（サケビ声などで付与）の残ターン消化と行動失敗判定（プレイヤー側）
+    // マヒ／混乱（意味不明）／出血の残ターン消化と行動失敗判定（プレイヤー側）
     const confusionResult = tickStatusTurnsAndCheckConfusion(p);
     if (confusionResult.dotDamage > 0) {
         p.stats.life = Math.max(0, p.stats.life - confusionResult.dotDamage);
-        addLog(`🩸 ${p.name} は傷跡の継続ダメージで ${confusionResult.dotDamage} のダメージを受けた！(現在: ${Math.floor(p.stats.life)})`);
+        addLog(`🩸 ${p.name} は出血ダメージで ${confusionResult.dotDamage} のダメージを受けた！(現在: ${Math.floor(p.stats.life)})`);
         updateMasmonBattleStatsUI();
         handleFaintAndSwitch('player', (result) => {
             if (result.battleEnded) return;
@@ -559,9 +584,9 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
 // --- startMasmonPlayerTurn() の後半部分（自分の戦闘不能チェック後に必ず通る処理） ---
 function finishMasmonPlayerTurnSetup(confusionResult) {
     if (confusionResult.confused) {
-        // 混乱中は技を選択できないため、「行動不能」の行動として即座に確定させる
+        // マヒ／意味不明／怯み中は技を選択できないため、「行動不能」の行動として即座に確定させる
         toggleMasmonSkillButtons(false);
-        submitMasmonPlayerAction({ actionType: 'none', reason: 'confused' });
+        submitMasmonPlayerAction({ actionType: 'none', reason: confusionResult.failReason });
         return;
     }
 
@@ -804,6 +829,7 @@ function renderMasmonBattleSkills() {
         if (sk.type === 'int') typeIcon = '🔮';
         if (sk.type.startsWith('buff')) typeIcon = '⭐';
         if (sk.type === 'heal') typeIcon = '💖';
+        if (sk.type === 'substitute') typeIcon = '🌸';
 
         const enhBadge = isEnhanced
             ? `<span class="text-[8px] bg-purple-900 text-purple-200 px-1 py-0.5 rounded font-bold ml-1">⚔️Lv.${enh.level}</span>`
@@ -916,6 +942,7 @@ function executeMasmonSwitch(targetIdx) {
     beginActionLog();
 
     const prev = getPlayerActive();
+    clearBattleStatModifiersOnSwitch(prev);
     MASMON_BATTLE_STATE.playerActiveIdx = targetIdx;
     MASMON_BATTLE_STATE.isDefending = false;
 
@@ -925,6 +952,7 @@ function executeMasmonSwitch(targetIdx) {
     renderMonsterVisual(document.getElementById('battle-player-icon'), target.monsterBaseName, target.emoji, target.isAwakened, true);
     document.getElementById('battle-player-name').textContent = target.name;
     renderAuraBadge('player-aura-badge', target.aura, target.monsterBaseName);
+    renderStatusAilmentBadge('player-status-badge', target);
     renderTeamIcons();
     updateMasmonBattleStatsUI();
     renderMasmonBattleSkills();
@@ -955,7 +983,7 @@ function openMasmonSkillModal(skKey) {
     document.getElementById('modal-skill-desc').textContent = sk.desc || "説明はありません。";
     document.getElementById('modal-current-guts').textContent = currentGuts;
 
-    if (sk.type === 'heal' || sk.type.startsWith('buff')) {
+    if (sk.type === 'heal' || sk.type.startsWith('buff') || sk.type === 'substitute') {
         document.getElementById('modal-guts-dmg-scale').textContent = "なし (補助)";
         document.getElementById('modal-guts-hit-rate').textContent = "必中";
     } else {
@@ -977,6 +1005,7 @@ function openMasmonSkillModal(skKey) {
     if (sk.type === 'int') typeStr = "かしこさ技";
     if (sk.type === 'heal') typeStr = "回復技";
     if (sk.type.startsWith('buff')) typeStr = "補助技";
+    if (sk.type === 'substitute') typeStr = "身代わり技";
     document.getElementById('modal-skill-type').textContent = typeStr;
 
     document.getElementById('skill-modal').classList.remove('hidden');
@@ -1163,9 +1192,9 @@ function runEnemyItemAI() {
 // --- ユニット＋行動 から、TurnOrderResolver に渡す行動情報オブジェクトを作る ---
 function buildTurnActionDescriptor(unit, action) {
     if (!unit || unit.stats.life <= 0) {
-        return createTurnAction('none', 0, unit ? (unit.stats.moveSpeed || 0) : 0);
+        return createTurnAction('none', 0, unit ? getEffectiveMoveSpeed(unit) : 0);
     }
-    const speed = unit.stats.moveSpeed || 0;
+    const speed = getEffectiveMoveSpeed(unit);
     if (!action || action.actionType === 'none') {
         return createTurnAction('none', 0, speed);
     }
@@ -1205,11 +1234,11 @@ function decideMasmonEnemyAction() {
     e = getEnemyActive();
     if (!e || e.stats.life <= 0) return { actionType: 'none' };
 
-    // 混乱状態（サケビ声などで受けた場合）の残ターン消化と行動失敗判定
+    // マヒ／混乱（意味不明）／出血の残ターン消化と行動失敗判定（敵側）
     const enemyConfusionResult = tickStatusTurnsAndCheckConfusion(e);
     if (enemyConfusionResult.dotDamage > 0) {
         e.stats.life = Math.max(0, e.stats.life - enemyConfusionResult.dotDamage);
-        addLog(`🩸 ${e.name} は傷跡の継続ダメージで ${enemyConfusionResult.dotDamage} のダメージを受けた！(現在: ${Math.floor(e.stats.life)})`);
+        addLog(`🩸 ${e.name} は出血ダメージで ${enemyConfusionResult.dotDamage} のダメージを受けた！(現在: ${Math.floor(e.stats.life)})`);
         updateMasmonBattleStatsUI();
         if (checkFaintAndProceed('enemy')) {
             return { actionType: 'none', battleEnded: true };
@@ -1218,7 +1247,7 @@ function decideMasmonEnemyAction() {
     e = getEnemyActive();
     if (!e || e.stats.life <= 0) return { actionType: 'none' };
     if (enemyConfusionResult.confused) {
-        return { actionType: 'none', reason: 'confused' };
+        return { actionType: 'none', reason: enemyConfusionResult.failReason };
     }
 
     const p = getPlayerActive();
@@ -1348,9 +1377,15 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
     if (!action || action.actionType === 'none') {
         let msg = null;
         let effect = '💨 NO ACTION 💨';
-        if (action && action.reason === 'confused') {
-            msg = `❓ ${unit.name} は混乱していて、行動できなかった！`;
-            effect = '❓ 混乱... ❓';
+        if (action && action.reason === 'confuse') {
+            msg = `❔ ${unit.name} は意味不明で、行動できなかった！`;
+            effect = '❔ 意味不明... ❔';
+        } else if (action && action.reason === 'paralyze') {
+            msg = `⚡ ${unit.name} はマヒして、行動できなかった！`;
+            effect = '⚡ マヒ... ⚡';
+        } else if (action && action.reason === 'flinch') {
+            msg = `😨 ${unit.name} は怯んでしまい、行動できなかった！`;
+            effect = '😨 怯み... 😨';
         } else if (action && action.reason === 'noguts') {
             msg = (side === 'enemy')
                 ? `しかし ${unit.name} はガッツが著しく不足しており、何も行動できない！`
@@ -1402,9 +1437,11 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
         if (sk.type === 'pow' || sk.type === 'int') {
             buildAttackSkillSteps(steps, side, unit, opponent, sk);
         } else if (sk.type === 'buff_pow') {
-            buildBuffPowSteps(steps, side, unit);
+            buildBuffPowSteps(steps, side, unit, sk);
         } else if (sk.type === 'heal') {
             buildHealSteps(steps, side, unit);
+        } else if (sk.type === 'substitute') {
+            buildSubstituteSteps(steps, side, unit);
         }
 
         runBattleStepSequence(steps, () => {
@@ -1462,6 +1499,21 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
     // 次技威力アップ（オーロラゲート等）の消費は命中判定に関わらず技を撃った時点で消費する
     const usedForce = consumeForceBoost(attacker, sk.force);
 
+    // みがわり餅で設置された身代わりが残っている場合、攻撃はダメージ・ガッツダウン・追加効果一切なしで防がれる
+    const defenderSubKey = side === 'player' ? 'enemySubstituteHits' : 'playerSubstituteHits';
+    if (isHit && MASMON_BATTLE_STATE[defenderSubKey] > 0) {
+        MASMON_BATTLE_STATE[defenderSubKey] -= 1;
+        const remaining = MASMON_BATTLE_STATE[defenderSubKey];
+        steps.push({
+            run: () => {
+                showEffect('🌸 身代わり！');
+                addLog(`🌸 桜餅の身代わりが${defender.name}の代わりに攻撃を受けた！（身代わりの残り回数: ${remaining}）`);
+            },
+            wait: BATTLE_STEP_DELAY.afterHitEffect
+        });
+        return;
+    }
+
     if (isHit) {
         const isPow = sk.type === 'pow';
         const attackerStat = getBuffedAttackStat(attacker, getWeakenedStat(attacker, isPow ? attacker.stats.pow : attacker.stats.int)) * getEquipmentLowLifeAtkMultiplier(attacker);
@@ -1492,8 +1544,11 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
             extraDmgMsg += " (天河天翔×1.2)";
         }
         if (isAuraAdvantageous(attacker.aura, defender.aura)) {
-            damage = Math.floor(damage * 1.5);
-            extraDmgMsg += ` (オーラ相性${AURA_TYPES[attacker.aura].emoji}→${AURA_TYPES[defender.aura].emoji}×1.5)`;
+            damage = Math.floor(damage * 2);
+            extraDmgMsg += ` (オーラ相性${AURA_TYPES[attacker.aura].emoji}→${AURA_TYPES[defender.aura].emoji}×2)`;
+        } else if (isAuraAdvantageous(defender.aura, attacker.aura)) {
+            damage = Math.floor(damage * 0.5);
+            extraDmgMsg += ` (オーラ相性${AURA_TYPES[defender.aura].emoji}→${AURA_TYPES[attacker.aura].emoji}被ダメージ半減)`;
         }
         const monClassMod = getMonClassDamageMultiplier(attacker.monsterBaseName, defender.monsterBaseName);
         if (monClassMod !== 1.0) {
@@ -1620,12 +1675,34 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
 }
 
 // --- 補助技（ちからアップ）の演出ステップ ---
-function buildBuffPowSteps(steps, side, unit) {
+// sk.useEffect を持つ技（桜の舞など）は applySkillOnUseEffect 側で既に効果を適用済みのため、
+// ここでは旧仕様の「ちから固定+15」を重複適用しない。
+function buildBuffPowSteps(steps, side, unit, sk) {
+    if (sk && sk.useEffect) return;
     const cfg = SIDE_UI[side];
     steps.push({
         run: () => {
             unit.stats.pow += 15;
             addLog(side === 'player' ? `${unit.name} の闘志がみなぎる！ちからが15アップした！` : `${unit.name} は気合を入れて攻撃力を上げた！`);
+            showEffect(cfg.buffEffect);
+            updateMasmonBattleStatsUI();
+        },
+        wait: BATTLE_STEP_DELAY.afterHitEffect
+    });
+}
+
+// --- みがわり餅：チーム（陣営）側に持続する身代わりを設置する演出ステップ ---
+// モンスターを交換しても効果が残るよう、ユニットではなく MASMON_BATTLE_STATE 側に回数を持たせる。
+function buildSubstituteSteps(steps, side, unit) {
+    const cfg = SIDE_UI[side];
+    const stateKey = side === 'player' ? 'playerSubstituteHits' : 'enemySubstituteHits';
+    steps.push({
+        run: () => {
+            const already = MASMON_BATTLE_STATE[stateKey] > 0;
+            MASMON_BATTLE_STATE[stateKey] = 2;
+            addLog(already
+                ? `🌸 ${unit.name} は新しい桜餅を設置し直した！（身代わりの残り回数が2回に更新された）`
+                : `🌸 ${unit.name} は自身と同じ大きさの桜餅を設置した！（次の攻撃を2回まで防ぐ。モンスターを交換しても場に残り続ける）`);
             showEffect(cfg.buffEffect);
             updateMasmonBattleStatsUI();
         },

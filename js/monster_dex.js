@@ -98,7 +98,7 @@ function showMonsterDexDetail(speciesId) {
     if (monClassInfo) {
         const beatsInfo = MON_CLASS_TYPES[monClassInfo.beats];
         document.getElementById('monster-dex-detail-desc').textContent =
-            `【モン類：${monClassInfo.emoji}${monClassInfo.name}（${beatsInfo.name}に有利：与ダメージ×1.5・被ダメージ×0.75）】\n${tmpl.desc}`;
+            `【モン類：${monClassInfo.emoji}${monClassInfo.name}（${beatsInfo.name}に有利：与ダメージ×2・被ダメージ×0.5）】\n${tmpl.desc}`;
     } else {
         document.getElementById('monster-dex-detail-desc').textContent = tmpl.desc;
     }
@@ -112,6 +112,7 @@ function showMonsterDexDetail(speciesId) {
         <div class="bg-[#1a120b] rounded px-1.5 py-1">命中: <span class="font-bold text-yellow-400">${s.hit}</span></div>
         <div class="bg-[#1a120b] rounded px-1.5 py-1">回避: <span class="font-bold text-sky-400">${s.spd}</span></div>
         <div class="bg-[#1a120b] rounded px-1.5 py-1">丈夫さ: <span class="font-bold text-orange-400">${s.def}</span></div>
+        <div class="bg-[#1a120b] rounded px-1.5 py-1">移動速度: <span class="font-bold text-cyan-400">${s.moveSpeed}${s.moveSpeedRank ? `（${s.moveSpeedRank}）` : ''}</span></div>
     `;
 
     const skillPool = KIN_NEJIKI_SKILL_POOL[speciesId] || [];

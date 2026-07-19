@@ -101,6 +101,20 @@ function renderAuraBadge(elId, auraKey, monsterRawName) {
     el.className = `px-1 py-0.5 rounded text-[8px] font-bold text-slate-900 ${aura.colorClass}`;
 }
 
+// --- 状態異常バッジ表示ヘルパー（マヒ⚡／混乱＝意味不明❔／出血🩸をオーラバッジの右側に表示する） ---
+function renderStatusAilmentBadge(elId, unit) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const text = getStatusAilmentBadgeText(unit);
+    if (text) {
+        el.textContent = text;
+        el.classList.remove('hidden');
+    } else {
+        el.textContent = '';
+        el.classList.add('hidden');
+    }
+}
+
 // --- お知らせトースト関数 ---
 function showToast(message) {
     const toast = document.getElementById('custom-toast');

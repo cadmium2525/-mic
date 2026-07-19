@@ -116,6 +116,7 @@
                             <span class="font-bold text-xs text-red-400 flex items-center">
                                 <span id="enemy-name">スエゾー</span>
                                 <span id="enemy-aura-badge" class="hidden ml-1 px-1 py-0.5 rounded text-[8px] font-bold text-slate-900"></span>
+                                <span id="enemy-status-badge" class="hidden ml-1 px-1 py-0.5 rounded text-[8px] font-bold bg-black/60 text-white tracking-tight"></span>
                             </span>
                             <span class="text-[10px] text-gray-400" id="enemy-hp-text">HP: 120/120</span>
                         </div>
@@ -148,6 +149,7 @@
                         <div class="bg-amber-900/80 px-2 py-0.5 rounded text-[9px] text-amber-200 flex items-center space-x-1">
                             <span id="battle-player-name">モッチー</span>
                             <span id="player-aura-badge" class="hidden px-1 py-0.5 rounded text-[8px] font-bold text-slate-900"></span>
+                            <span id="player-status-badge" class="hidden px-1 py-0.5 rounded text-[8px] font-bold bg-black/60 text-white tracking-tight"></span>
                         </div>
                         <!-- ダメージ数値表示用 -->
                         <div id="player-dmg-popup" class="absolute -top-8 text-lg font-bold text-red-500 opacity-0 transition-all duration-500 pointer-events-none"></div>
@@ -169,22 +171,7 @@
                     </div>
                 </div>
 
-                <!-- 味方ガッツ(GUTS)システム UI -->
-                <div class="bg-[#110906] px-4 py-2 border-t border-amber-950/50 flex items-center justify-between">
-                    <div class="flex flex-col">
-                        <span class="text-[10px] font-bold text-orange-400 tracking-wider">GUTS / ガッツ</span>
-                        <div class="flex items-center space-x-1 mt-0.5">
-                            <div class="text-lg font-bold text-orange-500 pixel-font" id="guts-number">50</div>
-                            <span class="text-[10px] text-gray-500">/ 100</span>
-                        </div>
-                    </div>
-                    <!-- ガッツ蓄積ゲージ -->
-                    <div class="flex-1 ml-4 bg-gray-900 h-3 rounded-full overflow-hidden border border-amber-900/30 p-[1px]">
-                        <div id="guts-progress-bar" class="bg-gradient-to-r from-orange-600 via-yellow-500 to-amber-400 h-full rounded-full transition-all" style="width: 50%"></div>
-                    </div>
-                </div>
-
-                <!-- 味方ステータス -->
+                <!-- 味方ステータス（ライフ：敵側と同じくガッツより上に配置） -->
                 <div class="bg-[#24150e] p-3 border-t border-amber-950 space-y-2">
                     <!-- 団体戦：味方チームアイコン -->
                     <div id="player-team-icons" class="hidden flex justify-center space-x-2 mb-1"></div>
@@ -199,6 +186,21 @@
                                 <div id="player-hp-bar" class="bg-emerald-500 h-full transition-all duration-300" style="width: 100%"></div>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- 味方ガッツ(GUTS)システム UI（敵側と同じくライフの下に配置） -->
+                <div class="bg-[#110906] px-4 py-2 border-t border-amber-950/50 flex items-center justify-between">
+                    <div class="flex flex-col">
+                        <span class="text-[10px] font-bold text-orange-400 tracking-wider">GUTS / ガッツ</span>
+                        <div class="flex items-center space-x-1 mt-0.5">
+                            <div class="text-lg font-bold text-orange-500 pixel-font" id="guts-number">50</div>
+                            <span class="text-[10px] text-gray-500">/ 100</span>
+                        </div>
+                    </div>
+                    <!-- ガッツ蓄積ゲージ -->
+                    <div class="flex-1 ml-4 bg-gray-900 h-3 rounded-full overflow-hidden border border-amber-900/30 p-[1px]">
+                        <div id="guts-progress-bar" class="bg-gradient-to-r from-orange-600 via-yellow-500 to-amber-400 h-full rounded-full transition-all" style="width: 50%"></div>
                     </div>
                 </div>
 
@@ -428,7 +430,7 @@
                     <p><span class="text-amber-400 font-bold">■ ルール</span><br>毎回ランダムに提示される6体のレンタルモンスターから3体を選んでパーティを結成し、CPUトレーナーと対戦します。</p>
                     <p><span class="text-amber-400 font-bold">■ 進行</span><br>1セット7戦、これを7セット（計49連勝）繰り返します。セットが進むほど相手は強く、AIも賢くなります。</p>
                     <p><span class="text-amber-400 font-bold">■ 交換</span><br>1勝するごとに、倒した相手のモンスター1体と自分の手持ち1体を交換できます。</p>
-                    <p><span class="text-amber-400 font-bold">■ ボス登場</span><br>3セット目・7セット目の最後（7戦目）に、ファクトリーヘッドと呼ばれる専属の強敵が登場します。</p>
+                    <p><span class="text-amber-400 font-bold">■ ボス登場</span><br>3セット目・7セット目の最後（7戦目）に、レジェンドブリーダー・コルトと呼ばれる専属の強敵が登場します。</p>
                     <p class="text-red-400">※1度敗北するとその挑戦は終了です。育成やアイテム持ち込みは無く、実力とパーティ構成が全てを決めます。</p>
                 </div>
 
@@ -584,6 +586,18 @@
                     </div>
                     <div class="flex-1 overflow-y-auto p-3 space-y-2" id="monster-dex-detail-skills"></div>
                 </div>
+            </div>
+
+            <!-- ==================== SCREEN 16: ガッツファクトリー 対戦相手対峙演出画面 ==================== -->
+            <div id="screen-kinnejiki-encounter" class="screen flex-col items-center justify-center h-full p-6 text-center bg-gradient-to-b from-[#3c2a10] to-[#1a120b]">
+                <div class="text-6xl mb-4" id="kinnejiki-encounter-icon">🥊</div>
+                <p class="text-[10px] text-amber-500 tracking-widest uppercase mb-1">Challenger Approaches</p>
+                <h2 class="text-lg font-black text-white pixel-font leading-relaxed" id="kinnejiki-encounter-message">
+                    ○○が勝負を仕掛けてきた！
+                </h2>
+                <button onclick="confirmKinNejikiEncounter()" class="mt-8 w-full py-3.5 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-900 font-black rounded-xl text-md shadow-lg transform active:scale-95 transition-all pixel-font border-b-4 border-amber-800">
+                    バトル開始！
+                </button>
             </div>
 
         </div>
