@@ -411,7 +411,14 @@ function buildSwitchCandidateBadgesHtml(unit) {
         ? `<span class="px-1 py-0.5 rounded text-[8px] font-bold bg-slate-700 text-slate-200">${monClass.emoji}${monClass.name}</span>`
         : '';
 
-    return `${auraBadge}${monClassBadge}`;
+    // 状態異常（マヒ⚡／混乱＝意味不明❔／出血🩸）は控えに戻っても引き継がれるため、
+    // 交代先を選ぶ時点で分かるよう、オーラ・モン類バッジの右側に表示する
+    const statusText = getStatusAilmentBadgeText(unit);
+    const statusBadge = statusText
+        ? `<span class="px-1 py-0.5 rounded text-[8px] font-bold bg-black/60 text-white tracking-tight">${statusText}</span>`
+        : '';
+
+    return `${auraBadge}${monClassBadge}${statusBadge}`;
 }
 
 // --- ① 強制交代モーダル（キャンセル不可：控えの中から必ず1体選ぶ） ---
@@ -722,6 +729,12 @@ function triggerMasmonTemporaryStatusEffect(effectName, elId = 'player-status-ef
 function updateMasmonBattleStatsUI() {
     const p = getPlayerActive();
     const e = getEnemyActive();
+
+    // マヒ／混乱／出血は技命中時やターン経過時にいつでも変化しうるため、
+    // 交代のタイミングだけでなく、ステータス更新のたびに毎回バッジを再描画する
+    // （こうしないと、実際には状態異常になっていても名前横のバッジに反映されないままになる）
+    renderStatusAilmentBadge('player-status-badge', p);
+    renderStatusAilmentBadge('enemy-status-badge', e);
 
     checkAndActivateShuchu(p);
     checkAndActivateShuchu(e);
