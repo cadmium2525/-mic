@@ -145,16 +145,10 @@ function kinNejikiAiLevelForSet(setNumber) {
 
 // --- セット番号に応じた装備の段階的抽選 ---
 // セット1〜2：ノーマル産ステータス装備中心 / セット3〜5：ハード産＋一部特殊効果 / セット6〜7：特殊効果中心
-// オーラ連動装備は全セット共通で一定確率で混在する
 // excludeEquipIds: この配列に含まれる装備IDは抽選対象から除外する
 //                  （除外しすぎて候補が0件になった場合は保険として除外を無視する）
 function kinNejikiRollEquipmentForSet(setNumber, excludeEquipIds) {
     const excluded = excludeEquipIds || [];
-
-    if (Math.random() < 0.15) {
-        const auraPool = Object.values(EQUIPMENT_DB).filter(e => e.type === 'auraStat2' && !excluded.includes(e.id));
-        if (auraPool.length > 0) return buildEquipmentInstanceFromBase(auraPool[Math.floor(Math.random() * auraPool.length)]);
-    }
 
     // 装備なし（未装備）の余地も一定確率で残す
     if (Math.random() < 0.15) return null;

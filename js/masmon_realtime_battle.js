@@ -134,20 +134,19 @@ async function initializeRealtimeBattleState() {
 function convertRoomMasmonToRealtimeUnit(masmon) {
     const s = masmon.stats;
     const equipBonus = getEquipmentStatBonuses(masmon.equip);
-    const auraBonus = getEquipmentAuraStatBonuses(masmon.equip, masmon.aura || null);
     return {
         name: masmon.name,
         emoji: masmon.emoji,
         monsterBaseName: masmon.monsterBaseName || masmon.name,
         aura: masmon.aura || null,
         isAwakened: !!masmon.isAwakened,
-        life: s.maxLife + equipBonus.maxLife + auraBonus.maxLife,
-        maxLife: s.maxLife + equipBonus.maxLife + auraBonus.maxLife,
-        pow: s.pow + equipBonus.pow + auraBonus.pow,
-        int: s.int + equipBonus.int + auraBonus.int,
-        hit: s.hit + equipBonus.hit + auraBonus.hit,
-        spd: s.spd + equipBonus.spd + auraBonus.spd,
-        def: s.def + equipBonus.def + auraBonus.def,
+        life: s.maxLife + equipBonus.maxLife,
+        maxLife: s.maxLife + equipBonus.maxLife,
+        pow: s.pow + equipBonus.pow,
+        int: s.int + equipBonus.int,
+        hit: s.hit + equipBonus.hit,
+        spd: s.spd + equipBonus.spd,
+        def: s.def + equipBonus.def,
         gutsSpeed: s.gutsSpeed || 14,
         // 移動速度（行動順決定用。旧セーブデータには存在しない場合があるため種族名から補完する）
         moveSpeed: getMoveSpeedForMasmon(masmon),
@@ -174,6 +173,7 @@ function convertRoomMasmonToRealtimeUnit(masmon) {
         isFlinchedThisTurn: false, // このターンの行動が怯みによって失敗するか（ターン開始時に決定）
         equippedItem: masmon.equip || null,  // 装備している装備アイテムインスタンス（PvP専用）
         equipLifesaverUsed: false,           // 装備の特殊効果を使用済みか
+        equipEnduranceUsed: false,           // 装備の特殊効果（ライフ0撃破を1度だけライフ1で耐える）を使用済みか
         skills: [...(masmon.skills || [])],
         skillEnhancements: JSON.parse(JSON.stringify(masmon.skillEnhancements || {}))
     };
@@ -1013,14 +1013,24 @@ function buildRealtimeTurnActionDescriptor(unit, action) {
     if (!unit || unit.life <= 0) {
         return createTurnAction('none', 0, unit ? getEffectiveMoveSpeed(unit) : 0);
     }
-    const speed = getEffectiveMoveSpeed(unit);
+    let speed = getEffectiveMoveSpeed(unit);
+    // 装備の「移動速度に関わらず一定確率で先制攻撃できる」効果：発動時は速度比較を確実に制するよう扱う
+    const preemptiveChance = getEquipmentPreemptiveChance(unit);
+    if (preemptiveChance > 0 && Math.random() < preemptiveChance) {
+        speed = EQUIPMENT_PREEMPTIVE_EFFECTIVE_SPEED;
+    }
     if (!action) return createTurnAction('none', 0, speed);
     if (action.kind === 'switch') return createTurnAction('switchOut', 0, speed);
     if (action.kind === 'item') return createTurnAction('item', 0, speed);
     if (action.kind === 'defend') return createTurnAction('defend', 0, speed);
     if (action.kind === 'skill') {
         const sk = SKILLS_DB[action.key];
-        return createTurnAction('skill', (sk && sk.priority) || 0, speed);
+        const skPriority = (sk && sk.priority) || 0;
+        // 装備の「必ず後攻になる（優先度のある技は除く）」効果：技自体に優先度が無ければ強制的に後攻扱いにする
+        if (skPriority <= 0 && hasEquipmentAlwaysLastEffect(unit)) {
+            return createTurnAction('skill', EQUIPMENT_ALWAYS_LAST_SKILL_PRIORITY, speed);
+        }
+        return createTurnAction('skill', skPriority, speed);
     }
     return createTurnAction('none', 0, speed); // 'pass' やタイムアウト時の未行動など
 }
@@ -1105,6 +1115,15 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
         applySkillOnUseEffect(me, sk).forEach(msg => resultLogs.push(msg));
 
         if (sk.type === 'pow' || sk.type === 'int') {
+            // 装備の「攻撃するたびにライフ消費・技威力アップ」効果：技を繰り出した時点（命中判定に関わらず）で1回だけ適用する
+            const recoilCost = getEquipmentRecoilLifeCost(me);
+            const recoilForceMultiplier = getEquipmentRecoilForceMultiplier(me);
+            if (recoilCost > 0) {
+                me.life = Math.max(0, me.life - recoilCost);
+                const equipName = (EQUIPMENT_DB[me.equippedItem.equipId] || {}).name || '装備';
+                resultLogs.push(`💢 ${me.name} は【${equipName}】の反動でライフが ${recoilCost} 減少した！(現在: ${Math.floor(me.life)})`);
+            }
+
             const isCertain = sk.hitRate === 100;
             let hitChance = isCertain ? 100 : Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (me.hit - opp.spd) * 0.5 - getBlindHitPenalty(me)));
             if (me.isShuchuActive && !isCertain) {
@@ -1121,7 +1140,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             }
 
             // 次技威力アップ（オーロラゲート等）の消費は命中判定に関わらず技を撃った時点で消費する
-            const usedForce = consumeForceBoost(me, sk.force);
+            const usedForce = consumeForceBoost(me, sk.force) * recoilForceMultiplier;
 
             if (isHit && otherTeam.substituteHits > 0) {
                 otherTeam.substituteHits -= 1;
@@ -1198,6 +1217,8 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                         resultLogs.push(`💪 底力が発動！ ${opp.name} は窮地に陥り、次の技のダメージが 1.5 倍に上昇！`);
                     }
                 }
+                const oppEnduranceLog = checkAndApplyEquipmentEnduranceEffect(opp);
+                if (oppEnduranceLog) resultLogs.push(oppEnduranceLog);
                 const oppLifesaverLog = checkAndApplyEquipmentLifesaverEffect(opp);
                 if (oppLifesaverLog) resultLogs.push(oppLifesaverLog);
 
@@ -1297,6 +1318,8 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             const selfDmg = Math.floor(me.maxLife * 0.3);
             me.life = Math.max(0, me.life - selfDmg);
             resultLogs.push(`🧪 ${me.name} は【${item.name}】を使った！ちから・かしこさが上昇したが、反動で ${selfDmg} のダメージを受けた！`);
+            const meEnduranceLog = checkAndApplyEquipmentEnduranceEffect(me);
+            if (meEnduranceLog) resultLogs.push(meEnduranceLog);
             const meLifesaverLog = checkAndApplyEquipmentLifesaverEffect(me);
             if (meLifesaverLog) resultLogs.push(meLifesaverLog);
         }
@@ -1354,6 +1377,9 @@ function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs) {
         unit.isShuchuActive = true;
         resultLogs.push(`🎯 ${unit.name} に集中が発動！次の技の命中率・ダメージが上昇！`);
     }
+
+    const regenLog = applyEquipmentTurnRegen(unit);
+    if (regenLog) resultLogs.push(regenLog);
 }
 
 // --- 双方の行動が終わった後、次のターンの準備をする（両者同時にガッツ回復・状態ティック） ---

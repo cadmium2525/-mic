@@ -98,7 +98,6 @@ function runBattleStepSequence(steps, onComplete) {
 // equippedItem: PvPでこのマスモンに装備させる装備インスタンス（未装備なら null/undefined）
 function convertMasmonToBattleUnit(masmonData, equippedItem) {
     const equipBonus = getEquipmentStatBonuses(equippedItem);
-    const auraBonus = getEquipmentAuraStatBonuses(equippedItem, masmonData.aura || null);
     return {
         name: masmonData.name,
         monsterBaseName: masmonData.monsterBaseName || masmonData.name,
@@ -121,14 +120,15 @@ function convertMasmonToBattleUnit(masmonData, equippedItem) {
         permaForceBoostActive: false, // 天河天翔等で得る「今後のダメージ永続アップ」フラグ
         equippedItem: equippedItem || null,      // 装備している装備アイテムインスタンス（PvP専用）
         equipLifesaverUsed: false,               // 装備の特殊効果（残りライフ3割で1度だけ回復等）を使用済みか
+        equipEnduranceUsed: false,               // 装備の特殊効果（ライフ0撃破を1度だけライフ1で耐える）を使用済みか
         stats: {
-            maxLife: masmonData.stats.maxLife + equipBonus.maxLife + auraBonus.maxLife,
-            life: masmonData.stats.maxLife + equipBonus.maxLife + auraBonus.maxLife,
-            pow: masmonData.stats.pow + equipBonus.pow + auraBonus.pow,
-            int: masmonData.stats.int + equipBonus.int + auraBonus.int,
-            hit: masmonData.stats.hit + equipBonus.hit + auraBonus.hit,
-            spd: masmonData.stats.spd + equipBonus.spd + auraBonus.spd,
-            def: masmonData.stats.def + equipBonus.def + auraBonus.def,
+            maxLife: masmonData.stats.maxLife + equipBonus.maxLife,
+            life: masmonData.stats.maxLife + equipBonus.maxLife,
+            pow: masmonData.stats.pow + equipBonus.pow,
+            int: masmonData.stats.int + equipBonus.int,
+            hit: masmonData.stats.hit + equipBonus.hit,
+            spd: masmonData.stats.spd + equipBonus.spd,
+            def: masmonData.stats.def + equipBonus.def,
             gutsSpeed: masmonData.stats.gutsSpeed || 14,
             // 移動速度（行動順決定用。旧セーブデータには存在しない場合があるため種族名から補完する）
             moveSpeed: getMoveSpeedForMasmon(masmonData),
@@ -547,6 +547,8 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
         addLog(`--- ターン ${MASMON_BATTLE_STATE.turn} ---`);
         p.guts = Math.min(100, p.guts + recovery);
         addLog(`${p.name} のガッツが ${recovery} 回復した！(現在: ${Math.floor(p.guts)})`);
+        const pRegenLog = applyEquipmentTurnRegen(p);
+        if (pRegenLog) addLog(pRegenLog);
 
         if (e) {
             let enemyRecovery = 30;
@@ -563,6 +565,8 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
             }
             e.guts = Math.min(100, e.guts + enemyRecovery);
             addLog(`${e.name} のガッツが ${enemyRecovery} 回復した！(現在: ${Math.floor(e.guts)})`);
+            const eRegenLog = applyEquipmentTurnRegen(e);
+            if (eRegenLog) addLog(eRegenLog);
         }
         showEffect('⚔️ TURN START ⚔️');
     } else {
@@ -1207,7 +1211,12 @@ function buildTurnActionDescriptor(unit, action) {
     if (!unit || unit.stats.life <= 0) {
         return createTurnAction('none', 0, unit ? getEffectiveMoveSpeed(unit) : 0);
     }
-    const speed = getEffectiveMoveSpeed(unit);
+    let speed = getEffectiveMoveSpeed(unit);
+    // 装備の「移動速度に関わらず一定確率で先制攻撃できる」効果：発動時は速度比較を確実に制するよう扱う
+    const preemptiveChance = getEquipmentPreemptiveChance(unit);
+    if (preemptiveChance > 0 && Math.random() < preemptiveChance) {
+        speed = EQUIPMENT_PREEMPTIVE_EFFECTIVE_SPEED;
+    }
     if (!action || action.actionType === 'none') {
         return createTurnAction('none', 0, speed);
     }
@@ -1216,7 +1225,12 @@ function buildTurnActionDescriptor(unit, action) {
     if (action.actionType === 'defend') return createTurnAction('defend', 0, speed);
     if (action.actionType === 'skill') {
         const sk = SKILLS_DB[action.skKey];
-        return createTurnAction('skill', (sk && sk.priority) || 0, speed);
+        const skPriority = (sk && sk.priority) || 0;
+        // 装備の「必ず後攻になる（優先度のある技は除く）」効果：技自体に優先度が無ければ強制的に後攻扱いにする
+        if (skPriority <= 0 && hasEquipmentAlwaysLastEffect(unit)) {
+            return createTurnAction('skill', EQUIPMENT_ALWAYS_LAST_SKILL_PRIORITY, speed);
+        }
+        return createTurnAction('skill', skPriority, speed);
     }
     return createTurnAction('none', 0, speed);
 }
@@ -1491,6 +1505,21 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
     const useGutsMods = (side === 'player');
     const mods = getGutsModifiers(attacker.guts);
 
+    // 装備の「攻撃するたびにライフ消費・技威力アップ」効果：技を繰り出した時点（命中判定に関わらず）で1回だけ適用する
+    const recoilCost = getEquipmentRecoilLifeCost(attacker);
+    const recoilForceMultiplier = getEquipmentRecoilForceMultiplier(attacker);
+    if (recoilCost > 0) {
+        steps.push({
+            run: () => {
+                attacker.stats.life = Math.max(0, attacker.stats.life - recoilCost);
+                const equipName = (EQUIPMENT_DB[attacker.equippedItem.equipId] || {}).name || '装備';
+                addLog(`💢 ${attacker.name} は【${equipName}】の反動でライフが ${recoilCost} 減少した！(現在: ${Math.floor(attacker.stats.life)})`);
+                updateMasmonBattleStatsUI();
+            },
+            wait: BATTLE_STEP_DELAY.perExtraLog
+        });
+    }
+
     const isCertain = sk.hitRate === 100;
     let hitChance = isCertain
         ? 100
@@ -1510,7 +1539,7 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
     }
 
     // 次技威力アップ（オーロラゲート等）の消費は命中判定に関わらず技を撃った時点で消費する
-    const usedForce = consumeForceBoost(attacker, sk.force);
+    const usedForce = consumeForceBoost(attacker, sk.force) * recoilForceMultiplier;
 
     // みがわり餅で設置された身代わりが残っている場合、攻撃はダメージ・ガッツダウン・追加効果一切なしで防がれる
     const defenderSubKey = side === 'player' ? 'enemySubstituteHits' : 'playerSubstituteHits';
@@ -1615,6 +1644,8 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
                 updateMasmonBattleStatsUI();
                 showDamagePopup(cfg.dmgPopup, damage, isCrit);
                 checkMasmonDefenseStatusTriggers(defender);
+                const enduranceLog = checkAndApplyEquipmentEnduranceEffect(defender);
+                if (enduranceLog) addLog(enduranceLog);
                 const lifesaverLog = checkAndApplyEquipmentLifesaverEffect(defender);
                 if (lifesaverLog) addLog(lifesaverLog);
             },

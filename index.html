@@ -85,6 +85,10 @@
                         <i class="fa-solid fa-book"></i>
                         <span>モンスター図鑑（技一覧）</span>
                     </button>
+                    <button onclick="openEquipmentDexScreen()" class="w-full py-2.5 bg-[#1a120b] hover:bg-[#2a1b15] text-sky-300 font-bold rounded-xl text-sm shadow border border-sky-800 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-shield-halved"></i>
+                        <span>装備アイテム図鑑</span>
+                    </button>
                     <p class="text-[10px] text-gray-400">※育成不要！毎回その場で選ぶレンタルモンスターで戦おう！</p>
                 </div>
             </div>
@@ -588,6 +592,23 @@
                 </div>
             </div>
 
+            <!-- ==================== SCREEN 15.5: 装備アイテム図鑑 ==================== -->
+            <div id="screen-equipment-dex" class="screen flex-col h-full bg-[#1a120b]">
+                <div class="p-3 border-b border-amber-950 flex items-center justify-between bg-[#24150e] flex-shrink-0">
+                    <button onclick="returnToTitleFromEquipmentDex()" class="text-amber-400 text-[10px] font-bold flex items-center space-x-1">
+                        <i class="fa-solid fa-arrow-left"></i><span>タイトルへ</span>
+                    </button>
+                    <h2 class="text-sm font-black text-amber-300 pixel-font">🎒 装備アイテム図鑑</h2>
+                    <div class="w-14"></div>
+                </div>
+
+                <!-- カテゴリ切替タブ -->
+                <div class="flex p-2 gap-1.5 bg-[#24150e] border-b border-amber-900/50 flex-shrink-0" id="equipment-dex-tabs"></div>
+
+                <!-- 装備一覧ビュー -->
+                <div class="flex-1 overflow-y-auto p-3 space-y-2" id="equipment-dex-list-view"></div>
+            </div>
+
             <!-- ==================== SCREEN 16: ガッツファクトリー 対戦相手対峙演出画面 ==================== -->
             <div id="screen-kinnejiki-encounter" class="screen flex-col items-center justify-center h-full p-6 text-center bg-gradient-to-b from-[#3c2a10] to-[#1a120b]">
                 <div class="text-6xl mb-4" id="kinnejiki-encounter-icon">🥊</div>
@@ -768,6 +789,7 @@
     <script src="js/kinnejiki.js"></script>
     <script src="js/pvp_rental.js"></script>
     <script src="js/monster_dex.js"></script>
+    <script src="js/equipment_dex.js"></script>
     <!-- BGM/SE 管理（他スクリプトの関数をラップするため必ず最後に読み込む） -->
     <script src="js/audio.js"></script>
 

@@ -1107,34 +1107,11 @@ const EQUIPMENT_DB = {
     crit_fang_charm: { id: 'crit_fang_charm', name: '牙獣のお守り',     icon: '🦷', rarity: '★★★', mode: 'hard', type: 'special', effect: 'critUp', critBonus: 0.35, desc: 'クリティカル率が大幅にアップする。' },
     berserker_core:  { id: 'berserker_core',  name: '闘魂の紅玉',       icon: '💢', rarity: '★★★', mode: 'hard', type: 'special', effect: 'lowLifeAtkUp', threshold: 0.5, bonusPct: 0.2, desc: '自身のライフが最大ライフの半分を切った時、攻撃ステータス（ちから・かしこさ）が20%アップする。' },
     fighting_spirit_core: { id: 'fighting_spirit_core', name: '闘気の勾玉', icon: '🔶', rarity: '★★★', mode: 'hard', type: 'special', effect: 'gutsRecoveryUp', gutsRecoveryBonus: 10, desc: '自ターン開始時のガッツ回復量が+10される。' },
-
-    // ---------- オーラ連動装備（ノーマル・ハード共通ドロップ／各オーラ★1〜★3） ----------
-    // 自身のオーラが requiredAura と一致する時のみ、ランダムに選ばれた2種類のステータスが上昇する。
-    // 上昇幅はレア度（★の数）に応じて変化し、上昇するステータスの組み合わせは装備入手時に決定される。
-    red_aura_amulet:  { id: 'red_aura_amulet',  name: '紅蓮のお守り', icon: '🔴', rarity: '★☆☆', mode: 'both', type: 'auraStat2', effect: 'auraStatUp', requiredAura: 'red' },
-    red_aura_ring:    { id: 'red_aura_ring',    name: '紅蓮の指輪',   icon: '🔴', rarity: '★★☆', mode: 'both', type: 'auraStat2', effect: 'auraStatUp', requiredAura: 'red' },
-    red_aura_crest:   { id: 'red_aura_crest',   name: '紅蓮の紋章',   icon: '🔴', rarity: '★★★', mode: 'both', type: 'auraStat2', effect: 'auraStatUp', requiredAura: 'red' },
-
-    blue_aura_amulet: { id: 'blue_aura_amulet', name: '蒼海のお守り', icon: '🔵', rarity: '★☆☆', mode: 'both', type: 'auraStat2', effect: 'auraStatUp', requiredAura: 'blue' },
-    blue_aura_ring:   { id: 'blue_aura_ring',   name: '蒼海の指輪',   icon: '🔵', rarity: '★★☆', mode: 'both', type: 'auraStat2', effect: 'auraStatUp', requiredAura: 'blue' },
-    blue_aura_crest:  { id: 'blue_aura_crest',  name: '蒼海の紋章',   icon: '🔵', rarity: '★★★', mode: 'both', type: 'auraStat2', effect: 'auraStatUp', requiredAura: 'blue' },
-
-    green_aura_amulet:{ id: 'green_aura_amulet',name: '翠緑のお守り', icon: '🟢', rarity: '★☆☆', mode: 'both', type: 'auraStat2', effect: 'auraStatUp', requiredAura: 'green' },
-    green_aura_ring:  { id: 'green_aura_ring',  name: '翠緑の指輪',   icon: '🟢', rarity: '★★☆', mode: 'both', type: 'auraStat2', effect: 'auraStatUp', requiredAura: 'green' },
-    green_aura_crest: { id: 'green_aura_crest', name: '翠緑の紋章',   icon: '🟢', rarity: '★★★', mode: 'both', type: 'auraStat2', effect: 'auraStatUp', requiredAura: 'green' },
-
-    yellow_aura_amulet:{ id: 'yellow_aura_amulet', name: '黄金のお守り', icon: '🟡', rarity: '★☆☆', mode: 'both', type: 'auraStat2', effect: 'auraStatUp', requiredAura: 'yellow' },
-    yellow_aura_ring:  { id: 'yellow_aura_ring',   name: '黄金の指輪',   icon: '🟡', rarity: '★★☆', mode: 'both', type: 'auraStat2', effect: 'auraStatUp', requiredAura: 'yellow' },
-    yellow_aura_crest: { id: 'yellow_aura_crest',  name: '黄金の紋章',   icon: '🟡', rarity: '★★★', mode: 'both', type: 'auraStat2', effect: 'auraStatUp', requiredAura: 'yellow' }
-};
-
-// --- オーラ連動装備（type: 'auraStat2'）の上昇候補ステータスと、レア度ごとの上昇幅 ---
-// ライフ・命中や命中・回避、ちから・丈夫さ　等、2種類の組み合わせを装備入手時にランダム抽選する。
-const AURA_STAT2_KEYS = ['maxLife', 'pow', 'int', 'hit', 'spd', 'def'];
-const AURA_STAT2_RANGE_BY_RARITY = {
-    '★☆☆': { maxLife: [15, 20], pow: [8, 11],  int: [8, 11],  hit: [8, 11],  spd: [8, 11],  def: [8, 11]  },
-    '★★☆': { maxLife: [26, 32], pow: [13, 17], int: [13, 17], hit: [13, 17], spd: [13, 17], def: [13, 17] },
-    '★★★': { maxLife: [40, 50], pow: [20, 26], int: [20, 26], hit: [20, 26], spd: [20, 26], def: [20, 26] }
+    endurance_helm:  { id: 'endurance_helm',  name: '不屈の兜',         icon: '⛑️', rarity: '★★★', mode: 'hard', type: 'special', effect: 'endure', desc: 'ライフが0になるほどの攻撃を受けても、1度だけライフ1で持ちこたえる。' },
+    haste_boots:     { id: 'haste_boots',     name: '韋駄天の靴',       icon: '👢', rarity: '★★★', mode: 'hard', type: 'special', effect: 'preemptiveStrike', chance: 0.25, desc: '移動速度に関わらず、25%の確率で先制攻撃できる。' },
+    sprout_charm:    { id: 'sprout_charm',    name: '癒しの若葉',       icon: '🌱', rarity: '★★★', mode: 'hard', type: 'special', effect: 'turnRegen', healFraction: 1 / 16, desc: '自ターン開始時、最大ライフの1/16を回復する。' },
+    deathmatch_weight:{ id: 'deathmatch_weight', name: '死闘の重錘',    icon: '⚫', rarity: '★★★', mode: 'hard', type: 'special', effect: 'recoilForceUp', lifeCostFraction: 1 / 10, forceMultiplier: 2, desc: '攻撃するたびに最大ライフの1/10のダメージを受けるが、技の威力が2倍になる。' },
+    tortoise_shell:  { id: 'tortoise_shell',  name: '大亀の甲羅',       icon: '🐢', rarity: '★★★', mode: 'hard', type: 'special', effect: 'alwaysLast', desc: '必ず後攻になる。ただし、優先度のある技を使う場合はこの効果を受けない。' }
 };
 
 // --- 装備ベースデータ1件から実際の所持インスタンス（個体値ロール済み）を生成する共通ヘルパー ---
@@ -1151,17 +1128,6 @@ function buildEquipmentInstanceFromBase(base) {
     if (base.type === 'stat') {
         const [min, max] = base.range;
         instance.rolledValue = Math.floor(Math.random() * (max - min + 1)) + min;
-    }
-
-    if (base.type === 'auraStat2') {
-        // 上昇ステータスをランダムに重複無く2種類選び、レア度に応じた範囲で数値を決定する
-        const shuffled = [...AURA_STAT2_KEYS].sort(() => Math.random() - 0.5);
-        const pickedKeys = shuffled.slice(0, 2);
-        const rangeTable = AURA_STAT2_RANGE_BY_RARITY[base.rarity] || {};
-        instance.rolledStats = pickedKeys.map(key => {
-            const [min, max] = rangeTable[key] || [10, 15];
-            return { key, value: Math.floor(Math.random() * (max - min + 1)) + min };
-        });
     }
 
     return instance;
@@ -1193,13 +1159,6 @@ function getEquipmentDisplayDesc(instance) {
     if (!base) return '';
     if (base.type === 'stat') {
         return `${getStatLabel(base.statKey)} +${instance.rolledValue} アップ`;
-    }
-    if (base.type === 'auraStat2') {
-        const auraName = (AURA_TYPES[base.requiredAura] || {}).name || base.requiredAura;
-        const statsText = (instance.rolledStats || [])
-            .map(s => `${getStatLabel(s.key)}+${s.value}`)
-            .join('・');
-        return `自身が${auraName}オーラの時、${statsText} アップ`;
     }
     return base.desc;
 }
@@ -1253,22 +1212,92 @@ function getEquipmentLowLifeAtkMultiplier(unit) {
     return 1 + (base.bonusPct || 0);
 }
 
-// --- 装備の「自身オーラ○○の時、ランダム2種のステータスアップ」効果による補正値を取得 ---
-// unitAuraKey: そのユニット自身が持つオーラ（PvPマスモンは育成中に選んだオーラを引き継ぐ）
-// 戻り値: {pow, int, hit, spd, def, maxLife} （装備入手時にランダムで決まった2種類のみ値が入る）
-function getEquipmentAuraStatBonuses(equipInstance, unitAuraKey) {
-    const bonuses = { pow: 0, int: 0, hit: 0, spd: 0, def: 0, maxLife: 0 };
-    if (!equipInstance || !unitAuraKey) return bonuses;
-    const base = EQUIPMENT_DB[equipInstance.equipId];
-    if (!base || base.effect !== 'auraStatUp') return bonuses;
-    if (base.requiredAura !== unitAuraKey) return bonuses;
+// --- 装備の「ライフが0になる攻撃を受けても1度だけライフ1で耐える」効果の判定・適用 ---
+// unit: equippedItem（装備インスタンス）と equipEnduranceUsed フラグを持つ想定。
+// ダメージ処理で life を0まで減算した直後に呼び出すこと。
+// 戻り値: 発動した場合のログメッセージ（未発動なら null）
+function checkAndApplyEquipmentEnduranceEffect(unit) {
+    if (!unit || !unit.equippedItem || unit.equipEnduranceUsed) return null;
+    const base = EQUIPMENT_DB[unit.equippedItem.equipId];
+    if (!base || base.effect !== 'endure') return null;
 
-    (equipInstance.rolledStats || []).forEach(s => {
-        if (bonuses.hasOwnProperty(s.key)) {
-            bonuses[s.key] += s.value || 0;
-        }
-    });
-    return bonuses;
+    const hasNestedStats = !!unit.stats;
+    const life = hasNestedStats ? unit.stats.life : unit.life;
+    if (life > 0) return null; // ライフが0になっていなければ発動しない
+
+    if (hasNestedStats) {
+        unit.stats.life = 1;
+    } else {
+        unit.life = 1;
+    }
+    unit.equipEnduranceUsed = true;
+
+    return `🛡️ ${unit.name} の【${base.name}】が発動！力尽きる寸前で、ライフ1で持ちこたえた！`;
+}
+
+// --- 装備の「移動速度に関わらず一定確率で先制攻撃できる」効果の発動確率（0〜1）を取得 ---
+function getEquipmentPreemptiveChance(unit) {
+    if (!unit || !unit.equippedItem) return 0;
+    const base = EQUIPMENT_DB[unit.equippedItem.equipId];
+    if (!base || base.effect !== 'preemptiveStrike') return 0;
+    return base.chance || 0;
+}
+
+// 先制攻撃効果が発動した際、行動順決定上の「実効移動速度」として扱う十分に大きな値
+const EQUIPMENT_PREEMPTIVE_EFFECTIVE_SPEED = 9999;
+
+// --- 装備の「必ず後攻になる（優先度のある技は除く）」効果を持つか判定 ---
+function hasEquipmentAlwaysLastEffect(unit) {
+    if (!unit || !unit.equippedItem) return false;
+    const base = EQUIPMENT_DB[unit.equippedItem.equipId];
+    return !!(base && base.effect === 'alwaysLast');
+}
+
+// 「必ず後攻」効果が適用された技の行動順優先度（通常技の優先度帯を大きく下回る値。
+// 行動不能'none'の優先度(-99)は下回らないようにしておく）
+const EQUIPMENT_ALWAYS_LAST_SKILL_PRIORITY = -50;
+
+// --- 装備の「自ターン開始時、最大ライフの一定割合を回復する」効果を適用する ---
+// unit: stats.life か life のどちらかを持つ想定。戻り値: 発動時のログ（未発動なら null）
+function applyEquipmentTurnRegen(unit) {
+    if (!unit || !unit.equippedItem) return null;
+    const base = EQUIPMENT_DB[unit.equippedItem.equipId];
+    if (!base || base.effect !== 'turnRegen') return null;
+
+    const hasNestedStats = !!unit.stats;
+    const life = hasNestedStats ? unit.stats.life : unit.life;
+    const maxLife = hasNestedStats ? unit.stats.maxLife : unit.maxLife;
+    if (!maxLife || life <= 0 || life >= maxLife) return null;
+
+    const healAmount = Math.max(1, Math.floor(maxLife * (base.healFraction || 0)));
+    const newLife = Math.min(maxLife, life + healAmount);
+    if (hasNestedStats) {
+        unit.stats.life = newLife;
+    } else {
+        unit.life = newLife;
+    }
+
+    return `🌱 ${unit.name} の【${base.name}】が発動！ライフが ${newLife - life} 回復した！(現在: ${Math.floor(newLife)})`;
+}
+
+// --- 装備の「攻撃するたびにライフ消費・技威力アップ」効果の威力倍率を取得 ---
+function getEquipmentRecoilForceMultiplier(unit) {
+    if (!unit || !unit.equippedItem) return 1;
+    const base = EQUIPMENT_DB[unit.equippedItem.equipId];
+    if (!base || base.effect !== 'recoilForceUp') return 1;
+    return base.forceMultiplier || 1;
+}
+
+// --- 装備の「攻撃するたびにライフ消費・技威力アップ」効果によるライフ消費量を取得（未装備なら0） ---
+function getEquipmentRecoilLifeCost(unit) {
+    if (!unit || !unit.equippedItem) return 0;
+    const base = EQUIPMENT_DB[unit.equippedItem.equipId];
+    if (!base || base.effect !== 'recoilForceUp') return 0;
+
+    const hasNestedStats = !!unit.stats;
+    const maxLife = hasNestedStats ? unit.stats.maxLife : unit.maxLife;
+    if (!maxLife) return 0;
+    return Math.max(1, Math.floor(maxLife * (base.lifeCostFraction || 0)));
 }
 
 // --- 装備の「自ターン開始時のガッツ回復量アップ」効果のボーナス値を取得 ---

@@ -21,10 +21,6 @@ const PVP_RENTAL_STATE = {
 // --- PvP用レンタル装備抽選：段階を設けず、ノーマル〜特殊効果まで幅広くミックスする ---
 function pvpRentalRollEquipment() {
     if (Math.random() < 0.2) return null; // 未装備の余地も残す
-    if (Math.random() < 0.2) {
-        const auraPool = Object.values(EQUIPMENT_DB).filter(e => e.type === 'auraStat2');
-        if (auraPool.length > 0) return buildEquipmentInstanceFromBase(auraPool[Math.floor(Math.random() * auraPool.length)]);
-    }
     const pool = Object.values(EQUIPMENT_DB).filter(e => e.type === 'stat' || e.type === 'special');
     if (pool.length === 0) return null;
     return buildEquipmentInstanceFromBase(pool[Math.floor(Math.random() * pool.length)]);
