@@ -1,7 +1,7 @@
 {
-  "name": "モンスターファーム ガッツファクトリー",
-  "short_name": "モンファク",
-  "description": "レンタルモンスターで挑む、ガッツファクトリー＆PvPバトル",
+  "name": "モンスターファーム ガッツロード",
+  "short_name": "ガッツロード",
+  "description": "レンタルモンスターで挑む、ガッツファクトリー＆PvPバトルRPG",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

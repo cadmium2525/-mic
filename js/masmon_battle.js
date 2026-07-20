@@ -789,7 +789,7 @@ function updateMasmonBattleStatsUI() {
                 hitSpan.textContent = `命中:必中`;
             } else {
                 const mods = getGutsModifiers(gutsVal);
-                let actualHit = Math.max(10, Math.min(99, (effSk.hitRate + mods.hitMod) + (getBuffedHitStat(p, p.stats.hit) - e.stats.spd) * 0.5));
+                let actualHit = Math.max(10, Math.min(99, (effSk.hitRate + mods.hitMod) + (getBuffedHitStat(p, p.stats.hit) - getEvasionStat(e, e.stats.spd)) * 0.5));
                 if (p.isShuchuActive) actualHit = Math.min(99, actualHit * 1.5);
                 hitSpan.textContent = `命中:${Math.round(actualHit)}%`;
             }
@@ -874,7 +874,7 @@ function renderMasmonBattleSkills() {
         } else if (sk.hitRate === 100) {
             hitRateDisplay = `<span class="${style.textIntensity} text-[9px] font-bold font-mono hit-rate-text">命中:必中</span>`;
         } else {
-            let actualHitForIcon = Math.max(10, Math.min(99, (sk.hitRate + gutsModsForHit.hitMod) + (getBuffedHitStat(p, p.stats.hit) - e.stats.spd) * 0.5));
+            let actualHitForIcon = Math.max(10, Math.min(99, (sk.hitRate + gutsModsForHit.hitMod) + (getBuffedHitStat(p, p.stats.hit) - getEvasionStat(e, e.stats.spd)) * 0.5));
             if (p.isShuchuActive) actualHitForIcon = Math.min(99, actualHitForIcon * 1.5);
             hitRateDisplay = `<span class="${style.textIntensity} text-[9px] font-bold font-mono hit-rate-text">命中:${Math.round(actualHitForIcon)}%</span>`;
         }
@@ -1025,7 +1025,7 @@ function openMasmonSkillModal(skKey) {
         if (sk.hitRate === 100) {
             document.getElementById('modal-guts-hit-rate').textContent = "必中 🎯";
         } else if (e) {
-            let actualHit = Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (getBuffedHitStat(p, p.stats.hit) - e.stats.spd) * 0.5));
+            let actualHit = Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (getBuffedHitStat(p, p.stats.hit) - getEvasionStat(e, e.stats.spd)) * 0.5));
             if (p.isShuchuActive) actualHit = Math.min(99, actualHit * 1.5);
             document.getElementById('modal-guts-hit-rate').textContent = Math.round(actualHit) + "%";
         } else {
@@ -1542,7 +1542,7 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
     const isCertain = sk.hitRate === 100;
     let hitChance = isCertain
         ? 100
-        : Math.max(10, Math.min(99, (sk.hitRate + (useGutsMods ? mods.hitMod : 0)) + (getBuffedHitStat(attacker, attacker.stats.hit) - defender.stats.spd) * 0.5 - getBlindHitPenalty(attacker)));
+        : Math.max(10, Math.min(99, (sk.hitRate + (useGutsMods ? mods.hitMod : 0)) + (getBuffedHitStat(attacker, attacker.stats.hit) - getEvasionStat(defender, defender.stats.spd)) * 0.5 - getBlindHitPenalty(attacker)));
     if (attacker.isShuchuActive && !isCertain) {
         hitChance = Math.min(99, hitChance * 1.5);
     }
@@ -1620,7 +1620,11 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
 
     if (isHit) {
         const isPow = sk.type === 'pow';
-        const attackerStat = getBuffedAttackStat(attacker, getWeakenedStat(attacker, isPow ? attacker.stats.pow : attacker.stats.int), isPow ? 'pow' : 'int') * getEquipmentLowLifeAtkMultiplier(attacker);
+        // useDefAsAtk：自身の丈夫さの値を攻撃の値として扱う技（例：ボディプレス）
+        const attackerStat = (sk.useDefAsAtk
+            ? getBuffedDefenseStat(attacker, getDefDownStat(attacker, attacker.stats.def))
+            : getBuffedAttackStat(attacker, getWeakenedStat(attacker, isPow ? attacker.stats.pow : attacker.stats.int), isPow ? 'pow' : 'int')
+        ) * getEquipmentLowLifeAtkMultiplier(attacker);
         // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（地震・テイルブレード等の防御崩し状態を反映）
         const defenderStat = getDefDownStat(defender, getBuffedDefenseStat(defender, defender.stats.def)) * 1.5;
         const defenderGutsDefenseMod = getGutsDefenseModifier(defender.guts);

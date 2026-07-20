@@ -400,9 +400,11 @@ function clearBattleStatModifiersOnSwitch(unit) {
     unit.permaHitDownPct = 0;
     unit.permaDefDownPct = 0;
     unit.defDown15Stacks = 0;
+    unit.evasionDefDownStacks = 0;
     unit.stunnerDebuffApplied = false;
     unit.atkUpStacks = 0;
     unit.defUpStacks = 0;
+    unit.nendoGatameStacks = 0;
     unit.sakuraBuffStacks = 0;
     unit.meisoStacks = 0;
     unit.gutsRecoveryDownNext = 0;
@@ -458,7 +460,7 @@ const SKILLS_DB = {
     nameru: { name: 'なめる', cost: 15, type: 'int', hitRate: 100, force: 0.4, gutsDown: 15, effect: null, desc: '不快な舌舐め攻撃。回避を完全に無視して【必中】する！相手GUTS-15' },
     kamitsuki: { name: 'かみつき', cost: 20, type: 'pow', hitRate: 75, force: 1.2, gutsDown: 10, effect: 'def_down_15', desc: '大きな口で噛みつく基本技。相手GUTS-10。さらに命中した場合、30%の確率で相手の丈夫さを15%低下させる（交代するまで持続）' },
     kuu: { name: '食う', cost: 35, type: 'pow', hitRate: 70, force: 1.8, gutsDown: 20, effect: 'self_heal_15pct', desc: '丸呑みして締め付ける。相手GUTS-20。さらに命中した場合、丸呑みで英気を養い自身のライフを15%回復する' },
-    psychokinesis: { name: 'サイコキネシス', cost: 45, type: 'int', hitRate: 75, force: 2.2, gutsDown: 30, effect: 'paralyze_25', desc: '強力な念動力攻撃。相手GUTS-30。さらに命中した場合、念動力で締め付けられマヒさせる（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
+    psychokinesis: { name: 'サイコキネシス', cost: 45, type: 'int', hitRate: 75, force: 2.2, gutsDown: 30, effect: 'paralyze_25', desc: '強力な念動力攻撃。相手GUTS-30。さらに技命中時25%の確率で念動力で締め付けられマヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
     cho_netsushisen: { name: '超熱視線', cost: 40, type: 'int', hitRate: 80, force: 2.0, gutsDown: 20, effect: 'burn_30', desc: '眼から放つ熱線攻撃。相手GUTS-20。さらに技命中時30%の確率でやけど状態にする（バトル終了まで治らず、毎ターン終了時に最大ライフの1/16のダメージを受ける）' },
     utau: { name: '歌う', cost: 30, type: 'int', hitRate: 95, force: 0.2, gutsDown: 45, effect: 'confuse_30', desc: '音痴な歌声で相手を悶絶させる。相手GUTS-45。さらに命中した場合、30%の確率で相手を混乱状態にする（混乱中は毎ターン40%の確率で意味不明になり行動できなくなり、30%の確率で混乱が解除される）' },
     berobinta: { name: 'ベロビンタ', cost: 25, type: 'pow', hitRate: 80, force: 1.4, gutsDown: 15, effect: 'blind_2', desc: '長い舌で叩きつける。相手GUTS-15。さらに命中した場合、2ターンの間相手の目を眩ませ命中率を下げる' },
@@ -475,7 +477,7 @@ const SKILLS_DB = {
     // --- モノリス系統 ---
     monotaore: { name: 'たおれこみ', cost: 15, type: 'pow', hitRate: 85, force: 0.8, gutsDown: 10, effect: null, desc: '巨体を活かした体当たり基本技。相手GUTS-10' },
     warawara: { name: 'わらわら', cost: 25, type: 'pow', hitRate: 80, force: 1.1, gutsDown: 15, effect: 'weaken_pow_int', desc: '奇妙な唸り声で相手を威圧する。相手GUTS-15。さらに相手の「ちから」「かしこさ」を10%低下させる（交代するまで持続）' },
-    cho_monotaore: { name: '超たおれこみ', cost: 40, type: 'pow', hitRate: 70, force: 1.8, gutsDown: 20, effect: 'paralyze_25', desc: '全体重を乗せた渾身の体当たり。相手GUTS-20。さらに命中した場合、衝撃で感電したように痺れ、マヒさせる（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
+    cho_monotaore: { name: '超たおれこみ', cost: 40, type: 'pow', hitRate: 70, force: 1.8, gutsDown: 20, effect: 'paralyze_25', desc: '全体重を乗せた渾身の体当たり。相手GUTS-20。さらに技命中時25%の確率で衝撃で感電したように痺れ、マヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
     sanren_attack: { name: '3連アタック', cost: 50, type: 'pow', hitRate: 70, force: 2.8, gutsDown: 25, effect: 'def_down_15', desc: '硬い岩の腕を叩きつける三段攻撃。相手GUTS-25。さらに命中した場合、30%の確率で相手の丈夫さを15%低下させる（交代するまで持続）' },
     sakebigoe: { name: 'サケビ声', cost: 20, type: 'int', hitRate: 95, force: 0.75, gutsDown: 15, effect: 'confuse_30', desc: '甲高い叫び声で相手の精神を揺さぶる高命中技。相手GUTS-15。さらに命中した場合、30%の確率で相手を混乱状態にする（混乱中は毎ターン40%の確率で意味不明になり行動できなくなり、30%の確率で混乱が解除される）' },
     aurora_gate: { name: 'オーロラゲート', cost: 30, type: 'int', hitRate: 80, force: 1.7, gutsDown: 15, effect: 'next_force_up', desc: '虹色の門を展開し力を収束させる。相手GUTS-15。さらに命中した場合、自身が次に繰り出す技の威力が50%アップする' },
@@ -529,11 +531,14 @@ const SKILLS_DB = {
     jiraibari: { name: '地雷針', cost: 30, type: 'int', hitRate: 90, force: 1.2, gutsDown: 12, effect: 'dot_mine', desc: '地中の針を遠隔操作する高命中の遠距離技。相手GUTS-12。さらに命中した場合、3ターンの間毎ターン継続ダメージを与える' },
 
     // --- ネンドロ系統 ---
-    zoom_punch_nendoro: { name: 'ズームパンチ', cost: 18, type: 'pow', hitRate: 90, force: 1.0, gutsDown: 10, effect: null, desc: '踏み込んで放つ正確な一撃。相手GUTS-10' },
-    mach_punch: { name: 'マッハパンチ', cost: 30, type: 'pow', hitRate: 80, force: 1.8, gutsDown: 15, effect: 'selfcrit_up_3', desc: '目にも留まらぬ速さの高速連打。相手GUTS-15。さらに命中した場合、3ターンの間自身のクリティカル率が25%アップする' },
+    zoom_punch_nendoro: { name: 'ズームパンチ', cost: 18, type: 'pow', hitRate: 100, force: 1.0, gutsDown: 10, effect: null, desc: '踏み込んで放つ正確な一撃。相手GUTS-10。必中' },
+    mach_punch: { name: 'マッハパンチ', cost: 30, type: 'pow', hitRate: 80, force: 1.8, gutsDown: 15, priority: 1, effect: null, desc: '目にも留まらぬ速さの高速連打。相手GUTS-15。素早さに関わらず、必ず先制して行動できる（先制攻撃）' },
     meido_no_miyage: { name: 'めいどのみやげ', cost: 50, type: 'pow', hitRate: 62, force: 2.9, gutsDown: 25, effect: 'dot_mine', desc: '渾身の力を込めた極悪の一撃。相手GUTS-25。さらに命中した場合、強烈な後遺症で3ターンの間継続ダメージを与える' },
-    ganduke: { name: 'がん飛ばし', cost: 14, type: 'pow', hitRate: 92, force: 0.6, gutsDown: 6, effect: null, desc: '威圧するような軽い張り手の基本技。相手GUTS-6' },
-    body_press_nendoro: { name: 'ボディプレス', cost: 33, type: 'pow', hitRate: 74, force: 1.9, gutsDown: 18, effect: 'def_down_15', desc: '全体重を乗せた押しつぶし。相手GUTS-18。さらに命中した場合、30%の確率で相手の丈夫さを15%低下させる（交代するまで持続）' },
+    ganduke: { name: 'がん飛ばし', cost: 14, type: 'pow', hitRate: 92, force: 0.6, gutsDown: 6, effect: 'evasion_def_down_20', desc: '威圧するような軽い張り手の基本技。相手GUTS-6。さらに命中した場合、相手の回避と丈夫さを20%下げる（3回まで重複可・交代するまで持続）' },
+    body_press_nendoro: { name: 'ボディプレス', cost: 33, type: 'pow', hitRate: 74, force: 1.9, gutsDown: 18, useDefAsAtk: true, effect: null, desc: '全体重を乗せた押しつぶし。相手GUTS-18。自身の丈夫さの値が高いほど大ダメージを与える（ダメージ計算時、丈夫さの数値を攻撃の値として扱う）' },
+    nagekiss_nendoro: { name: '投げキッス', cost: 20, type: 'int', hitRate: 82, force: 0.85, gutsDown: 30, effect: 'confuse_30', desc: '茶目っ気たっぷりに投げキッスを送りつける。相手GUTS-30。さらに技命中時30%の確率で相手を混乱状態にする（毎ターン40%の確率で意味不明になり行動できなくなる。30%の確率で混乱が解除される）' },
+    nendo_gatame: { name: 'ねんどがため', cost: 25, type: 'buff_pow', hitRate: 100, force: 0, gutsDown: 0, useEffect: 'nendo_gatame', desc: '粘土質の体を大きく硬化させ守りを固める。自身の丈夫さを80%上昇させ、回避を10%低下させる。3回まで重複可。' },
+    youkaieki: { name: 'ようかい液', cost: 32, type: 'int', hitRate: 75, force: 1.4, gutsDown: 30, effect: 'poison_50', desc: '粘土から滲み出る妖しい液体を浴びせる。相手GUTS-30。さらに技命中時50%の確率で相手を猛毒状態にする（バトル終了まで治らず、ターンが経過するごとに受けるダメージが最大ライフの1/16ずつ増えていく。交代すると1/16からやり直しになる）' },
 
     // --- ヘンガー系統 ---
     w_kick: { name: 'Wキック', cost: 20, type: 'pow', hitRate: 78, force: 1.3, gutsDown: 10, effect: null, desc: '命中はやや低いが威力の高い二段蹴り。相手GUTS-10' },
@@ -550,8 +555,8 @@ const SKILLS_DB = {
     mappufutatsu: { name: 'まっぷたつ', cost: 42, type: 'pow', hitRate: 68, force: 2.3, gutsDown: 18, effect: 'dot_mine', desc: '巨大な剣で真っ二つに斬り裂く大技。相手GUTS-18。さらに命中した場合、深い傷跡が3ターンの間継続ダメージとなる' },
     combo_punch: { name: 'コンボパンチ', cost: 48, type: 'pow', hitRate: 70, force: 2.5, gutsDown: 20, effect: 'selfcrit_up_3', desc: '拳と剣を織り交ぜた渾身の連続攻撃。相手GUTS-20。さらに命中した場合、3ターンの間自身のクリティカル率が25%アップする' },
     daisharin: { name: '大車輪', cost: 40, type: 'pow', hitRate: 65, force: 2.2, gutsDown: 15, effect: 'hitdown_stack_3', desc: '剣を大きく振り回す遠距離の大技。相手GUTS-15。さらに命中した場合、目眩ましとなり相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
-    fujinken: { name: '風神剣', cost: 25, type: 'int', hitRate: 88, force: 1.2, gutsDown: 25, effect: 'paralyze_25', desc: '風を纏った剣閃で相手の闘志を削ぐ。相手GUTS-25。さらに命中した場合、風圧で怯みマヒさせる（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
-    raijinken: { name: '雷神剣', cost: 45, type: 'int', hitRate: 66, force: 2.6, gutsDown: 20, effect: 'paralyze_25', desc: '雷を纏わせた渾身の一閃。相手GUTS-20。さらに命中した場合、感電によりマヒさせる（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
+    fujinken: { name: '風神剣', cost: 25, type: 'int', hitRate: 88, force: 1.2, gutsDown: 25, effect: 'paralyze_25', desc: '風を纏った剣閃で相手の闘志を削ぐ。相手GUTS-25。さらに技命中時25%の確率で風圧で怯みマヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
+    raijinken: { name: '雷神剣', cost: 45, type: 'int', hitRate: 66, force: 2.6, gutsDown: 20, effect: 'paralyze_25', desc: '雷を纏わせた渾身の一閃。相手GUTS-20。さらに技命中時25%の確率で感電によりマヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
 
     // --- ゴーレム系統 ---
     dekopin: { name: 'でこぴん', cost: 12, type: 'pow', hitRate: 90, force: 0.5, gutsDown: 6, effect: null, desc: '軽く弾き飛ばす基本技。相手GUTS-6' },
@@ -569,7 +574,7 @@ const SKILLS_DB = {
     kawazutsuki: { name: 'かわずつき', cost: 21, type: 'pow', hitRate: 66, force: 0.85, gutsDown: 9, critBonus: 0.17, effect: 'selfcrit_up_3', desc: '蛙のように鋭く跳びかかって突く。相手GUTS-9。さらに命中した場合、闘志が高まり3ターンの間自身のクリティカル率が25%アップする' },
     renzoku_harite: { name: '連続はり手', cost: 27, type: 'pow', hitRate: 90, force: 1.35, gutsDown: 6, critBonus: 0.05, effect: 'hitdown_stack_3', desc: '両手による高速の張り手を連続で叩き込む高命中技。相手GUTS-6。さらに命中した場合、目が眩み相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
     tobi_harite: { name: '飛びはり手', cost: 19, type: 'pow', hitRate: 86, force: 0.75, gutsDown: 5, critBonus: 0.05, effect: null, desc: '飛び上がりながら繰り出す張り手。命中率が高い基本技。相手GUTS-5' },
-    kaeru_no_shita: { name: 'かえるのした', cost: 16, type: 'int', hitRate: 72, force: 0.85, gutsDown: 25, critBonus: 0.17, effect: 'paralyze_25', desc: '長い舌を伸ばして絡めとる。相手GUTS-25。さらに命中した場合、舌に絡め取られマヒさせる（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
+    kaeru_no_shita: { name: 'かえるのした', cost: 16, type: 'int', hitRate: 72, force: 0.85, gutsDown: 25, critBonus: 0.17, effect: 'paralyze_25', desc: '長い舌を伸ばして絡めとる。相手GUTS-25。さらに技命中時25%の確率で舌に絡め取られマヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
     dai_kaiten_otoshi: { name: '大回転落とし', cost: 50, type: 'pow', hitRate: 70, force: 2.8, gutsDown: 18, critBonus: 0, effect: 'def_down_15', desc: '巨体で大きく回転し、渾身の力で相手を叩き落とす切り札。相手GUTS-18。さらに命中した場合、衝撃で30%の確率で相手の丈夫さを15%低下させる（交代するまで持続）' },
     kaeru_no_uta: { name: 'かえるのうた', cost: 40, type: 'int', hitRate: 90, force: 0.2, gutsDown: 42, critBonus: 0.10, effect: 'confuse_30', desc: '独特な鳴き声の合唱で相手の闘志を大きく削ぐ高命中技。相手GUTS-42。さらに命中した場合、30%の確率で相手を混乱状態にする（混乱中は毎ターン40%の確率で意味不明になり行動できなくなり、30%の確率で混乱が解除される）' },
     bakudan_nage: { name: 'ばくだん投げ', cost: 28, type: 'int', hitRate: 73, force: 2.05, gutsDown: 30, critBonus: 0.03, effect: 'burn_30', desc: '爆弾を模した重い物体を放り投げる大技。相手GUTS-30。さらに技命中時30%の確率でやけど状態にする（バトル終了まで治らず、毎ターン終了時に最大ライフの1/16のダメージを受ける）' },
@@ -595,7 +600,7 @@ const SKILLS_DB = {
     holy_earth: { name: 'ホーリーアース', cost: 28, type: 'int', hitRate: 66, force: 1.35, gutsDown: 27, critBonus: 0.25, effect: 'def_down_15', desc: '大地の聖なる力を呼び覚まし激しく揺るがす。相手GUTS-27。さらに命中した場合、30%の確率で相手の丈夫さを15%低下させる（交代するまで持続）' },
     spin_cutter: { name: 'スピンカッター', cost: 22, type: 'pow', hitRate: 71, force: 0.9, gutsDown: 3, critBonus: 0.12, effect: 'hitdown_stack_3', desc: '身を回転させ鋭い一撃を叩き込む。相手GUTS-3。さらに命中した場合、目が眩み相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
     straight: { name: 'ストレート', cost: 15, type: 'pow', hitRate: 74, force: 0.75, gutsDown: 6, critBonus: 0.08, effect: null, desc: '基本に忠実な真っ直ぐな一撃。相手GUTS-6' },
-    holy_icicle: { name: 'ホーリーアイシクル', cost: 27, type: 'int', hitRate: 78, force: 1.5, gutsDown: 17, critBonus: 0.17, effect: 'paralyze_25', desc: '神聖な氷柱を呼び出し相手を貫く。相手GUTS-17。さらに命中した場合、凍りつきマヒさせる（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
+    holy_icicle: { name: 'ホーリーアイシクル', cost: 27, type: 'int', hitRate: 78, force: 1.5, gutsDown: 17, critBonus: 0.17, effect: 'paralyze_25', desc: '神聖な氷柱を呼び出し相手を貫く。相手GUTS-17。さらに技命中時25%の確率で凍りつきマヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
     big_spin_cutter: { name: '大スピンカッター', cost: 26, type: 'pow', hitRate: 62, force: 1.15, gutsDown: 18, critBonus: 0.26, effect: 'selfcrit_up_3', desc: '大きく回転しながら渾身の一撃を叩き込む。相手GUTS-18。さらに命中した場合、闘志が高まり3ターンの間自身のクリティカル率が25%アップする' },
     god_final: { name: 'ゴッドファイナル', cost: 40, type: 'pow', hitRate: 69, force: 2.7, gutsDown: 2, critBonus: 0.14, effect: 'perma_dmg_up_20', desc: '神の力を宿した拳を叩き込む、この上ない最大の切り札。相手GUTS-2。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
 
@@ -604,7 +609,7 @@ const SKILLS_DB = {
     hidarite: { name: '左掌', cost: 20, type: 'pow', hitRate: 77, force: 1.05, gutsDown: 7, critBonus: 0.05, effect: null, desc: '左手の掌底で相手を打つ。相手GUTS-7' },
     sunkei: { name: 'すんけい', cost: 30, type: 'pow', hitRate: 58, force: 1.2, gutsDown: 22, critBonus: 0.08, effect: 'def_down_15', desc: 'わずかな間合いから内部に浸透する衝撃を叩き込む。相手GUTS-22。さらに命中した場合、30%の確率で相手の丈夫さを15%低下させる（交代するまで持続）' },
     senkousho: { name: '閃光掌', cost: 33, type: 'pow', hitRate: 91, force: 1.15, gutsDown: 37, critBonus: 0.06, effect: 'blind_2', desc: '目にも留まらぬ閃光の如き掌打を繰り出す高命中技。相手GUTS-37。さらに命中した場合、閃光で2ターンの間相手の目を眩ませ命中率を下げる' },
-    tetsuzankou: { name: 'テツざんこう', cost: 18, type: 'pow', hitRate: 70, force: 0.85, gutsDown: 6, critBonus: 0.12, effect: 'paralyze_25', desc: '鋼の体躯を鉄山の如くぶつける渾身の一撃。相手GUTS-6。さらに命中した場合、衝撃で痺れが走りマヒさせる（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
+    tetsuzankou: { name: 'テツざんこう', cost: 18, type: 'pow', hitRate: 70, force: 0.85, gutsDown: 6, critBonus: 0.12, effect: 'paralyze_25', desc: '鋼の体躯を鉄山の如くぶつける渾身の一撃。相手GUTS-6。さらに技命中時25%の確率で衝撃で痺れが走りマヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
     double_shoda: { name: 'ダブル掌打', cost: 24, type: 'pow', hitRate: 73, force: 1.4, gutsDown: 13, critBonus: 0.09, effect: 'hitdown_stack_3', desc: '両手の掌底を連続で叩き込む。相手GUTS-13。さらに命中した場合、目が眩み相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
     twin_shoda: { name: 'ツイン掌打', cost: 28, type: 'pow', hitRate: 87, force: 1.7, gutsDown: 17, critBonus: 0.13, effect: 'selfcrit_up_3', desc: '両の掌を同時に打ち込む高命中の連撃。相手GUTS-17。さらに命中した場合、闘志が高まり3ターンの間自身のクリティカル率が25%アップする' },
     meta_beam: { name: 'メタビーム', cost: 22, type: 'int', hitRate: 78, force: 1.5, gutsDown: 11, critBonus: 0.03, effect: null, desc: '金属質の体内で収束させたエネルギーを放つ。相手GUTS-11' },
@@ -614,7 +619,7 @@ const SKILLS_DB = {
     // --- キジン系統 ---
     zutsuki: { name: '頭突き', cost: 16, type: 'pow', hitRate: 70, force: 0.85, gutsDown: 4, critBonus: 0, effect: null, desc: '角を生やした頭で相手に突きかかる基本技。相手GUTS-4' },
     onite: { name: '鬼手', cost: 24, type: 'pow', hitRate: 64, force: 1.35, gutsDown: 12, critBonus: 0.12, effect: 'def_down_15', desc: '鬼の如き巨大な手で相手を鷲掴みにする。相手GUTS-12。さらに命中した場合、30%の確率で相手の丈夫さを15%低下させる（交代するまで持続）' },
-    nagetobashi: { name: '投げ飛ばし', cost: 30, type: 'pow', hitRate: 72, force: 1.65, gutsDown: 22, critBonus: 0.09, effect: 'paralyze_25', desc: '相手を掴み上げ力任せに投げ飛ばす。相手GUTS-22。さらに命中した場合、強い衝撃でマヒさせる（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
+    nagetobashi: { name: '投げ飛ばし', cost: 30, type: 'pow', hitRate: 72, force: 1.65, gutsDown: 22, critBonus: 0.09, effect: 'paralyze_25', desc: '相手を掴み上げ力任せに投げ飛ばす。相手GUTS-22。さらに技命中時25%の確率で強い衝撃でマヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
     onitsume: { name: '鬼爪', cost: 20, type: 'pow', hitRate: 69, force: 1.1, gutsDown: 7, critBonus: 0.13, effect: 'hitdown_stack_3', desc: '鋭く伸びた鬼の爪で相手を切り裂く。相手GUTS-7。さらに命中した場合、目が眩み相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
     kijin_ranbu: { name: '鬼神乱舞', cost: 32, type: 'pow', hitRate: 78, force: 1.75, gutsDown: 18, critBonus: 0.17, effect: 'selfcrit_up_3', desc: '鬼神の如く舞い乱れながら連続で斬りつける。相手GUTS-18。さらに命中した場合、闘志が高まり3ターンの間自身のクリティカル率が25%アップする' },
     chiretsuzan: { name: '地裂斬', cost: 22, type: 'pow', hitRate: 76, force: 1.2, gutsDown: 11, critBonus: 0.10, effect: 'dot_mine', desc: '大地を切り裂くほどの一閃を放つ。相手GUTS-11。さらに命中した場合、深い傷跡から3ターンの間継続ダメージを与える' },
@@ -630,9 +635,9 @@ const SKILLS_DB = {
     combination: { name: 'コンビネーション', cost: 55, type: 'pow', hitRate: 94, force: 1.28, gutsDown: 24, critBonus: 0.04, effect: 'hitdown_stack_3', desc: '緩急をつけた連続攻撃で相手を翻弄する高命中の大技。相手GUTS-24。さらに命中した場合、目が眩み相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
     odokasu: { name: 'おどかす', cost: 17, type: 'int', hitRate: 69, force: 0.85, gutsDown: 26, critBonus: 0.09, effect: 'weaken_pow_int', desc: '不気味な姿で相手を脅かす。相手GUTS-26。さらに命中した場合、相手の「ちから」「かしこさ」が10%低下する（交代するまで持続）' },
     dokuro_beam: { name: 'ドクロビーム', cost: 28, type: 'int', hitRate: 76, force: 1.4, gutsDown: 17, critBonus: 0.13, effect: 'blind_2', desc: '口から放つ髑髏形の怪光線。相手GUTS-17。さらに命中した場合、不気味な光で2ターンの間相手の目を眩ませ命中率を下げる' },
-    bikkuri_dokuro: { name: 'びっくりドクロ', cost: 40, type: 'int', hitRate: 87, force: 2.3, gutsDown: 37, critBonus: 0.25, effect: 'paralyze_25', desc: '突如出現する巨大な髑髏で相手を心底驚かせる。相手GUTS-37。さらに命中した場合、恐怖のあまりマヒさせる（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
+    bikkuri_dokuro: { name: 'びっくりドクロ', cost: 40, type: 'int', hitRate: 87, force: 2.3, gutsDown: 37, critBonus: 0.25, effect: 'paralyze_25', desc: '突如出現する巨大な髑髏で相手を心底驚かせる。相手GUTS-37。さらに技命中時25%の確率で恐怖のあまりマヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
     card: { name: 'カード', cost: 24, type: 'int', hitRate: 72, force: 1.15, gutsDown: 16, critBonus: 0.12, effect: 'dot_mine', desc: '呪いを込めた一枚のカードを相手に投げつける。相手GUTS-16。さらに命中した場合、呪いの効果で3ターンの間継続ダメージを与える' },
-    ohki_otoshimono: { name: '大きなおとしもの', cost: 33, type: 'int', hitRate: 78, force: 1.7, gutsDown: 21, critBonus: 0.17, effect: 'paralyze_25', desc: '頭上から巨大な物体を落として相手を直撃する。相手GUTS-21。さらに命中した場合、強い衝撃でマヒさせる（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
+    ohki_otoshimono: { name: '大きなおとしもの', cost: 33, type: 'int', hitRate: 78, force: 1.7, gutsDown: 21, critBonus: 0.17, effect: 'paralyze_25', desc: '頭上から巨大な物体を落として相手を直撃する。相手GUTS-21。さらに技命中時25%の確率で強い衝撃でマヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
     ghost_flash: { name: 'ゴーストフラッシュ', cost: 48, type: 'int', hitRate: 70, force: 2.75, gutsDown: 28, critBonus: 0.13, effect: 'perma_dmg_up_20', desc: '無数の霊が一斉に光り輝く、この上ない最大の切り札。相手GUTS-28。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
 
     // --- ゲル系統 ---
@@ -656,7 +661,7 @@ const SKILLS_DB = {
     shinkou_yo_kegare_wo_harae: { name: '神光よ汚れを祓え', cost: 22, type: 'int', hitRate: 80, force: 1.1, gutsDown: 7, critBonus: 0.11, effect: 'weaken_pow_int', desc: '清浄な光で相手に宿る穢れを祓い清める。相手GUTS-7。さらに命中した場合、力を封じられ相手の「ちから」「かしこさ」が10%低下する（交代するまで持続）' },
     ima_koso_shin_naru_mezame: { name: '今こそ真なる目醒め', cost: 26, type: 'int', hitRate: 72, force: 1.45, gutsDown: 16, critBonus: 0.11, effect: 'selfcrit_up_3', desc: '眠っていた真なる力を解き放つ覚醒の一撃。相手GUTS-16。さらに命中した場合、研ぎ澄まされた感覚で3ターンの間自身のクリティカル率が25%アップする' },
     aoki_ibara_yo_toga_wo_ugate: { name: '蒼き荊よ咎を穿て', cost: 29, type: 'int', hitRate: 72, force: 1.7, gutsDown: 16, critBonus: 0.11, effect: 'dot_mine', desc: '蒼く輝く荊の鎖で相手の罪を貫く。相手GUTS-16。さらに命中した場合、突き刺さった荊により3ターンの間継続ダメージを与える' },
-    sabaki_no_hikari_yo_kudare: { name: '裁きの光よ下れ', cost: 31, type: 'int', hitRate: 60, force: 2.2, gutsDown: 20, critBonus: 0.07, effect: 'paralyze_25', desc: '天より降り注ぐ裁きの光で相手を打ち据える。相手GUTS-20。さらに命中した場合、光に貫かれマヒさせる（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
+    sabaki_no_hikari_yo_kudare: { name: '裁きの光よ下れ', cost: 31, type: 'int', hitRate: 60, force: 2.2, gutsDown: 20, critBonus: 0.07, effect: 'paralyze_25', desc: '天より降り注ぐ裁きの光で相手を打ち据える。相手GUTS-20。さらに技命中時25%の確率で光に貫かれマヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
     shuuen_ni_sukui_wo_ataeyo: { name: '終焉に救いを与えよ', cost: 35, type: 'int', hitRate: 80, force: 2.3, gutsDown: 16, critBonus: 0.04, effect: 'self_heal_15pct', desc: '終わりゆく者にすら救済を与える圧倒的な一撃。相手GUTS-16。さらに命中した場合、救済の奇跡により自身のライフを15%回復する' },
     shiten_no_tsurugi_yo_oritate: { name: '熾天の剣よ降り立て', cost: 42, type: 'int', hitRate: 80, force: 1.75, gutsDown: 25, critBonus: 0.11, effect: 'def_down_15', desc: '天より舞い降りる熾天使の剣を叩きつける。相手GUTS-25。さらに命中した場合、聖剣の衝撃で30%の確率で相手の丈夫さを15%低下させる（交代するまで持続）' },
     seiya_no_kane_yo_narihibike: { name: '聖夜の鐘よ鳴響け', cost: 43, type: 'int', hitRate: 72, force: 2.35, gutsDown: 20, critBonus: 0.11, effect: 'confuse_30', desc: '荘厳な鐘の音を鳴り響かせ精神を揺さぶる。相手GUTS-20。さらに命中した場合、30%の確率で相手を混乱状態にする（混乱中は毎ターン40%の確率で意味不明になり行動できなくなり、30%の確率で混乱が解除される）' },
@@ -683,7 +688,7 @@ const SKILLS_DB = {
     liger_hikkaki: { name: 'ひっかき', cost: 10, type: 'pow', hitRate: 80, force: 0.5, gutsDown: 3, critBonus: 0, effect: null, desc: '鋭い爪で素早く引っかく基本技。相手GUTS-3' },
     liger_kamitsuki: { name: 'かみつき', cost: 16, type: 'pow', hitRate: 70, force: 0.85, gutsDown: 3, critBonus: 0.02, effect: 'dot_mine', desc: '鋭い牙で深く噛みつく。相手GUTS-3。さらに命中した場合、噛み傷から3ターンの間継続ダメージを与える' },
     body_slam: { name: '体当たり', cost: 17, type: 'pow', hitRate: 92, force: 1.1, gutsDown: 3, critBonus: 0.04, effect: null, desc: '全体重を乗せて突撃する高命中の基本技。相手GUTS-3' },
-    raigeki: { name: '雷撃', cost: 18, type: 'int', hitRate: 70, force: 0.8, gutsDown: 25, critBonus: 0.06, effect: 'paralyze_25', desc: '全身に纏った電気を撃ち放つ。相手GUTS-25。さらに命中した場合、感電によりマヒさせる（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
+    raigeki: { name: '雷撃', cost: 18, type: 'int', hitRate: 70, force: 0.8, gutsDown: 25, critBonus: 0.06, effect: 'paralyze_25', desc: '全身に纏った電気を撃ち放つ。相手GUTS-25。さらに技命中時25%の確率で感電によりマヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
     one_two: { name: 'ワンツー', cost: 19, type: 'pow', hitRate: 58, force: 1.45, gutsDown: 3, critBonus: 0.04, effect: 'hitdown_stack_3', desc: '素早い両前脚の連続攻撃。相手GUTS-3。さらに命中した場合、目にもとまらぬ連撃で相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
     reikidan: { name: '冷気弾', cost: 24, type: 'int', hitRate: 48, force: 1.05, gutsDown: 7, critBonus: 0.15, effect: 'def_down_15', desc: '極寒の冷気を凝縮した弾を放つ。相手GUTS-7。さらに命中した場合、体が凍りつき30%の確率で相手の丈夫さを15%低下させる（交代するまで持続）' },
     kagegeki: { name: '影撃', cost: 23, type: 'pow', hitRate: 80, force: 0.75, gutsDown: 4, critBonus: 0.15, effect: 'blind_2', desc: '影に紛れ死角から繰り出す一撃。相手GUTS-4。さらに命中した場合、闇に紛れた一撃で2ターンの間相手の目を眩ませ命中率を下げる' },
@@ -695,7 +700,7 @@ const SKILLS_DB = {
 
     // --- ピクシー系統 ---
     pixie_harite: { name: 'はり手', cost: 16, type: 'pow', hitRate: 82, force: 0.85, gutsDown: 5, critBonus: 0, effect: null, desc: '素早い手のひらで頬を軽やかに打つ基本技。相手GUTS-5' },
-    pixie_thunder: { name: 'サンダー', cost: 17, type: 'int', hitRate: 82, force: 0.85, gutsDown: 9, critBonus: 0, effect: 'paralyze_25', desc: '手のひらから小さな雷を放つ基本技。相手GUTS-9。さらに命中した場合、感電によりマヒさせる（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
+    pixie_thunder: { name: 'サンダー', cost: 17, type: 'int', hitRate: 82, force: 0.85, gutsDown: 9, critBonus: 0, effect: 'paralyze_25', desc: '手のひらから小さな雷を放つ基本技。相手GUTS-9。さらに技命中時25%の確率で感電によりマヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
     pixie_ray: { name: 'レイ', cost: 22, type: 'int', hitRate: 66, force: 1.15, gutsDown: 5, critBonus: 0.20, effect: null, desc: '収束させた光の粒子を撃ち出す。相手GUTS-5' },
     pixie_lightning: { name: 'ライトニング', cost: 23, type: 'int', hitRate: 90, force: 1.15, gutsDown: 5, critBonus: 0.08, effect: 'blind_2', desc: '鋭い雷光を鞭のように打ち出す高命中技。相手GUTS-5。さらに命中した場合、閃光で2ターンの間相手の目を眩ませ命中率を下げる' },
     pixie_megaray: { name: 'メガレイ', cost: 26, type: 'int', hitRate: 66, force: 1.5, gutsDown: 5, critBonus: 0.20, effect: 'def_down_15', desc: 'レイを強化した貫通力の高い光線。相手GUTS-5。さらに命中した場合、30%の確率で相手の丈夫さを15%低下させる（交代するまで持続）' },
@@ -915,13 +920,30 @@ function applySkillOnHitEffect(caster, target, sk) {
         // 超ローリンモッチ専用：def_down_15とは異なり、ターン経過で解除されず交代するまで持続する
         target.permaDefDownPct = Math.max(target.permaDefDownPct || 0, 15);
         logs.push(`💥 ${target.name} の防御が崩れた！（相手が交代するまでの間、丈夫さが15%低下する）`);
+    } else if (sk.effect === 'evasion_def_down_20') {
+        // がん飛ばし専用：命中すれば必ず発動し、相手の回避と丈夫さを1回につき20%低下させる（3回まで重複可・交代するまで持続）
+        if ((target.evasionDefDownStacks || 0) >= 3) {
+            logs.push(`（${target.name} はすでに回避・丈夫さ低下の効果が上限（3重複）に達しているため、追加の効果は発生しなかった）`);
+        } else {
+            target.evasionDefDownStacks = Math.min(3, (target.evasionDefDownStacks || 0) + 1);
+            logs.push(`💥 ${target.name} の回避と丈夫さが下がった！（累積${target.evasionDefDownStacks}/3・1回につき回避・丈夫さがそれぞれ20%低下、相手が交代するまでの間持続）`);
+        }
     } else if (sk.effect === 'dot_mine') {
         target.dotTurns = (typeof sk.dotTurns === 'number') ? sk.dotTurns : 3;
         target.dotPct = (typeof sk.dotPct === 'number') ? sk.dotPct : 0.08;
         logs.push(`🩸 ${target.name} は出血状態になった！（${target.dotTurns}ターンの間、毎ターン最大ライフの${Math.round(target.dotPct * 100)}%の継続ダメージを受ける）`);
     } else if (sk.effect === 'paralyze_25') {
-        target.isParalyzed = true;
-        logs.push(`⚡ ${target.name} は感電しマヒ状態になった！（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）`);
+        // 命中した時、25%の確率で相手をマヒさせる（発動すればバトル終了まで治らず、行動時に25%の確率で行動不能になり、移動速度が3段階低下する）
+        if (Math.random() < 0.25) {
+            if (target.isParalyzed) {
+                logs.push(`（${target.name} はすでにマヒ状態のため、追加の効果は発生しなかった）`);
+            } else {
+                target.isParalyzed = true;
+                logs.push(`⚡ ${target.name} は感電しマヒ状態になった！（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）`);
+            }
+        } else {
+            logs.push(`（${target.name} は堪えてマヒを免れた）`);
+        }
     } else if (sk.effect === 'burn') {
         // やけど：バトル終了まで治らず、毎ターン終了時に最大ライフの1/16のダメージを受け続ける
         if (target.isBurned) {
@@ -1059,6 +1081,10 @@ function applySkillOnUseEffect(caster, sk) {
             caster.sleepTurns = 2;
             logs.push(`💤 ${caster.name} は集中しすぎて、そのままねむり状態になってしまった！（2ターンの間、行動不能になる）`);
         }
+    } else if (sk.useEffect === 'nendo_gatame') {
+        // ねんどがため：技を繰り出すたびに自身の丈夫さが80%上昇し、回避が10%低下する（3回まで重複可）
+        caster.nendoGatameStacks = Math.min(3, (caster.nendoGatameStacks || 0) + 1);
+        logs.push(`🟤 ${caster.name} は体を粘土のように硬化させた！（累積 ${caster.nendoGatameStacks}/3 ・ 1回につき丈夫さ80%アップ、回避10%ダウン）`);
     }
     return logs;
 }
@@ -1196,6 +1222,23 @@ function getDefDownStat(unit, defVal) {
     if (unit.meisoStacks > 0) {
         val = val * (1 - unit.meisoStacks * 0.1);
     }
+    // がん飛ばし：命中時、回避と丈夫さを1回につき20%低下させる（3回まで重複可・交代するまで持続）
+    if (unit.evasionDefDownStacks > 0) {
+        val = val * (1 - unit.evasionDefDownStacks * 0.2);
+    }
+    return Math.floor(val);
+}
+
+// --- がん飛ばし・ねんどがため等による回避増減を加味した実効「回避（spd）」を返す ---
+function getEvasionStat(unit, spdVal) {
+    if (!unit) return spdVal;
+    let val = spdVal;
+    if (unit.evasionDefDownStacks > 0) {
+        val = val * (1 - unit.evasionDefDownStacks * 0.2);
+    }
+    if (unit.nendoGatameStacks > 0) {
+        val = val * (1 - unit.nendoGatameStacks * 0.1);
+    }
     return Math.floor(val);
 }
 
@@ -1229,12 +1272,14 @@ function getBuffedHitStat(unit, statVal) {
     return Math.floor(statVal * (1 + unit.meisoStacks * 0.3));
 }
 
-// --- 自己強化状態（トリオビームZ等）を加味した実効「丈夫さ」を返す ---
+// --- 自己強化状態（トリオビームZ・ねんどがため等）を加味した実効「丈夫さ」を返す ---
 function getBuffedDefenseStat(unit, statVal) {
-    if (unit && unit.defUpStacks > 0) {
-        return Math.floor(statVal * (1 + unit.defUpStacks * 0.15));
-    }
-    return statVal;
+    if (!unit) return statVal;
+    let mult = 1;
+    if (unit.defUpStacks > 0) mult += unit.defUpStacks * 0.15;
+    if (unit.nendoGatameStacks > 0) mult += unit.nendoGatameStacks * 0.8;
+    if (mult === 1) return statVal;
+    return Math.floor(statVal * mult);
 }
 
 // --- 次技威力アップ（オーロラゲート等）を加味した実効forceを返し、フラグを消費する ---
@@ -1530,7 +1575,7 @@ const KIN_NEJIKI_SKILL_POOL = {
     kyubi:     ['hikkaki', 'kagerou', 'kitsunebi', 'cho_kitsunebi', 'yuuwaku', 'kokonoe_shingan', 'tenga_tensho'],
     ham:       ['one_two_punch', 'sobat', 'atamatsuki', 'seoinage', 'cho_atamatsuki', 'machinegun_punch', 'onara', 'cho_ogoe'],
     arrowhead: ['tail_attack', 'zoom_punch', 'rocket_punch', 'needle_turn', 'w_needle_turn', 'tornado_attack', 'tail_blade', 'jiraibari'],
-    nendoro:   ['zoom_punch_nendoro', 'mach_punch', 'meido_no_miyage', 'ganduke', 'body_press_nendoro'],
+    nendoro:   ['zoom_punch_nendoro', 'mach_punch', 'meido_no_miyage', 'ganduke', 'body_press_nendoro', 'nagekiss_nendoro', 'nendo_gatame', 'youkaieki'],
     henger:    ['w_kick', 'laser_blade', 'laser_cutter', 'w_laser_sword', 'drill_rocket', 'w_drill_rocket', 'napalm_cannon'],
     durahan:   ['cho_dash_giri', 'midaretsuki', 'mappufutatsu', 'combo_punch', 'daisharin', 'fujinken', 'raijinken'],
     golem:     ['dekopin', 'shoda', 'claw_nage', 'double_chop', 'guruguru_attack', 'nobiru_punch', 'jishin'],

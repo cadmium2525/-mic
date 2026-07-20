@@ -23,7 +23,9 @@ const KIN_NEJIKI_STATE = {
     // 「こちらが交換する前に相手のモンスターが決まる」仕様のため、次バトルの対戦相手は
     // 勝利直後（交換画面が開く前）の時点で先に生成し、ここに保持しておく。
     // { opponentTeam, floorLabel, isNejiki, aiLevel } または null
-    nextBattlePrepared: null
+    nextBattlePrepared: null,
+    // タスクキル（バトル中のアプリ強制終了）を検知した回数。3回で強制ゲームオーバーとする。
+    taskKillCount: 0
 };
 
 // =====================================================
@@ -62,6 +64,80 @@ function getKinNejikiBreederName(totalBattleNumber) {
 // =====================================================
 const KIN_NEJIKI_SUSPEND_KEY = 'mfload_kinnejiki_suspend_v1';
 
+// =====================================================
+// タスクキル対策
+// ・バトル画面に入っている間だけ「バトル中フラグ」をlocalStorageに立てる
+// ・アプリ起動時にこのフラグが残っていた場合、直前の終了がバトル中の強制終了（タスクキル）
+//   だったと判断し、一時セーブに記録された回数をカウントアップする
+// ・3回検知した時点でその挑戦を強制的にゲームオーバー扱いとする
+//   （負けそうになったらタスクキルして再開する、というやり直しを防ぐための仕様）
+// =====================================================
+const KIN_NEJIKI_BATTLE_FLAG_KEY = 'mfload_kinnejiki_battle_flag_v1';
+const KIN_NEJIKI_MAX_TASK_KILLS = 3;
+
+function markKinNejikiBattleStarted() {
+    try {
+        localStorage.setItem(KIN_NEJIKI_BATTLE_FLAG_KEY, '1');
+    } catch (e) { /* ignore */ }
+}
+
+function clearKinNejikiBattleFlag() {
+    try {
+        localStorage.removeItem(KIN_NEJIKI_BATTLE_FLAG_KEY);
+    } catch (e) { /* ignore */ }
+}
+
+// --- アプリ起動時に1度だけ呼ばれ、直前の終了がタスクキルだったかどうかを判定する ---
+function checkKinNejikiTaskKillOnLoad() {
+    let battleWasInProgress = false;
+    try {
+        battleWasInProgress = !!localStorage.getItem(KIN_NEJIKI_BATTLE_FLAG_KEY);
+    } catch (e) {
+        battleWasInProgress = false;
+    }
+    if (!battleWasInProgress) return;
+
+    // バトル画面のまま終了された形跡があるので、フラグは一旦クリアする
+    clearKinNejikiBattleFlag();
+
+    let saved = null;
+    try {
+        const raw = localStorage.getItem(KIN_NEJIKI_SUSPEND_KEY);
+        if (raw) saved = JSON.parse(raw);
+    } catch (e) {
+        saved = null;
+    }
+    if (!saved) return; // 一時セーブが無ければ判定対象外
+
+    const newCount = (saved.taskKillCount || 0) + 1;
+
+    if (newCount >= KIN_NEJIKI_MAX_TASK_KILLS) {
+        // 規定回数に達したので、その挑戦を強制的にゲームオーバー扱いにする
+        const finalWins = saved.totalWins || 0;
+        clearKinNejikiSuspendSave();
+        try {
+            if (typeof saveKinNejikiRanking === 'function') saveKinNejikiRanking(finalWins, false);
+        } catch (e) { /* ignore */ }
+        setTimeout(() => {
+            if (typeof showToast === 'function') {
+                showToast(`⚠️ タスクキルを${KIN_NEJIKI_MAX_TASK_KILLS}回検知したため、ガッツファクトリーの挑戦がゲームオーバーになりました（通算${finalWins}勝）`);
+            }
+        }, 600);
+    } else {
+        saved.taskKillCount = newCount;
+        try {
+            localStorage.setItem(KIN_NEJIKI_SUSPEND_KEY, JSON.stringify(saved));
+        } catch (e) { /* ignore */ }
+        setTimeout(() => {
+            if (typeof showToast === 'function') {
+                showToast(`⚠️ バトル中の強制終了を検知しました（${newCount}/${KIN_NEJIKI_MAX_TASK_KILLS}回。${KIN_NEJIKI_MAX_TASK_KILLS}回で挑戦は強制終了となります）`);
+            }
+        }, 600);
+    }
+}
+
+window.addEventListener('load', checkKinNejikiTaskKillOnLoad);
+
 function hasKinNejikiSuspendSave() {
     try {
         return !!localStorage.getItem(KIN_NEJIKI_SUSPEND_KEY);
@@ -81,12 +157,19 @@ function saveKinNejikiSuspend() {
     if (KIN_NEJIKI_STATE.pendingSwap) {
         advanceKinNejikiCounters();
     }
+    // セーブ時点ではバトル中ではないはずなので、念のためバトル中フラグをクリアしておく
+    clearKinNejikiBattleFlag();
     try {
         const payload = {
             set: KIN_NEJIKI_STATE.set,
             battleInSet: KIN_NEJIKI_STATE.battleInSet,
             totalWins: KIN_NEJIKI_STATE.totalWins,
             playerParty: KIN_NEJIKI_STATE.playerParty,
+            // 次バトルの対戦相手（事前生成済みのもの）も一緒に保存し、再開時にCPUの構成が
+            // 変わらないようにする（保存せずに再開時その場で作り直すと、相手が毎回変わってしまう）
+            nextBattlePrepared: KIN_NEJIKI_STATE.nextBattlePrepared || null,
+            // タスクキル検知回数も保存し、再開後に別セッションへ引き継がれるようにする
+            taskKillCount: KIN_NEJIKI_STATE.taskKillCount || 0,
             savedAt: Date.now()
         };
         localStorage.setItem(KIN_NEJIKI_SUSPEND_KEY, JSON.stringify(payload));
@@ -130,6 +213,10 @@ function resumeKinNejikiRun() {
     KIN_NEJIKI_STATE.totalWins = saved.totalWins;
     KIN_NEJIKI_STATE.playerParty = saved.playerParty;
     KIN_NEJIKI_STATE.pendingSwap = null;
+    // 保存しておいた次バトルの対戦相手をそのまま復元する（CPUの構成を再開のたびに
+    // 変えないようにするため。無ければnullのままとなり、従来通りその場で生成される）
+    KIN_NEJIKI_STATE.nextBattlePrepared = saved.nextBattlePrepared || null;
+    KIN_NEJIKI_STATE.taskKillCount = saved.taskKillCount || 0;
 
     showToast(`セーブデータから再開します（通算${saved.totalWins}勝・第${saved.set}セット）`);
     advanceToNextKinNejikiBattle();
@@ -303,7 +390,7 @@ function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel) {
     const dmgMultiplier = (typeof MASMON_BATTLE_DAMAGE_MULTIPLIER === 'number') ? MASMON_BATTLE_DAMAGE_MULTIPLIER : 0.2;
     const estimate = (skInfo) => {
         if (skInfo.type !== 'pow' && skInfo.type !== 'int') return 0;
-        const atk = skInfo.type === 'pow' ? e.stats.pow : e.stats.int;
+        const atk = skInfo.useDefAsAtk ? e.stats.def : (skInfo.type === 'pow' ? e.stats.pow : e.stats.int);
         const def = p.stats.def * 1.5;
         const raw = atk * skInfo.force - def * 0.35;
         return Math.max(1, raw) * dmgMultiplier;
@@ -399,6 +486,7 @@ function startKinNejikiEntry() {
 // --- ランを開始し、最初の6体提示を生成 ---
 function beginKinNejikiRun() {
     clearKinNejikiSuspendSave(); // 新規に挑戦を始める場合、古い一時セーブは破棄する
+    clearKinNejikiBattleFlag(); // 前回の挑戦から残っているかもしれないバトル中フラグもクリアする
     KIN_NEJIKI_STATE.active = true;
     KIN_NEJIKI_STATE.set = 1;
     KIN_NEJIKI_STATE.battleInSet = 1;
@@ -407,6 +495,7 @@ function beginKinNejikiRun() {
     KIN_NEJIKI_STATE.selectedIdx = [];
     KIN_NEJIKI_STATE.pendingSwap = null;
     KIN_NEJIKI_STATE.nextBattlePrepared = null;
+    KIN_NEJIKI_STATE.taskKillCount = 0;
     KIN_NEJIKI_STATE.offer = generateKinNejikiOffer(1);
     renderKinNejikiSelectScreen();
     changeScreen('screen-kinnejiki-select');
@@ -567,6 +656,8 @@ function confirmKinNejikiEncounter() {
 }
 
 function launchKinNejikiBattleEngine(opponentTeamRaw, floorText, isNejiki, aiLevel) {
+    // ここから勝敗が決まるまでの間にアプリが強制終了された場合、タスクキルとして検知する
+    markKinNejikiBattleStarted();
     MASMON_BATTLE_STATE.mode = 'cpu_team';
     MASMON_BATTLE_STATE.playerTeam = KIN_NEJIKI_STATE.playerParty.map(m => convertMasmonToBattleUnit(m, m.equip || null));
     MASMON_BATTLE_STATE.enemyTeam = opponentTeamRaw.map(m => convertMasmonToBattleUnit(m, m.equip || null));
@@ -592,6 +683,8 @@ function launchKinNejikiBattleEngine(opponentTeamRaw, floorText, isNejiki, aiLev
 
 // --- バトル終了後の分岐（masmon_battle.js の handleMasmonBattleWin/Lose から呼ばれる） ---
 function kinNejikiHandleBattleEnd(isWin) {
+    // 勝敗が決まったので、タスクキル検知用のバトル中フラグを解除する
+    clearKinNejikiBattleFlag();
     if (!isWin) {
         kinNejikiFinishRun(false);
         return;
