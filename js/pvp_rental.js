@@ -46,11 +46,14 @@ function generatePvpRentalMonster(speciesId) {
     }
 
     const variance = () => 0.95 + Math.random() * 0.1; // PvPは公平性重視で個体差を小さめに(±5%)
+    // ちから/かしこさ特化型（dualStatType種族）の場合、型ごとのstatModをpow/intに乗算する
+    const powMod = (mold && mold.statMod && mold.statMod.pow) || 1;
+    const intMod = (mold && mold.statMod && mold.statMod.int) || 1;
 
     const stats = {
         maxLife: Math.round(tmpl.stats.maxLife * variance()),
-        pow: Math.round(tmpl.stats.pow * variance()),
-        int: Math.round(tmpl.stats.int * variance()),
+        pow: Math.round(tmpl.stats.pow * powMod * variance()),
+        int: Math.round(tmpl.stats.int * intMod * variance()),
         hit: Math.round(tmpl.stats.hit * variance()),
         spd: Math.round(tmpl.stats.spd * variance()),
         def: Math.round(tmpl.stats.def * variance()),

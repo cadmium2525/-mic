@@ -85,7 +85,8 @@ const MONSTER_TEMPLATES = {
         name: 'モッチー',
         emoji: '🍪',
         desc: '丸くて愛らしいが、バランスの取れた優秀な能力と強力なガッツ回復力を持つ。',
-        stats: { maxLife: 220, life: 220, pow: 71, int: 61, hit: 55, spd: 45, def: 40, gutsSpeed: 16 }
+        stats: { maxLife: 220, life: 220, pow: 71, int: 61, hit: 55, spd: 45, def: 40, gutsSpeed: 16 },
+        dualStatType: true // ちから特化型／かしこさ特化型の2系統を型ごとに持つ種族（詳細はMONSTER_MOLDSのコメント参照）
     },
     suezo: {
         id: 'suezo',
@@ -109,7 +110,8 @@ const MONSTER_TEMPLATES = {
         name: 'モノリス',
         emoji: '🗿',
         desc: '古代より佇む謎の岩石生命体。動きは鈍く回避は苦手だが、岩の肉体は並外れた丈夫さを誇り、ちから・かしこさ両面の技を使いこなす。',
-        stats: { maxLife: 235, life: 235, pow: 74, int: 70, hit: 42, spd: 26, def: 62, gutsSpeed: 13 }
+        stats: { maxLife: 235, life: 235, pow: 74, int: 70, hit: 42, spd: 26, def: 62, gutsSpeed: 13 },
+        dualStatType: true // ちから特化型／かしこさ特化型の2系統を型ごとに持つ種族（詳細はMONSTER_MOLDSのコメント参照）
     },
     plant: {
         id: 'plant',
@@ -193,7 +195,7 @@ const MONSTER_TEMPLATES = {
         name: 'ヒノトリ',
         emoji: '🐦‍🔥',
         desc: '身を炎に包んだ伝説の不死鳥。ちから・かしこさの両面で高い水準を誇り、多彩な炎の技を操って相手を焼き尽くすが、丈夫さはやや低い。',
-        stats: { maxLife: 200, life: 200, pow: 78, int: 88, hit: 52, spd: 50, def: 34, gutsSpeed: 14 }
+        stats: { maxLife: 200, life: 200, pow: 68, int: 108, hit: 52, spd: 50, def: 34, gutsSpeed: 14 }
     },
     gari: {
         id: 'gari',
@@ -225,7 +227,7 @@ const MONSTER_TEMPLATES = {
         name: 'ゴースト',
         emoji: '👻',
         desc: '悪戯好きな幽霊モンスター。かしこさに優れ、驚かしや呪いを絡めた多彩な技で相手を翻弄するが、丈夫さは低め。',
-        stats: { maxLife: 170, life: 170, pow: 65, int: 80, hit: 60, spd: 58, def: 24, gutsSpeed: 16 }
+        stats: { maxLife: 170, life: 170, pow: 65, int: 90, hit: 60, spd: 58, def: 24, gutsSpeed: 16 }
     },
     gel: {
         id: 'gel',
@@ -1393,13 +1395,34 @@ const KIN_NEJIKI_SKILL_POOL = {
 // 【型を追加・変更したい場合】
 //   下の配列に { skills: [...], equipment: '装備名' } を1つ追加・書き換えするだけでよい
 //   （技は最大4つまで。装備は不要なら null にする）。
+//
+// ・dualStatType（MONSTER_TEMPLATESで dualStatType: true のフラグが立っている種族）：
+//   ちから・かしこさが同程度の水準でバランスよく配置されているモンスターは、
+//   桜の舞のようなバフをかけてもベースの数値が低く火力が伸びにくいという問題がある。
+//   そこでこれらの種族だけは、型1〜4それぞれに「ちから特化型」「かしこさ特化型」の
+//   2バリエーションを用意し、計8パターンを配列で並べる：
+//     [型1ちから, 型1かしこさ, 型2ちから, 型2かしこさ, 型3ちから, 型3かしこさ, 型4ちから, 型4かしこさ]
+//   各パターンには statMod: { pow, int } を指定でき、pickMonsterMold経由で
+//   種族ベースのpow/intステータスに乗算される（省略時は乗算なし＝1倍）。
+//   これにより「型の番号＝周回進行に応じた強さの系統」「ちから/かしこさ＝個性の軸」を
+//   直交させたまま、序盤の解放段階からでも両方の特化型に出会えるようにしている。
+//   pickMonsterMold内部で dualStatType の種族だけ自動的に解放数・開始インデックスを
+//   2倍にして扱うため、呼び出し側（kinnejiki.js / pvp_rental.js）の修正は不要。
 // =====================================================
 const MONSTER_MOLDS = {
     'モッチー': [
-        { skills: ['桜の舞', 'みがわり餅', 'さくら吹雪', 'ガッチョ'], equipment: '荒縄のガントレット' },
-        { skills: ['ガッチョ', '超ローリンモッチ', '八重ざくら', 'さくら吹雪'], equipment: '生命のお守り' },
-        { skills: ['さくら吹雪', '超もっち砲', 'もっさま', '八重ざくら'], equipment: '守護のペンダント' },
-        { skills: ['もっさま', '超ローリンモッチ', '超もっち砲', '八重ざくら'], equipment: '不死鳥の羽根' }
+        // --- 型1：ちから特化型／かしこさ特化型 ---
+        { skills: ['桜の舞', 'ガッチョ', 'もっさま', '八重ざくら'], equipment: '荒縄のガントレット', statMod: { pow: 1.25, int: 0.75 } },
+        { skills: ['桜の舞', 'さくら吹雪', 'みがわり餅', '八重ざくら'], equipment: '知恵の首飾り', statMod: { pow: 0.75, int: 1.25 } },
+        // --- 型2：ちから特化型／かしこさ特化型 ---
+        { skills: ['桜の舞', 'ガッチョ', '超ローリンモッチ', 'もっさま'], equipment: '竜牙の爪', statMod: { pow: 1.25, int: 0.75 } },
+        { skills: ['桜の舞', 'さくら吹雪', '超もっち砲', '八重ざくら'], equipment: '大賢者の冠', statMod: { pow: 0.75, int: 1.25 } },
+        // --- 型3：ちから特化型／かしこさ特化型（特殊効果装備のみ） ---
+        { skills: ['桜の舞', '超ローリンモッチ', 'もっさま', 'みがわり餅'], equipment: '闘魂の紅玉', statMod: { pow: 1.25, int: 0.75 } },
+        { skills: ['桜の舞', '超もっち砲', 'さくら吹雪', 'みがわり餅'], equipment: '守護のペンダント', statMod: { pow: 0.75, int: 1.25 } },
+        // --- 型4：ちから特化型／かしこさ特化型（特殊効果装備のみ） ---
+        { skills: ['桜の舞', '超ローリンモッチ', 'もっさま', '超もっち砲'], equipment: '死闘の重錘', statMod: { pow: 1.25, int: 0.75 } },
+        { skills: ['桜の舞', '超もっち砲', 'さくら吹雪', '八重ざくら'], equipment: '不死鳥の羽根', statMod: { pow: 0.75, int: 1.25 } }
     ],
     'スエゾー': [
         { skills: ['しっぽビンタ', 'なめる', 'かみつき', '食う'], equipment: '鷹の目レンズ' },
@@ -1414,10 +1437,18 @@ const MONSTER_MOLDS = {
         { skills: ['黒ひざコンボ', '炎のたいあたり', 'かみつき投げ', 'ひざげり'], equipment: '闘気の勾玉' }
     ],
     'モノリス': [
-        { skills: ['たおれこみ', 'わらわら', 'サケビ声', '超たおれこみ'], equipment: '石の腕輪' },
-        { skills: ['超たおれこみ', 'わらわら', 'オーロラゲート', 'サケビ声'], equipment: '水鱗のよろい' },
-        { skills: ['サケビ声', 'オーロラゲート', '3連アタック', 'わらわら'], equipment: '不屈の兜' },
-        { skills: ['トリオビームZ', '3連アタック', '超たおれこみ', 'オーロラゲート'], equipment: '護りの霊符' }
+        // --- 型1：ちから特化型／かしこさ特化型 ---
+        { skills: ['たおれこみ', 'わらわら', '超たおれこみ', '3連アタック'], equipment: '荒縄のガントレット', statMod: { pow: 1.25, int: 0.75 } },
+        { skills: ['サケビ声', 'オーロラゲート', 'トリオビームZ'], equipment: '知恵の首飾り', statMod: { pow: 0.75, int: 1.25 } },
+        // --- 型2：ちから特化型／かしこさ特化型 ---
+        { skills: ['わらわら', '超たおれこみ', '3連アタック', 'たおれこみ'], equipment: '竜牙の爪', statMod: { pow: 1.25, int: 0.75 } },
+        { skills: ['オーロラゲート', 'トリオビームZ', 'サケビ声'], equipment: '大賢者の冠', statMod: { pow: 0.75, int: 1.25 } },
+        // --- 型3：ちから特化型／かしこさ特化型（特殊効果装備のみ） ---
+        { skills: ['超たおれこみ', '3連アタック', 'わらわら', 'たおれこみ'], equipment: '闘魂の紅玉', statMod: { pow: 1.25, int: 0.75 } },
+        { skills: ['トリオビームZ', 'オーロラゲート', 'サケビ声'], equipment: '護りの霊符', statMod: { pow: 0.75, int: 1.25 } },
+        // --- 型4：ちから特化型／かしこさ特化型（特殊効果装備のみ） ---
+        { skills: ['3連アタック', '超たおれこみ', 'わらわら', 'たおれこみ'], equipment: '死闘の重錘', statMod: { pow: 1.25, int: 0.75 } },
+        { skills: ['トリオビームZ', 'オーロラゲート', 'サケビ声'], equipment: '不屈の兜', statMod: { pow: 0.75, int: 1.25 } }
     ],
     'プラント': [
         { skills: ['連続根っこ', '種ガン', '花粉', 'コンビネーション'], equipment: '生命のお守り' },
@@ -1577,13 +1608,26 @@ function getMoldUnlockCountForSet(setNumber) {
 //                  （同じ道具を持ったモンスター同士が対面しない、という仕様のための調整弁）
 // minIndex: 抽選対象の型の開始インデックス（0始まり）。省略時は0（型1から）。
 //           PvPレンタルのように「上位の型（型3・型4）のみから選出したい」場合は 2 を渡す。
+//
+// ※ dualStatType（ちから/かしこさ特化型を型ごとに2パターン持つ種族）の場合、
+//   MONSTER_MOLDS側の配列は [型1ちから,型1かしこさ,型2ちから,型2かしこさ,...] という
+//   「型番号1つにつき2エントリ」の並びになっているため、unlockedCount・minIndexは
+//   ここで内部的に2倍にして扱う（型の番号ベースの意味はそのまま保たれる）。
+//   これにより呼び出し側（kinnejiki.js / pvp_rental.js）は今まで通り
+//   「型番号（1〜4）」の感覚でunlockedCount・minIndexを渡すだけでよい。
 function pickMonsterMold(speciesId, unlockedCount, excludeEquipIds, minIndex) {
     const tmpl = MONSTER_TEMPLATES[speciesId];
     const molds = tmpl ? MONSTER_MOLDS[tmpl.name] : null;
     if (!molds || molds.length === 0) return null;
 
-    const start = Math.max(0, Math.min(minIndex || 0, molds.length - 1));
-    const count = Math.max(start + 1, Math.min(unlockedCount || 1, molds.length));
+    const isDualStatType = !!(tmpl && tmpl.dualStatType);
+    const rawUnlockedCount = unlockedCount || 1;
+    const rawMinIndex = minIndex || 0;
+    const effectiveUnlockedCount = isDualStatType ? rawUnlockedCount * 2 : rawUnlockedCount;
+    const effectiveMinIndex = isDualStatType ? rawMinIndex * 2 : rawMinIndex;
+
+    const start = Math.max(0, Math.min(effectiveMinIndex, molds.length - 1));
+    const count = Math.max(start + 1, Math.min(effectiveUnlockedCount, molds.length));
     const availableMolds = molds.slice(start, count);
     const chosen = availableMolds[Math.floor(Math.random() * availableMolds.length)];
     if (!chosen) return null;
@@ -1599,7 +1643,9 @@ function pickMonsterMold(speciesId, unlockedCount, excludeEquipIds, minIndex) {
             equip = buildEquipmentInstanceFromBase(EQUIPMENT_DB[equipId]);
         }
     }
-    return { skills: skillKeys, equip };
+    // statMod: ちから/かしこさ特化型が種族ベースのpow/intステータスに掛ける倍率（{pow, int}）。
+    // 未指定の型（dualStatTypeでない通常種族）はnullのまま返し、呼び出し側で1倍として扱われる。
+    return { skills: skillKeys, equip, statMod: chosen.statMod || null };
 }
 
 // --- 専属ボス「レジェンドブリーダー・コルト」（3セット目・7セット目に登場）---
@@ -1611,7 +1657,7 @@ const KIN_NEJIKI_BOSSES = {
         templateId: 'golem',
         emoji: '🗿',
         desc: 'ちからと丈夫さに全振りした岩石の怪物。ガッツが溜まると「ぐるぐるアタック」で大ダメージを与えてくる。命中と回避は低いため回避特化での対策が有効。',
-        statsBase: { maxLife: 260, pow: 78, int: 18, hit: 34, spd: 16, def: 62, gutsSpeed: 12 },
+        statsBase: { maxLife: 260, pow: 128, int: 18, hit: 34, spd: 16, def: 62, gutsSpeed: 12 },
         skills: ['dekopin', 'claw_nage', 'guruguru_attack', 'boss_roll']
     },
     set7: {
@@ -1620,7 +1666,7 @@ const KIN_NEJIKI_BOSSES = {
         templateId: null, // 特定種族に属さないオリジナルの最終ボス
         emoji: '👿',
         desc: '伝説の邪神。回避不能の必中技「なめる」と、壊滅的な「メテオバースト」を併せ持つ。ガッツダウン性能の高い技で常にガッツを抑え込むのが攻略の鍵。',
-        statsBase: { maxLife: 480, pow: 58, int: 58, hit: 62, spd: 46, def: 58, gutsSpeed: 14 },
+        statsBase: { maxLife: 480, pow: 108, int: 108, hit: 62, spd: 46, def: 58, gutsSpeed: 14 },
         skills: ['boss_bite', 'nameru', 'boss_laser', 'boss_roll', 'boss_meteor']
     }
 };

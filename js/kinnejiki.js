@@ -201,11 +201,14 @@ function generateKinNejikiRentalMonster(speciesId, setNumber, excludeEquipIds) {
 
     const individualVariance = () => 0.92 + Math.random() * 0.16; // ±8%の個体差
     const setScale = 1 + (Math.max(0, setNumber - 1) * 0.06); // セットが進むごとに約6%ずつ強化
+    // ちから/かしこさ特化型（dualStatType種族）の場合、型ごとのstatModをpow/intに乗算する
+    const powMod = (mold && mold.statMod && mold.statMod.pow) || 1;
+    const intMod = (mold && mold.statMod && mold.statMod.int) || 1;
 
     const rawStats = {
         maxLife: Math.round(tmpl.stats.maxLife * individualVariance() * setScale),
-        pow: Math.round(tmpl.stats.pow * individualVariance() * setScale),
-        int: Math.round(tmpl.stats.int * individualVariance() * setScale),
+        pow: Math.round(tmpl.stats.pow * powMod * individualVariance() * setScale),
+        int: Math.round(tmpl.stats.int * intMod * individualVariance() * setScale),
         hit: Math.round(tmpl.stats.hit * individualVariance() * setScale),
         spd: Math.round(tmpl.stats.spd * individualVariance() * setScale),
         def: Math.round(tmpl.stats.def * individualVariance() * setScale),
