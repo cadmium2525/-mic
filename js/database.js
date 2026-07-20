@@ -343,7 +343,10 @@ function getMoveSpeedRankForMasmon(masmonData) {
 
 // =====================================================
 // マヒ状態による移動速度低下
-// マヒのモンスターは移動速度ランクが3段階下がる（F未満には下がらない）
+// マヒのモンスターは移動速度が3段階分下がる。
+// 「段階」はS/A/B/C/D/E/Fのランク間の刻み幅（15）を基準にした数値換算で扱い、
+// Fランクより下（名前のない領域）まで下がりうる。これによりFランクの相手に対しても
+// 確実に後攻になる（同値によるランダム抽選に落ちない）。
 // =====================================================
 const MOVE_SPEED_RANK_ORDER = ['F', 'E', 'D', 'C', 'B', 'A', 'S'];
 
@@ -354,14 +357,29 @@ function shiftMoveSpeedRank(rank, shift) {
     return MOVE_SPEED_RANK_ORDER[newIdx];
 }
 
+// ランク間の刻み幅（S/A/B/C/D/E/F は等間隔=15）。MOVE_SPEED_RANK_VALUEからずれても追従するよう動的に算出する。
+const MOVE_SPEED_RANK_STEP = (function () {
+    const sSpeed = MOVE_SPEED_RANK_VALUE.S;
+    const fSpeed = MOVE_SPEED_RANK_VALUE.F;
+    return (sSpeed - fSpeed) / (MOVE_SPEED_RANK_ORDER.length - 1);
+})();
+
 // --- マヒ状態を加味した実効移動速度（数値）を返す ---
 // unit は stats.moveSpeed/moveSpeedRank を持つ構造（CPU戦）／moveSpeed・moveSpeedRankを直接持つ構造（PvP）の両対応
+//
+// 注意：Fランクより下（G相当）の「名前付きランク」はゲーム上存在しないが、
+// マヒによる「3段階低下」は数値としてはFの下まで貫通するべき仕様。
+// shiftMoveSpeedRank()のようにランク配列のindexをクランプしてしまうと、
+// 例えばD（idx2）は-3で本来idx=-1（Fより下）になるべきところがidx=0（F）に丸められてしまい、
+// 「マヒしたDランクのモンスター」と「素のFランクのモンスター」の実効速度が同値になって、
+// 本来先攻するはずのFランク側が①優先度②速度で決着がつかず③ランダム抽選に落ちてしまう不具合があった。
+// これを避けるため、ランク文字ではなく数値をそのまま3段階分（15×3）減算し、
+// Fランクより確実に低い値になるようにする（0未満にはしない）。
 function getEffectiveMoveSpeed(unit) {
     if (!unit) return 0;
     const baseSpeed = (unit.stats ? unit.stats.moveSpeed : unit.moveSpeed) || 0;
     if (!unit.isParalyzed) return baseSpeed;
-    const baseRank = (unit.stats ? unit.stats.moveSpeedRank : unit.moveSpeedRank) || 'D';
-    return getMoveSpeedValueFromRank(shiftMoveSpeedRank(baseRank, -3));
+    return Math.max(0, baseSpeed - MOVE_SPEED_RANK_STEP * 3);
 }
 
 // =====================================================
