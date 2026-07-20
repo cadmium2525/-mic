@@ -19,8 +19,8 @@
 let ACTIVE_BATTLE_MODE = 'adventure';
 
 // マイマスモンを使用してのバトル（CPU対戦・リアルタイム対戦共通）は
-// 通常の育成バトルよりダメージを大幅に抑える（通常の1/5）
-const MASMON_BATTLE_DAMAGE_MULTIPLIER = 1 / 5;
+// 通常の育成バトルよりダメージを大幅に抑える（通常の1/2）
+const MASMON_BATTLE_DAMAGE_MULTIPLIER = 1 / 2;
 
 // --- 対戦アイテムデータベース ---
 const MASMON_ITEM_DB = {
