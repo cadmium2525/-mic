@@ -161,8 +161,8 @@ function convertRoomMasmonToRealtimeUnit(masmon) {
         isSokojikaraFired: false,
         isSokojikaraActive: false,
         isShuchuActive: false,
-        weakenTurns: 0,        // わらわら等で受ける「ちから・かしこさ低下」の残ターン
-        confuseTurns: 0,       // サケビ声等で受ける「混乱」の残行動回数
+        isWeakened: false,     // わらわら等で受ける「ちから・かしこさ低下」（交代するまで持続）
+        isConfused: false,     // サケビ声等で受ける「混乱」状態（毎ターン30%で解除、解除されなければ40%で行動失敗）
         flinchTurns: 0,        // 黒ひざコンボ等で受ける「怯み」の残行動回数
         forceBoost: 0,         // オーロラゲート等で得る「次の技威力アップ」倍率
         shieldValue: 0,        // 九重神眼等で得るシールド（被ダメージ吸収）の残量
@@ -173,6 +173,11 @@ function convertRoomMasmonToRealtimeUnit(masmon) {
         isParalyzed: false,        // マヒ状態か（バトル終了まで治らない）
         isParalyzedThisTurn: false, // このターンの行動がマヒによって失敗するか（ターン開始時に決定）
         isFlinchedThisTurn: false, // このターンの行動が怯みによって失敗するか（ターン開始時に決定）
+        isBurned: false,           // やけど状態か（バトル終了まで治らず、毎ターン終了時に最大ライフの1/16のダメージを受ける）
+        sleepTurns: 0,             // ねむり状態の残ターン（2ターンの間、確率判定なしで必ず行動不能になる）
+        isSleptThisTurn: false,    // このターンの行動がねむりによって失敗するか（ターン開始時に決定）
+        isPoisoned: false,         // 猛毒状態か（バトル終了まで治らない。交代するとダメージ量は1/16からやり直し）
+        poisonCounter: 0,          // 猛毒の経過ターン数（受けるダメージ＝最大ライフ×poisonCounter/16、最大15）
         equippedItem: masmon.equip || null,  // 装備している装備アイテムインスタンス（PvP専用）
         equipLifesaverUsed: false,           // 装備の特殊効果を使用済みか
         equipEnduranceUsed: false,           // 装備の特殊効果（ライフ0撃破を1度だけライフ1で耐える）を使用済みか
@@ -925,11 +930,17 @@ function openRealtimeSwitchMenu(state) {
         const btn = document.createElement('button');
         btn.className = `text-left p-2 rounded border transition-all active:scale-95 flex flex-col justify-between bg-emerald-950/40 border-emerald-700 text-emerald-200`;
         btn.onclick = () => executeRealtimeSwitch(idx);
+        // 装備アイテム：控えのマスモンが何を装備しているかも交代先選択時点で分かるようにする
+        const equipBase = unit.equippedItem ? EQUIPMENT_DB[unit.equippedItem.equipId] : null;
+        const equipBadge = equipBase
+            ? `<span class="px-1 py-0.5 rounded text-[8px] font-bold bg-amber-900/60 text-amber-200">${equipBase.icon || '🎒'}${equipBase.name}</span>`
+            : '';
         btn.innerHTML = `
             <div class="flex justify-between items-center w-full">
                 <span class="font-bold text-xs">${unit.name}</span>
                 <span class="text-[9px] font-bold">HP ${unit.life}/${unit.maxLife} (${lifePct}%)</span>
             </div>
+            <div class="flex gap-1 mt-1">${equipBadge}</div>
         `;
         container.appendChild(btn);
     });
@@ -1125,9 +1136,15 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
 
     if (!me || me.life <= 0) return; // 既に戦闘不能（このターンの前半で倒れた等）
 
+    // ねむり状態：2ターンの間、確率判定なしで必ず行動に失敗する
     // マヒ状態（感電技を受けた場合）：バトル終了まで治らず、毎ターン25%の確率で行動に失敗する
     // 混乱＝意味不明状態（歌う等を受けた場合）：このターンは何を選んでも行動に失敗する
     // 怯み状態（黒ひざコンボ等で受けた場合）：このターンは何を選んでも行動に失敗する
+    if (me.isSleptThisTurn) {
+        me.isSleptThisTurn = false;
+        resultLogs.push(`💤 ${me.name} は眠っていて、行動できなかった！`);
+        return;
+    }
     if (me.isParalyzedThisTurn) {
         me.isParalyzedThisTurn = false;
         resultLogs.push(`⚡ ${me.name} はマヒして、行動できなかった！`);
@@ -1176,7 +1193,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             }
 
             const isCertain = sk.hitRate === 100;
-            let hitChance = isCertain ? 100 : Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (me.hit - opp.spd) * 0.5 - getBlindHitPenalty(me)));
+            let hitChance = isCertain ? 100 : Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (getBuffedHitStat(me, me.hit) - opp.spd) * 0.5 - getBlindHitPenalty(me)));
             if (me.isShuchuActive && !isCertain) {
                 hitChance = Math.min(99, hitChance * 1.5);
             }
@@ -1196,9 +1213,30 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             if (isHit && otherTeam.substituteHits > 0) {
                 otherTeam.substituteHits -= 1;
                 resultLogs.push(`🌸 桜餅の身代わりが${opp.name}の代わりに攻撃を受けた！（身代わりの残り回数: ${otherTeam.substituteHits}）`);
+            } else if (isHit && sk.noDamage) {
+                // ダメージ無し・状態異常付与のみを狙う技（どくのこな等）
+                resultLogs.push(`${opp.name} に技が命中した！`);
+
+                let finalGutsDown = sk.gutsDown || 0;
+                if (me.isGyakujoActive && finalGutsDown > 0) {
+                    finalGutsDown = Math.floor(finalGutsDown * 1.2);
+                }
+                if (finalGutsDown > 0) {
+                    const mitigatedGutsDown = Math.floor(finalGutsDown * getGutsDownMitigation(opp.def) * (1 - getEquipmentGutsDownCutRate(opp)));
+                    const actualGutsDown = Math.min(opp.guts, mitigatedGutsDown);
+                    opp.guts = Math.max(0, opp.guts - actualGutsDown);
+                    if (actualGutsDown > 0) {
+                        resultLogs.push(`相手のガッツを ${actualGutsDown} 奪った！(現在: ${Math.floor(opp.guts)})`);
+                    }
+                }
+
+                applySkillOnHitEffect(me, opp, sk).forEach(msg => resultLogs.push(msg));
+
+                me.isSokojikaraActive = false;
+                me.isShuchuActive = false;
             } else if (isHit) {
                 const isPow = sk.type === 'pow';
-                const attackerStat = getBuffedAttackStat(me, getWeakenedStat(me, isPow ? me.pow : me.int)) * getEquipmentLowLifeAtkMultiplier(me);
+                const attackerStat = getBuffedAttackStat(me, getWeakenedStat(me, isPow ? me.pow : me.int), isPow ? 'pow' : 'int') * getEquipmentLowLifeAtkMultiplier(me);
                 // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（防御崩し状態を反映）
                 const defenderStat = getDefDownStat(opp, getBuffedDefenseStat(opp, opp.def)) * 1.5;
                 const defenderGutsDefenseMod = getGutsDefenseModifier(opp.guts);
@@ -1388,22 +1426,56 @@ function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs) {
 
     if (unit.critBonusTurns > 0) unit.critBonusTurns--;
     unit.isDefending = false;
-    if (unit.weakenTurns > 0) unit.weakenTurns--;
+    // 衰弱（weaken_pow_int）はターン経過では解除されず、交代するまで持続する。
     if (unit.defDownTurns > 0) unit.defDownTurns--;
     if (unit.blindTurns > 0) unit.blindTurns--;
     if (unit.hitDownTempTurns > 0) unit.hitDownTempTurns--;
 
-    // 出血（レッグアーク・ダークホウスト等）の適用
+    // 出血（レッグアーク・ダークホウスト等）の残ターン消化
+    let bleedDamage = 0;
     if (unit.dotTurns > 0) {
-        const dotDamage = Math.max(1, Math.floor((unit.maxLife || 0) * (unit.dotPct || 0.08)));
-        unit.life = Math.max(0, unit.life - dotDamage);
+        bleedDamage = Math.max(1, Math.floor((unit.maxLife || 0) * (unit.dotPct || 0.08)));
         unit.dotTurns--;
-        resultLogs.push(`🩸 ${unit.name} は出血ダメージで ${dotDamage} のダメージを受けた！(現在: ${Math.floor(unit.life)})`);
     }
 
-    if (unit.confuseTurns > 0) {
-        unit.confuseTurns--;
-        unit.isConfusedThisTurn = Math.random() < 0.30;
+    // やけど：治るまでターン数の制限なく、毎ターン終了時に最大ライフの1/16のダメージを受け続ける
+    let burnDamage = 0;
+    if (unit.isBurned) {
+        burnDamage = Math.max(1, Math.floor((unit.maxLife || 0) / 16));
+    }
+
+    // 猛毒：ターンが経過するごとに最大ライフの1/16, 2/16…と受けるダメージが増えていく（最大15/16）。
+    // 交代するとダメージ量は1/16からやり直しになる。
+    let poisonDamage = 0;
+    if (unit.isPoisoned) {
+        unit.poisonCounter = Math.min(15, (unit.poisonCounter || 0) + 1);
+        poisonDamage = Math.max(1, Math.floor((unit.maxLife || 0) * unit.poisonCounter / 16));
+    }
+
+    const dotResult = { bleedDamage, burnDamage, poisonDamage };
+    if (bleedDamage > 0 || burnDamage > 0 || poisonDamage > 0) {
+        const dotLogs = applyDotDamageAndBuildLogs(unit.name, dotResult, () => unit.life, (v) => { unit.life = v; });
+        dotLogs.forEach(line => resultLogs.push(line));
+    }
+
+    if (unit.life <= 0) return;
+
+    // ねむり：2ターンの間、確率判定なしで必ず行動不能になる
+    if (unit.sleepTurns > 0) {
+        unit.sleepTurns--;
+        unit.isSleptThisTurn = true;
+    } else {
+        unit.isSleptThisTurn = false;
+    }
+
+    // 混乱：固定ターン数ではなく、毎ターン30%の確率で解除される。解除されなかった場合、40%の確率で意味不明になり行動失敗する。
+    if (unit.isConfused) {
+        if (Math.random() < 0.30) {
+            unit.isConfused = false;
+            unit.isConfusedThisTurn = false;
+        } else {
+            unit.isConfusedThisTurn = Math.random() < 0.40;
+        }
     } else {
         unit.isConfusedThisTurn = false;
     }

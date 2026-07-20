@@ -20,7 +20,7 @@ let ACTIVE_BATTLE_MODE = 'adventure';
 
 // マイマスモンを使用してのバトル（CPU対戦・リアルタイム対戦共通）は
 // 通常の育成バトルよりダメージを大幅に抑える（通常の1/2）
-const MASMON_BATTLE_DAMAGE_MULTIPLIER = 1 / 2;
+const MASMON_BATTLE_DAMAGE_MULTIPLIER = 1 / 3;
 
 // --- 対戦アイテムデータベース ---
 const MASMON_ITEM_DB = {
@@ -111,8 +111,8 @@ function convertMasmonToBattleUnit(masmonData, equippedItem) {
         isSokojikaraFired: false,
         isSokojikaraActive: false,
         isShuchuActive: false,
-        weakenTurns: 0,   // わらわら等で受ける「ちから・かしこさ低下」の残ターン
-        confuseTurns: 0,  // サケビ声等で受ける「混乱」の残行動回数
+        isWeakened: false,   // わらわら等で受ける「ちから・かしこさ低下」（交代するまで持続）
+        isConfused: false,  // サケビ声等で受ける「混乱」状態（毎ターン30%で解除、解除されなければ40%で行動失敗）
         forceBoost: 0,    // オーロラゲート等で得る「次の技威力アップ」倍率
         shieldValue: 0,   // 九重神眼等で得るシールド（被ダメージ吸収）の残量
         shieldUsedThisBattle: false, // 九重神眼等の「バトル中1回限り」シールド技を使用済みか
@@ -364,6 +364,12 @@ function applyPlayerSwitch(targetIdx) {
     const target = team[targetIdx];
     if (!target) return;
 
+    // 控えに戻る側にかかっていたステータスバフ・デバフ（桜の舞の累積等）はここで解除する。
+    // ※戦闘不能による強制交代の場合はそのユニットのライフが0のため実質無害、
+    //   撃破後の任意交代（openPostVictorySwitchModal）ではまだライフが残っているため必須。
+    const prev = team[MASMON_BATTLE_STATE.playerActiveIdx];
+    clearBattleStatModifiersOnSwitch(prev);
+
     MASMON_BATTLE_STATE.playerActiveIdx = targetIdx;
     MASMON_BATTLE_STATE.isDefending = false;
 
@@ -383,6 +389,10 @@ function applyEnemySwitch(targetIdx) {
     const team = MASMON_BATTLE_STATE.enemyTeam;
     const target = team[targetIdx];
     if (!target) return;
+
+    // 控えに戻る側にかかっていたステータスバフ・デバフはここで解除する（呼び出し元で解除済みでも二重実行で無害）。
+    const prev = team[MASMON_BATTLE_STATE.enemyActiveIdx];
+    clearBattleStatModifiersOnSwitch(prev);
 
     MASMON_BATTLE_STATE.enemyActiveIdx = targetIdx;
 
@@ -418,7 +428,13 @@ function buildSwitchCandidateBadgesHtml(unit) {
         ? `<span class="px-1 py-0.5 rounded text-[8px] font-bold bg-black/60 text-white tracking-tight">${statusText}</span>`
         : '';
 
-    return `${auraBadge}${monClassBadge}${statusBadge}`;
+    // 装備アイテム：控えのマスモンが何を装備しているかも交代先選択時点で分かるようにする
+    const equipBase = unit.equippedItem ? EQUIPMENT_DB[unit.equippedItem.equipId] : null;
+    const equipBadge = equipBase
+        ? `<span class="px-1 py-0.5 rounded text-[8px] font-bold bg-amber-900/60 text-amber-200">${equipBase.icon || '🎒'}${equipBase.name}</span>`
+        : '';
+
+    return `${auraBadge}${monClassBadge}${statusBadge}${equipBadge}`;
 }
 
 // --- ① 強制交代モーダル（キャンセル不可：控えの中から必ず1体選ぶ） ---
@@ -579,8 +595,8 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
     // マヒ／混乱（意味不明）／出血の残ターン消化と行動失敗判定（プレイヤー側）
     const confusionResult = tickStatusTurnsAndCheckConfusion(p);
     if (confusionResult.dotDamage > 0) {
-        p.stats.life = Math.max(0, p.stats.life - confusionResult.dotDamage);
-        addLog(`🩸 ${p.name} は出血ダメージで ${confusionResult.dotDamage} のダメージを受けた！(現在: ${Math.floor(p.stats.life)})`);
+        const dotLogs = applyDotDamageAndBuildLogs(p.name, confusionResult, () => p.stats.life, (v) => { p.stats.life = v; });
+        dotLogs.forEach(addLog);
         updateMasmonBattleStatsUI();
         handleFaintAndSwitch('player', (result) => {
             if (result.battleEnded) return;
@@ -773,7 +789,7 @@ function updateMasmonBattleStatsUI() {
                 hitSpan.textContent = `命中:必中`;
             } else {
                 const mods = getGutsModifiers(gutsVal);
-                let actualHit = Math.max(10, Math.min(99, (effSk.hitRate + mods.hitMod) + (p.stats.hit - e.stats.spd) * 0.5));
+                let actualHit = Math.max(10, Math.min(99, (effSk.hitRate + mods.hitMod) + (getBuffedHitStat(p, p.stats.hit) - e.stats.spd) * 0.5));
                 if (p.isShuchuActive) actualHit = Math.min(99, actualHit * 1.5);
                 hitSpan.textContent = `命中:${Math.round(actualHit)}%`;
             }
@@ -858,7 +874,7 @@ function renderMasmonBattleSkills() {
         } else if (sk.hitRate === 100) {
             hitRateDisplay = `<span class="${style.textIntensity} text-[9px] font-bold font-mono hit-rate-text">命中:必中</span>`;
         } else {
-            let actualHitForIcon = Math.max(10, Math.min(99, (sk.hitRate + gutsModsForHit.hitMod) + (p.stats.hit - e.stats.spd) * 0.5));
+            let actualHitForIcon = Math.max(10, Math.min(99, (sk.hitRate + gutsModsForHit.hitMod) + (getBuffedHitStat(p, p.stats.hit) - e.stats.spd) * 0.5));
             if (p.isShuchuActive) actualHitForIcon = Math.min(99, actualHitForIcon * 1.5);
             hitRateDisplay = `<span class="${style.textIntensity} text-[9px] font-bold font-mono hit-rate-text">命中:${Math.round(actualHitForIcon)}%</span>`;
         }
@@ -1009,7 +1025,7 @@ function openMasmonSkillModal(skKey) {
         if (sk.hitRate === 100) {
             document.getElementById('modal-guts-hit-rate').textContent = "必中 🎯";
         } else if (e) {
-            let actualHit = Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (p.stats.hit - e.stats.spd) * 0.5));
+            let actualHit = Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (getBuffedHitStat(p, p.stats.hit) - e.stats.spd) * 0.5));
             if (p.isShuchuActive) actualHit = Math.min(99, actualHit * 1.5);
             document.getElementById('modal-guts-hit-rate').textContent = Math.round(actualHit) + "%";
         } else {
@@ -1264,8 +1280,8 @@ function decideMasmonEnemyAction() {
     // マヒ／混乱（意味不明）／出血の残ターン消化と行動失敗判定（敵側）
     const enemyConfusionResult = tickStatusTurnsAndCheckConfusion(e);
     if (enemyConfusionResult.dotDamage > 0) {
-        e.stats.life = Math.max(0, e.stats.life - enemyConfusionResult.dotDamage);
-        addLog(`🩸 ${e.name} は出血ダメージで ${enemyConfusionResult.dotDamage} のダメージを受けた！(現在: ${Math.floor(e.stats.life)})`);
+        const dotLogs = applyDotDamageAndBuildLogs(e.name, enemyConfusionResult, () => e.stats.life, (v) => { e.stats.life = v; });
+        dotLogs.forEach(addLog);
         updateMasmonBattleStatsUI();
         if (checkFaintAndProceed('enemy')) {
             return { actionType: 'none', battleEnded: true };
@@ -1404,7 +1420,10 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
     if (!action || action.actionType === 'none') {
         let msg = null;
         let effect = '💨 NO ACTION 💨';
-        if (action && action.reason === 'confuse') {
+        if (action && action.reason === 'sleep') {
+            msg = `💤 ${unit.name} は眠っていて、行動できなかった！`;
+            effect = '💤 ねむり... 💤';
+        } else if (action && action.reason === 'confuse') {
             msg = `❔ ${unit.name} は意味不明で、行動できなかった！`;
             effect = '❔ 意味不明... ❔';
         } else if (action && action.reason === 'paralyze') {
@@ -1523,7 +1542,7 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
     const isCertain = sk.hitRate === 100;
     let hitChance = isCertain
         ? 100
-        : Math.max(10, Math.min(99, (sk.hitRate + (useGutsMods ? mods.hitMod : 0)) + (attacker.stats.hit - defender.stats.spd) * 0.5 - getBlindHitPenalty(attacker)));
+        : Math.max(10, Math.min(99, (sk.hitRate + (useGutsMods ? mods.hitMod : 0)) + (getBuffedHitStat(attacker, attacker.stats.hit) - defender.stats.spd) * 0.5 - getBlindHitPenalty(attacker)));
     if (attacker.isShuchuActive && !isCertain) {
         hitChance = Math.min(99, hitChance * 1.5);
     }
@@ -1556,9 +1575,52 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
         return;
     }
 
+    // ダメージ無し・状態異常付与のみを狙う技（どくのこな等）：命中判定・追加効果は通常通り行うが、ダメージ演算は一切行わない
+    if (isHit && sk.noDamage) {
+        steps.push({
+            run: () => {
+                showEffect(cfg.hitEffect);
+                animateSprite(cfg.oppSpriteContainer, cfg.oppSpriteAnim);
+                addLog(side === 'player'
+                    ? `${defender.name} に技が命中した！`
+                    : `${defender.name} に技が命中した！`);
+            },
+            wait: BATTLE_STEP_DELAY.afterHitEffect
+        });
+
+        let finalGutsDown = sk.gutsDown || 0;
+        if (attacker.isGyakujoActive && finalGutsDown > 0) {
+            finalGutsDown = Math.floor(finalGutsDown * 1.2);
+        }
+        if (finalGutsDown > 0) {
+            steps.push({
+                run: () => {
+                    const mitigatedGutsDown = Math.floor(finalGutsDown * getGutsDownMitigation(defender.stats.def) * (1 - getEquipmentGutsDownCutRate(defender)));
+                    const actualGutsDown = Math.min(defender.guts, mitigatedGutsDown);
+                    defender.guts = Math.max(0, defender.guts - actualGutsDown);
+                    addLog(side === 'player'
+                        ? `さらに！相手のガッツを ${actualGutsDown} 奪い取った！${attacker.isGyakujoActive ? " (逆上×1.2)" : ""} (現在: ${Math.floor(defender.guts)})`
+                        : `さらに！ ${defender.name} のガッツが ${actualGutsDown} 奪われた！(現在: ${Math.floor(defender.guts)})`);
+                    updateMasmonBattleStatsUI();
+                    checkMasmonGyakujoTrigger(defender);
+                },
+                wait: BATTLE_STEP_DELAY.perExtraLog
+            });
+        }
+
+        const onHitMsgs = applySkillOnHitEffect(attacker, defender, sk);
+        onHitMsgs.forEach(msg => {
+            steps.push({ run: () => addLog(msg), wait: BATTLE_STEP_DELAY.perExtraLog });
+        });
+
+        attacker.isSokojikaraActive = false;
+        attacker.isShuchuActive = false;
+        return;
+    }
+
     if (isHit) {
         const isPow = sk.type === 'pow';
-        const attackerStat = getBuffedAttackStat(attacker, getWeakenedStat(attacker, isPow ? attacker.stats.pow : attacker.stats.int)) * getEquipmentLowLifeAtkMultiplier(attacker);
+        const attackerStat = getBuffedAttackStat(attacker, getWeakenedStat(attacker, isPow ? attacker.stats.pow : attacker.stats.int), isPow ? 'pow' : 'int') * getEquipmentLowLifeAtkMultiplier(attacker);
         // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（地震・テイルブレード等の防御崩し状態を反映）
         const defenderStat = getDefDownStat(defender, getBuffedDefenseStat(defender, defender.stats.def)) * 1.5;
         const defenderGutsDefenseMod = getGutsDefenseModifier(defender.guts);
