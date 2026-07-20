@@ -728,7 +728,7 @@ function renderRealtimeBattleSkills(state) {
     const me = getRealtimeActiveUnit(state, mySlot);
     const opp = getRealtimeActiveUnit(state, REALTIME_BATTLE.oppSlot);
     const isMyTurn = state.status === 'active' && !(state.pendingActions && state.pendingActions[mySlot]) && !REALTIME_BATTLE.actionInProgress;
-    const gutsModsForHit = getGutsModifiers(gutsVal);
+    const gutsModsForHit = getGutsModifiers(me.guts);
 
     me.skills.forEach(skKey => {
         const sk = getRealtimeEffectiveSkill(me, skKey);
@@ -744,7 +744,7 @@ function renderRealtimeBattleSkills(state) {
         else if (rank === 'E') rankColor = 'text-blue-500';
         else if (rank === 'F') rankColor = 'text-purple-500';
 
-        const canUse = isMyTurn && gutsVal >= sk.cost;
+        const canUse = isMyTurn && me.guts >= sk.cost;
 
         // 技強化状態の判定（マスモン登録時に保存された強化データを反映。育成中のバトルと同じ表記にする）
         const enh = me.skillEnhancements && me.skillEnhancements[skKey];
