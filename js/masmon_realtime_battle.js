@@ -50,7 +50,9 @@ const REALTIME_BATTLE = {
     cachedState: null,
     actionInProgress: false,
     seenLogKeys: {},          // 二重描画防止
-    lastCanActTurnNumber: null // 直前に「行動できる状態」として描画したturnNumber（技表示に戻す判定用）
+    lastCanActTurnNumber: null, // 直前に「行動できる状態」として描画したturnNumber（技表示に戻す判定用）
+    pendingLogHide: false,    // 新ターン突入でログを閉じたいが、直前ターンのログ表示がまだ終わっていないため保留中か
+    pendingLogHideTimer: null // pendingLogHideが立ったまま一定時間ログが届かなかった場合の保険タイマー
 };
 
 // --- 現在のバトル状態から「場に出ているユニット」を取得するヘルパー ---
@@ -344,8 +346,16 @@ function renderRealtimeBattleUI(state) {
 
     // 新しいターンになって再び行動できるようになった瞬間だけログを閉じて技表示に戻す。
     // 自分が行動送信済み（相手を待っている間）に「ログ確認」ボタンで開いた場合はここでは閉じない。
+    //
+    // ★注意：先に行動を選んだ側（＝相手の行動を待つだけだった側）は、この state 更新（新ターン開始）
+    // が Firebase から届いた時点ではまだ直前ターンの結果ログ（battleLog の各エントリ）が
+    // 届いていないことが多い（stateとlogは別経路・別タイミングで配信されるため）。
+    // ここで即座に hideBattleLog() してしまうと、直前ターンに何が起きたかを一度も見せずに
+    // 技選択画面へ戻ってしまう（＝「先に行動した方はログが見れない」バグ）。
+    // そのため、ログの順次表示（processRealtimeLogQueue）がまだ残っている／進行中の場合は
+    // 一旦保留し、その表示が完全に終わった時点で改めて閉じるようにする。
     if (canAct && REALTIME_BATTLE.lastCanActTurnNumber !== state.turnNumber) {
-        hideBattleLog();
+        requestRealtimeLogAutoHide();
     }
     if (state.status === 'active' && !myActed) {
         REALTIME_BATTLE.lastCanActTurnNumber = state.turnNumber;
@@ -622,6 +632,44 @@ function triggerRealtimeCombatEffects(entry) {
 }
 
 // -----------------------------------------------------
+// 新ターン突入により「技表示に戻したい」タイミングになったが、直前ターンの結果ログが
+// まだ届いていない／表示し終わっていない可能性があるため、即座には閉じずに保留する。
+// ・ログの順次表示（processRealtimeLogQueue）が完了した時点で改めて閉じる
+// ・万一ログが1件も届かなかった場合に備え、一定時間で強制的に閉じる保険タイマーも張る
+//   （resultLogsが空になるケース＝双方が何もできず即終了する等、稀だが起こり得るため）
+// -----------------------------------------------------
+function requestRealtimeLogAutoHide() {
+    REALTIME_BATTLE.pendingLogHide = true;
+
+    const logStillRevealing = REALTIME_BATTLE.isRevealingLog ||
+        (REALTIME_BATTLE.logRevealQueue && REALTIME_BATTLE.logRevealQueue.length > 0);
+    if (!logStillRevealing) {
+        // 現時点でキューが空でも、まさにこれからログが届く可能性があるため、
+        // 保険タイマーが既に張られていなければ張っておく（多重に張らない）
+        if (!REALTIME_BATTLE.pendingLogHideTimer) {
+            REALTIME_BATTLE.pendingLogHideTimer = setTimeout(() => {
+                REALTIME_BATTLE.pendingLogHideTimer = null;
+                if (REALTIME_BATTLE.pendingLogHide && REALTIME_BATTLE.active) {
+                    REALTIME_BATTLE.pendingLogHide = false;
+                    hideBattleLog();
+                }
+            }, 1500);
+        }
+    }
+}
+
+// pendingLogHideが立っている場合に、実際にログを閉じて技表示へ戻す（保留の解消）
+function resolveRealtimeLogAutoHideIfPending() {
+    if (!REALTIME_BATTLE.pendingLogHide) return;
+    REALTIME_BATTLE.pendingLogHide = false;
+    if (REALTIME_BATTLE.pendingLogHideTimer) {
+        clearTimeout(REALTIME_BATTLE.pendingLogHideTimer);
+        REALTIME_BATTLE.pendingLogHideTimer = null;
+    }
+    hideBattleLog();
+}
+
+// -----------------------------------------------------
 // ログの「間」を空けた順次表示（テンポ改善：CPU戦のBATTLE_STEP_DELAYと足並みを揃える）
 // Firebase側で複数件のログが一度に書き込まれても、ここで1件ずつ間隔を空けて見せることで
 // 何が起きたか視覚的に追えるようにする。
@@ -635,6 +683,9 @@ function processRealtimeLogQueue() {
     function revealNext() {
         if (!REALTIME_BATTLE.active || !REALTIME_BATTLE.logRevealQueue || REALTIME_BATTLE.logRevealQueue.length === 0) {
             REALTIME_BATTLE.isRevealingLog = false;
+            // 保留中の「新ターンに入ったのでログを閉じたい」要求があれば、
+            // ここで直前ターンのログを全て見せ終えた後に閉じる
+            resolveRealtimeLogAutoHideIfPending();
             return;
         }
         const entry = REALTIME_BATTLE.logRevealQueue.shift();
@@ -1459,6 +1510,11 @@ async function performRealtimeAction(action) {
     if (!cached || cached.status !== 'active') return;
     if (cached.pendingActions && cached.pendingActions[REALTIME_BATTLE.mySlot]) return; // 既に行動送信済み
 
+    REALTIME_BATTLE.pendingLogHide = false;
+    if (REALTIME_BATTLE.pendingLogHideTimer) {
+        clearTimeout(REALTIME_BATTLE.pendingLogHideTimer);
+        REALTIME_BATTLE.pendingLogHideTimer = null;
+    }
     beginActionLog();
 
     const mySlot = REALTIME_BATTLE.mySlot;
@@ -1754,6 +1810,11 @@ function resetRealtimeBattleClientState() {
     REALTIME_BATTLE.autoTimeoutTurnNumber = null;
     REALTIME_BATTLE.logRevealQueue = [];
     REALTIME_BATTLE.isRevealingLog = false;
+    REALTIME_BATTLE.pendingLogHide = false;
+    if (REALTIME_BATTLE.pendingLogHideTimer) {
+        clearTimeout(REALTIME_BATTLE.pendingLogHideTimer);
+        REALTIME_BATTLE.pendingLogHideTimer = null;
+    }
 
     document.getElementById('battle-endturn-controls').classList.remove('hidden');
     document.getElementById('realtime-surrender-btn').classList.add('hidden');
