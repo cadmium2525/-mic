@@ -1468,7 +1468,7 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
         } else if (sk.type === 'heal') {
             buildHealSteps(steps, side, unit);
         } else if (sk.type === 'substitute') {
-            buildSubstituteSteps(steps, side, unit);
+            buildSubstituteSteps(steps, side, unit, sk);
         }
 
         runBattleStepSequence(steps, () => {
@@ -1561,14 +1561,8 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
         const attackerStat = getBuffedAttackStat(attacker, getWeakenedStat(attacker, isPow ? attacker.stats.pow : attacker.stats.int)) * getEquipmentLowLifeAtkMultiplier(attacker);
         // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（地震・テイルブレード等の防御崩し状態を反映）
         const defenderStat = getDefDownStat(defender, getBuffedDefenseStat(defender, defender.stats.def)) * 1.5;
-        const statCap = Math.max(30, defenderStat * 2.5);
-        let effectiveAttacker = attackerStat;
-        if (attackerStat > statCap) {
-            effectiveAttacker = statCap + (attackerStat - statCap) * 0.2;
-        }
-
         const defenderGutsDefenseMod = getGutsDefenseModifier(defender.guts);
-        let rawDmg = ((effectiveAttacker * usedForce) * (useGutsMods ? mods.dmgMod : 1)) - (defenderStat * 0.35);
+        let rawDmg = ((attackerStat * usedForce) * (useGutsMods ? mods.dmgMod : 1)) - (defenderStat * 0.35);
         const floorVal = (side === 'player') ? 10 : 8;
         let damage = Math.floor(Math.max(floorVal, (rawDmg * (0.9 + Math.random() * 0.2)) * defenderGutsDefenseMod));
 
@@ -1737,7 +1731,8 @@ function buildBuffPowSteps(steps, side, unit, sk) {
 
 // --- みがわり餅：チーム（陣営）側に持続する身代わりを設置する演出ステップ ---
 // モンスターを交換しても効果が残るよう、ユニットではなく MASMON_BATTLE_STATE 側に回数を持たせる。
-function buildSubstituteSteps(steps, side, unit) {
+// sk.selfDamagePct が設定されている場合、発動時に自身も最大ライフの割合分のダメージを受ける。
+function buildSubstituteSteps(steps, side, unit, sk) {
     const cfg = SIDE_UI[side];
     const stateKey = side === 'player' ? 'playerSubstituteHits' : 'enemySubstituteHits';
     steps.push({
@@ -1748,6 +1743,14 @@ function buildSubstituteSteps(steps, side, unit) {
                 ? `🌸 ${unit.name} は新しい桜餅を設置し直した！（身代わりの残り回数が2回に更新された）`
                 : `🌸 ${unit.name} は自身と同じ大きさの桜餅を設置した！（次の攻撃を2回まで防ぐ。モンスターを交換しても場に残り続ける）`);
             showEffect(cfg.buffEffect);
+
+            const selfDamagePct = (sk && sk.selfDamagePct) || 0;
+            if (selfDamagePct > 0) {
+                const selfDamage = Math.max(1, Math.floor(unit.stats.maxLife * selfDamagePct));
+                unit.stats.life = Math.max(0, unit.stats.life - selfDamage);
+                addLog(`💥 ${unit.name} は桜餅を作り出す反動で、自身のライフが ${selfDamage} 減少した！(現在: ${Math.floor(unit.stats.life)})`);
+            }
+
             updateMasmonBattleStatsUI();
         },
         wait: BATTLE_STEP_DELAY.afterHitEffect

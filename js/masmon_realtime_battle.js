@@ -1150,10 +1150,8 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                 const attackerStat = getBuffedAttackStat(me, getWeakenedStat(me, isPow ? me.pow : me.int)) * getEquipmentLowLifeAtkMultiplier(me);
                 // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（防御崩し状態を反映）
                 const defenderStat = getDefDownStat(opp, getBuffedDefenseStat(opp, opp.def)) * 1.5;
-                const statCap = Math.max(30, defenderStat * 2.5);
-                const effectiveAttacker = attackerStat > statCap ? statCap + (attackerStat - statCap) * 0.2 : attackerStat;
                 const defenderGutsDefenseMod = getGutsDefenseModifier(opp.guts);
-                const rawDmg = (effectiveAttacker * usedForce * mods.dmgMod) - (defenderStat * 0.35);
+                const rawDmg = (attackerStat * usedForce * mods.dmgMod) - (defenderStat * 0.35);
                 let damage = Math.floor(Math.max(10, (rawDmg * (0.9 + Math.random() * 0.2)) * defenderGutsDefenseMod));
 
                 let meExtraDmgMsg = "";
@@ -1282,6 +1280,13 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             resultLogs.push(already
                 ? `🌸 ${me.name} は新しい桜餅を設置し直した！（身代わりの残り回数が2回に更新された）`
                 : `🌸 ${me.name} は自身と同じ大きさの桜餅を設置した！（次の攻撃を2回まで防ぐ。モンスターを交換しても場に残り続ける）`);
+
+            const selfDamagePct = sk.selfDamagePct || 0;
+            if (selfDamagePct > 0) {
+                const selfDamage = Math.max(1, Math.floor(me.maxLife * selfDamagePct));
+                me.life = Math.max(0, me.life - selfDamage);
+                resultLogs.push(`💥 ${me.name} は桜餅を作り出す反動で、自身のライフが ${selfDamage} 減少した！(現在: ${Math.floor(me.life)})`);
+            }
         }
     } else if (action.kind === 'defend') {
         me.isDefending = true;

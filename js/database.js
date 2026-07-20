@@ -414,7 +414,7 @@ function getStatusAilmentBadgeText(unit) {
 const SKILLS_DB = {
     // --- モッチー系統 ---
     sakuranomai: { name: '桜の舞', cost: 25, type: 'buff_pow', hitRate: 100, force: 0, gutsDown: 0, useEffect: 'self_pow_int_up20_stack3', desc: '桜の力を体内で増幅させる。自身のちからとかしこさを20%上昇させる。3回まで重複可。' },
-    migawarimochi: { name: 'みがわり餅', cost: 40, type: 'substitute', hitRate: 100, force: 0, gutsDown: 0, desc: '自身と同じ大きさの桜餅を設置し、自身への攻撃を2回防ぐ。モンスターを交換しても身代わりの桜餅は場に残り続ける。' },
+    migawarimochi: { name: 'みがわり餅', cost: 40, type: 'substitute', hitRate: 100, force: 0, gutsDown: 0, selfDamagePct: 0.2, desc: '自身と同じ大きさの桜餅を設置し、自身への攻撃を2回防ぐ。発動時、自身も最大ライフの20%のダメージを受ける。モンスターを交換しても身代わりの桜餅は場に残り続ける。' },
     gaccho: { name: 'ガッチョ', cost: 30, type: 'pow', hitRate: 80, force: 1.5, gutsDown: 12, effect: 'hitdown_stack_3', desc: '突っ張りによる連続攻撃。相手GUTS-12。さらに命中した場合、目が眩み相手の命中率が10%低下する（最大3回まで累積）' },
     sakurafubuki: { name: 'さくら吹雪', cost: 25, type: 'int', hitRate: 85, force: 1.3, gutsDown: 10, effect: 'guts_recovery_down_10', desc: '桜の花びらを舞い散らせる。相手GUTS-10。さらに命中した場合、相手の次のガッツ回復量を10減らす。' },
     cho_rollinmochi: { name: '超ローリンモッチ', cost: 40, type: 'pow', hitRate: 65, force: 2.3, gutsDown: 20, effect: 'def_down_15', desc: '大回転して激突する。相手GUTS-20。さらに命中した場合、3ターンの間相手の丈夫さを15%低下させる' },
