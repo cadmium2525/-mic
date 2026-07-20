@@ -33,6 +33,7 @@ const AudioManager = (() => {
     let currentTrackName = null;
     let bgmTimerId = null;
     let bgmToken = 0;
+    let activeBgmNodes = []; // 現在スケジュール済みのBGM用osc/gainノード（曲切り替え時に即座に停止するため）
 
     // ---------------------------------------------------
     // 設定の読み書き（LocalStorage）
@@ -128,6 +129,7 @@ const AudioManager = (() => {
         g.connect(gainNode);
         osc.start(startAt);
         osc.stop(startAt + duration + 0.03);
+        return { osc, gain: g };
     }
 
     function getNoiseBuffer() {
@@ -357,19 +359,31 @@ const AudioManager = (() => {
         const beatSec = 60 / track.tempo;
         const startAt = 0.06; // 発音開始までの僅かなマージン（when は "今から何秒後" の相対値）
 
+        // このループ呼び出しで新たにスケジュールするノードだけを追跡する
+        // （前回呼び出し分のノードは通常通り鳴り終わっているはずだが、念のため配列を差し替える）
+        const scheduledNodes = [];
+
         let t = startAt;
         track.lead.forEach(([note, d]) => {
             const freq = noteFreq(note);
-            if (freq) tone({ freq, duration: d * beatSec * 0.92, type: track.leadType, when: t, volume: 0.55, gainNode: masterBgmGain });
+            if (freq) {
+                const node = tone({ freq, duration: d * beatSec * 0.92, type: track.leadType, when: t, volume: 0.55, gainNode: masterBgmGain });
+                if (node) scheduledNodes.push(node);
+            }
             t += d * beatSec;
         });
 
         t = startAt;
         (track.bass || []).forEach(([note, d]) => {
             const freq = noteFreq(note);
-            if (freq) tone({ freq, duration: d * beatSec * 0.92, type: track.bassType, when: t, volume: 0.4, gainNode: masterBgmGain });
+            if (freq) {
+                const node = tone({ freq, duration: d * beatSec * 0.92, type: track.bassType, when: t, volume: 0.4, gainNode: masterBgmGain });
+                if (node) scheduledNodes.push(node);
+            }
             t += d * beatSec;
         });
+
+        activeBgmNodes = scheduledNodes;
 
         const loopMs = totalBeats(track.lead) * beatSec * 1000;
         bgmTimerId = setTimeout(() => {
@@ -378,12 +392,40 @@ const AudioManager = (() => {
         }, Math.max(200, loopMs - 80));
     }
 
+    // 現在鳴っている・鳴る予定のBGM用ノードを即座に無音化して停止する。
+    // tone() は1ループ分（曲によっては十数秒）の音符をまとめて未来の時刻に
+    // スケジュールしてしまうため、setTimeout を止めるだけでは既にスケジュール
+    // 済みの音がそのまま最後まで鳴り続けてしまい、場面転換時に前のBGMと
+    // 新しいBGMが二重に鳴る不具合の原因になっていた。
+    // ここで各ノードを強制的にごく短いフェードアウトの後に停止させることで、
+    // 曲の切り替え時に即座に前の曲を止められるようにする。
+    function stopAllBgmNodes() {
+        if (!activeBgmNodes.length) return;
+        const nodes = activeBgmNodes;
+        activeBgmNodes = [];
+        const c = ctx;
+        const now = c ? c.currentTime : 0;
+        nodes.forEach(({ osc, gain }) => {
+            try {
+                if (c && gain) {
+                    gain.gain.cancelScheduledValues(now);
+                    gain.gain.setValueAtTime(gain.gain.value, now);
+                    gain.gain.linearRampToValueAtTime(0.0001, now + 0.03);
+                }
+            } catch (e) { /* 無視 */ }
+            try {
+                osc.stop(c ? now + 0.04 : 0);
+            } catch (e) { /* 既に停止済み等は無視 */ }
+        });
+    }
+
     function stopBgmScheduling() {
         bgmToken++;
         if (bgmTimerId) {
             clearTimeout(bgmTimerId);
             bgmTimerId = null;
         }
+        stopAllBgmNodes();
     }
 
     // trackName を「現在流すべき曲」として記憶する。

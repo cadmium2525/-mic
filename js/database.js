@@ -399,6 +399,7 @@ function clearBattleStatModifiersOnSwitch(unit) {
     unit.hitDownStacks = 0;
     unit.permaHitDownPct = 0;
     unit.permaDefDownPct = 0;
+    unit.defDown15Stacks = 0;
     unit.stunnerDebuffApplied = false;
     unit.atkUpStacks = 0;
     unit.defUpStacks = 0;
@@ -898,10 +899,15 @@ function applySkillOnHitEffect(caster, target, sk) {
         logs.push(`💨 ${target.name} は強烈な臭気で目が眩んだ！（2ターンの間、命中率が低下する）`);
     } else if (sk.effect === 'def_down_15') {
         // 以前は「命中すれば必ず3ターンの間-15%」だったが、
-        // 「命中時30%の確率で発動・発動すれば交代するまで持続」という仕様に変更
+        // 「命中時30%の確率で発動・発動すれば交代するまで持続」という仕様に変更。
+        // さらに、1体につき3回まで重複可能（1回につき丈夫さ-15%、最大45%まで累積）。
         if (Math.random() < 0.3) {
-            target.permaDefDownPct = Math.max(target.permaDefDownPct || 0, 15);
-            logs.push(`💥 ${target.name} の防御が崩れた！（相手が交代するまでの間、丈夫さが15%低下する）`);
+            if ((target.defDown15Stacks || 0) >= 3) {
+                logs.push(`（${target.name} はすでに防御崩しの効果が上限（3重複）に達しているため、追加の効果は発生しなかった）`);
+            } else {
+                target.defDown15Stacks = Math.min(3, (target.defDown15Stacks || 0) + 1);
+                logs.push(`💥 ${target.name} の防御が崩れた！（累積${target.defDown15Stacks}/3・1回につき丈夫さ15%低下、相手が交代するまでの間持続）`);
+            }
         } else {
             logs.push(`（${target.name} は堪えて防御崩しを免れた）`);
         }
@@ -1181,6 +1187,10 @@ function getDefDownStat(unit, defVal) {
     }
     if (unit.permaDefDownPct) {
         val = val * (1 - unit.permaDefDownPct / 100);
+    }
+    // def_down_15：命中時30%の確率で発動する防御崩し。1回につき丈夫さ15%低下、3回まで重複可（交代するまで持続）
+    if (unit.defDown15Stacks > 0) {
+        val = val * (1 - unit.defDown15Stacks * 0.15);
     }
     // 瞑想：自身の丈夫さが1回につき10%低下する（3回まで重複可・交代するまで持続）
     if (unit.meisoStacks > 0) {
