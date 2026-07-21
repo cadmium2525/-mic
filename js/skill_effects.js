@@ -64,6 +64,10 @@ const SKILL_EFFECT_TYPE = {
 // particles: 使用する絵文字（複数指定時は粒ごとに順番に使う）
 // motion   : 動きのパターン（下のspawnParticleEffect内で分岐）
 // count    : 粒の数 / size: フォントサイズ(px) / duration: 1粒あたりの再生時間(ms)
+// 攻撃エフェクト（パーティクル）の再生速度係数。1.0が元の速さ、大きいほどゆっくり再生される。
+// 「もう少しゆっくり」の要望に合わせて少し引き伸ばしている。
+const EFFECT_SPEED_MULTIPLIER = 1.35;
+
 const SKILL_EFFECT_CONFIGS = {
     fire_small:    { particles: ['🔥'],          motion: 'projectile',     count: 1, size: 22, duration: 500 },
     fire_large:    { particles: ['🔥'],          motion: 'projectile',     count: 3, size: 26, duration: 600 },
@@ -130,7 +134,9 @@ function spawnSkillParticleEffect(fromEl, toEl, config) {
     const dy = toY - fromY;
 
     const count = config.count || 1;
-    const baseDuration = config.duration || 500;
+    // EFFECT_SPEED_MULTIPLIER: 攻撃エフェクト全体の再生速度を調整する係数。
+    // 1.0が元の速さ。大きくするほどゆっくりになる。
+    const baseDuration = (config.duration || 500) * EFFECT_SPEED_MULTIPLIER;
     const size = config.size || 22;
 
     for (let i = 0; i < count; i++) {
@@ -139,7 +145,7 @@ function spawnSkillParticleEffect(fromEl, toEl, config) {
         particle.style.cssText = `position:fixed; font-size:${size}px; line-height:1; pointer-events:none; z-index:9999; will-change:transform,opacity; text-shadow:0 0 6px rgba(0,0,0,0.5);`;
         document.body.appendChild(particle);
 
-        const delay = i * 55;
+        const delay = i * 55 * EFFECT_SPEED_MULTIPLIER;
         const jitterX = (Math.random() - 0.5) * 26;
         const jitterY = (Math.random() - 0.5) * 26;
         let keyframes;

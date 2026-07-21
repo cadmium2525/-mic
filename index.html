@@ -695,12 +695,78 @@
                 </button>
             </div>
 
+            <!-- ==================== SCREEN 17: 開発者用デバッグモード ====================
+                 通常のプレイ導線からは一切リンクされていない隠し画面。
+                 画面最下部のフッター文言（#secret-debug-trigger）を素早く7回タップすると開く。 -->
+            <div id="screen-debug" class="screen flex-col h-full bg-[#1a120b]">
+                <div class="p-3 border-b border-amber-950 flex items-center justify-between bg-[#24150e] flex-shrink-0">
+                    <button onclick="returnToTitleFromDebug()" class="text-amber-400 text-[10px] font-bold flex items-center space-x-1">
+                        <i class="fa-solid fa-arrow-left"></i><span>タイトルへ</span>
+                    </button>
+                    <h2 class="text-sm font-black text-amber-300 pixel-font">🛠️ DEBUGモード</h2>
+                    <div class="w-14"></div>
+                </div>
+
+                <div class="flex-1 overflow-y-auto p-3 space-y-4">
+
+                    <!-- ① 自分側テストモンスター編成 -->
+                    <div class="bg-[#2a1b15] border border-amber-900/50 rounded-xl p-3 space-y-2">
+                        <div class="text-xs font-bold text-amber-300">① 自分側テストモンスター（最大3体）</div>
+                        <select id="debug-player-species" onchange="onDebugSpeciesChange('player')"
+                            class="w-full bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
+                        <div class="text-[9px] text-gray-500">技を最大4つまでチェック（未選択のまま追加すると既定4技を自動採用）</div>
+                        <div id="debug-player-skills" class="flex flex-wrap gap-1"></div>
+                        <button onclick="addDebugMonsterToTeam('player')"
+                            class="w-full py-1.5 bg-amber-700 hover:bg-amber-600 text-white text-xs font-bold rounded-lg active:scale-95 transition-all">＋ 自分パーティに追加</button>
+                        <div id="debug-player-team-list" class="space-y-1 pt-1"></div>
+                    </div>
+
+                    <!-- ② 対戦相手編成 -->
+                    <div class="bg-[#2a1b15] border border-amber-900/50 rounded-xl p-3 space-y-2">
+                        <div class="text-xs font-bold text-amber-300">② 対戦相手（最大3体）</div>
+                        <div class="flex gap-1.5">
+                            <button onclick="setDebugOpponentToBoss(3)"
+                                class="flex-1 py-1.5 bg-red-900 hover:bg-red-800 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">🗿 コルトのゴビ（Set3ボス）</button>
+                            <button onclick="setDebugOpponentToBoss(7)"
+                                class="flex-1 py-1.5 bg-purple-900 hover:bg-purple-800 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">👿 コルトのモスト（Set7ボス）</button>
+                        </div>
+                        <div class="text-[9px] text-gray-500 pt-1">↑ワンタップで帯同2体込みの本番同様の編成をセット。または↓から自由に相手を指定：</div>
+                        <select id="debug-opponent-species" onchange="onDebugSpeciesChange('opponent')"
+                            class="w-full bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
+                        <div id="debug-opponent-skills" class="flex flex-wrap gap-1"></div>
+                        <button onclick="addDebugMonsterToTeam('opponent')"
+                            class="w-full py-1.5 bg-sky-800 hover:bg-sky-700 text-white text-xs font-bold rounded-lg active:scale-95 transition-all">＋ 相手パーティに追加</button>
+                        <div id="debug-opponent-team-list" class="space-y-1 pt-1"></div>
+                    </div>
+
+                    <button onclick="launchDebugBattle()"
+                        class="w-full py-3 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-900 font-black rounded-xl text-sm shadow-lg active:scale-95 transition-all pixel-font border-b-4 border-amber-800">⚔️ このパーティでバトル開始</button>
+
+                    <!-- ③ BGM試聴 -->
+                    <div class="bg-[#2a1b15] border border-amber-900/50 rounded-xl p-3 space-y-2">
+                        <div class="text-xs font-bold text-amber-300">③ BGM試聴</div>
+                        <div class="text-[9px] text-gray-500">音が出ない場合は右上のサウンド設定アイコンでBGM音量を確認してください。</div>
+                        <div class="grid grid-cols-2 gap-1.5">
+                            <button onclick="AudioManager.playBGM('title')" class="py-1.5 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[10px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all">🏠 タイトル</button>
+                            <button onclick="AudioManager.playBGM('adventure')" class="py-1.5 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[10px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all">🗺️ 道中</button>
+                            <button onclick="AudioManager.playBGM('battle')" class="py-1.5 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[10px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all">⚔️ 通常バトル</button>
+                            <button onclick="AudioManager.playBGM('boss')" class="py-1.5 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[10px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all">🗿 ボス戦</button>
+                            <button onclick="AudioManager.playBGM('finalboss')" class="py-1.5 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[10px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all">👿 最終ボス戦</button>
+                            <button onclick="AudioManager.playBGM('victory')" class="py-1.5 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[10px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all">🏆 勝利</button>
+                            <button onclick="AudioManager.playBGM('defeat')" class="py-1.5 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[10px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all">💀 敗北</button>
+                            <button onclick="AudioManager.stopBgm()" class="py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">■ 停止</button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
         </div>
 
         <!-- プレイの邪魔にならないよう、最下部にあえて確保した余白用のコンテナ -->
         <div class="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-[#120b07] to-transparent pointer-events-none z-10"></div>
         <div class="absolute bottom-0 left-0 right-0 h-6 bg-[#120b07] z-10 flex items-center justify-center">
-            <span class="text-[8px] text-amber-900/60 font-semibold uppercase tracking-widest">Monster Farm Breeder Guts Battle</span>
+            <span id="secret-debug-trigger" class="text-[8px] text-amber-900/60 font-semibold uppercase tracking-widest select-none">Monster Farm Breeder Guts Battle</span>
         </div>
 
     </div>
@@ -866,6 +932,7 @@
     <script src="js/monster_dex.js"></script>
     <script src="js/equipment_dex.js"></script>
     <script src="js/skill_effects.js"></script>
+    <script src="js/debug_mode.js"></script>
     <!-- BGM/SE 管理（他スクリプトの関数をラップするため必ず最後に読み込む） -->
     <script src="js/audio.js"></script>
 

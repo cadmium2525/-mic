@@ -753,6 +753,15 @@ const AudioManager = (() => {
     loadSettings();
     installUnlockListener();
 
+    function stopBgm() {
+        currentTrackName = null;
+        stopBgmScheduling();
+    }
+
+    function getCurrentTrack() {
+        return currentTrackName;
+    }
+
     return {
         VOLUME_MIN,
         VOLUME_MAX,
@@ -765,6 +774,8 @@ const AudioManager = (() => {
         setSeVolume,
         getSettings,
         resume,
+        stopBgm,
+        getCurrentTrack,
     };
 })();
 
