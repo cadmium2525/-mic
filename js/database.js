@@ -409,6 +409,7 @@ function clearBattleStatModifiersOnSwitch(unit) {
     unit.sakuraBuffStacks = 0;
     unit.meisoStacks = 0;
     unit.mysticGuardStacks = 0;
+    unit.youkoInoriStacks = 0;
     unit.gutsRecoveryDownNext = 0;
     unit.critBonusTurns = 0;
     unit.forceBoost = 0;
@@ -441,6 +442,7 @@ function getStatusAilmentBadgeText(unit) {
     if (unit.dotTurns > 0) text += '🩸';
     if (unit.isBurned) text += '🔥';
     if (unit.sleepTurns > 0) text += '💤';
+    if (unit.yawnTurns > 0) text += '🥱';
     if (unit.isPoisoned) text += '☠️';
     return text;
 }
@@ -507,6 +509,8 @@ const SKILLS_DB = {
     yuuwaku: { name: 'ゆうわく', cost: 25, type: 'int', hitRate: 85, force: 0.85, gutsDown: 40, effect: 'confuse_30', desc: '妖しい魅力で相手の闘志を大きく削ぐ。相手GUTS-40。さらに命中した場合、30%の確率で相手を混乱状態にする（混乱中は毎ターン40%の確率で意味不明になり行動できなくなり、30%の確率で混乱が解除される）' },
     kokonoe_shingan: { name: '九重神眼', cost: 40, type: 'int', hitRate: 75, force: 1.8, gutsDown: 15, effect: 'shield_self_20pct', desc: '九尾の瞳で相手を見据えて攻撃する。相手GUTS-15。さらに命中した場合、自身の最大ライフの20%に相当するシールドを展開する' },
     tenga_tensho: { name: '天河天翔', cost: 55, type: 'int', hitRate: 60, force: 2.6, gutsDown: 20, effect: 'perma_dmg_up_20', desc: '天空を駆け巡る霊力の奔流を叩き込む最大の切り札。相手GUTS-20。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
+    akubi: { name: 'あくび', cost: 25, type: 'int', hitRate: 90, force: 0, gutsDown: 20, noDamage: true, effect: 'yawn_2', desc: '大きなあくびをして眠気を誘う。ダメージは無い。相手GUTS-20。さらに技命中時、2ターン後に相手がねむり状態になる（2ターンの間、眠り続けて行動不能になる）。' },
+    youko_no_inori: { name: '妖狐の祈り', cost: 30, type: 'buff_pow', hitRate: 100, force: 0, gutsDown: 0, useEffect: 'self_int_up50_stack3', desc: '妖狐の力を借りて自らに祈りを捧げる。ダメージは無く、相手のガッツも減少させない。自身のかしこさを50%上昇させる。3回まで重複可。' },
 
     // --- 敵・ボス共用 ---
     boss_bite: { name: 'かみつき', cost: 20, type: 'pow', hitRate: 75, force: 1.2, gutsDown: 10, effect: null, desc: '鋭い牙でガッツを奪う攻撃' },
@@ -987,6 +991,14 @@ function applySkillOnHitEffect(caster, target, sk) {
         // ねむり：2ターンの間、確率判定なしで必ず行動不能になる
         target.sleepTurns = 2;
         logs.push(`💤 ${target.name} はねむり状態になった！（2ターンの間、眠り続けて行動不能になる）`);
+    } else if (sk.effect === 'yawn_2') {
+        // あくび：命中した時点では何も起こらず、対象が自身の行動ターンを2回消化した後に自動でねむり状態になる
+        if (target.sleepTurns > 0 || target.yawnTurns > 0) {
+            logs.push(`（${target.name} はすでに眠気の予兆があるため、追加の効果は発生しなかった）`);
+        } else {
+            target.yawnTurns = 2;
+            logs.push(`🥱 ${target.name} は大きなあくびを見せられ、眠気を誘われた！（2ターン後にねむり状態になる）`);
+        }
     } else if (sk.effect === 'poison') {
         // 猛毒：バトル終了まで治らず、ターン経過ごとに受けるダメージが最大ライフの1/16, 2/16…と増えていく（最大15/16）。
         // 交代するとダメージ量は1/16からやり直しになる（clearBattleStatModifiersOnSwitchで処理）。
@@ -1104,6 +1116,10 @@ function applySkillOnUseEffect(caster, sk) {
             caster.sleepTurns = 2;
             logs.push(`💤 ${caster.name} は集中しすぎて、そのままねむり状態になってしまった！（2ターンの間、行動不能になる）`);
         }
+    } else if (sk.useEffect === 'self_int_up50_stack3') {
+        // 妖狐の祈り：技を繰り出すたびに自身のかしこさが50%上昇する（3回まで重複可）
+        caster.youkoInoriStacks = Math.min(3, (caster.youkoInoriStacks || 0) + 1);
+        logs.push(`🦊 ${caster.name} のかしこさが上昇した！（累積 ${caster.youkoInoriStacks}/3 ・ 1回につき50%アップ）`);
     } else if (sk.useEffect === 'nendo_gatame') {
         // ねんどがため：技を繰り出すたびに自身の丈夫さが80%上昇し、回避が10%低下する（3回まで重複可）
         caster.nendoGatameStacks = Math.min(3, (caster.nendoGatameStacks || 0) + 1);
@@ -1168,6 +1184,14 @@ function tickStatusTurnsAndCheckConfusion(unit) {
     // ねむり・混乱（意味不明）・マヒ・怯み、いずれも行動失敗の原因になり得るが、
     // 表示するメッセージは実際に発生した原因を優先度順（ねむり→混乱→マヒ→怯み）で1つだけ選ぶ。
     let failReason = null;
+
+    // あくび：命中してから自身の行動ターンを2回消化すると、自動的にねむり状態になる
+    if (unit.yawnTurns > 0) {
+        unit.yawnTurns--;
+        if (unit.yawnTurns === 0 && !(unit.sleepTurns > 0)) {
+            unit.sleepTurns = 2;
+        }
+    }
 
     // ねむり：2ターンの間、確率判定なしで必ず行動不能になる
     if (unit.sleepTurns > 0) {
@@ -1291,6 +1315,7 @@ function getBuffedAttackStat(unit, statVal, statKind) {
     if (unit.atkUpStacks > 0) mult += unit.atkUpStacks * 0.1;
     if (unit.sakuraBuffStacks > 0) mult += unit.sakuraBuffStacks * 0.5;
     if (statKind === 'int' && unit.meisoStacks > 0) mult += unit.meisoStacks * 0.3;
+    if (statKind === 'int' && unit.youkoInoriStacks > 0) mult += unit.youkoInoriStacks * 0.5;
     if (mult === 1) return statVal;
     return Math.floor(statVal * mult);
 }
@@ -1608,7 +1633,7 @@ const KIN_NEJIKI_SKILL_POOL = {
     dino:      ['shippo', 'kamitsuki_dino', 'sunakake', 'kamitsukinage', 'honoo_taiatari', 'hizageri', 'kurohizacombo', 'stealth_rock'],
     monolith:  ['monotaore', 'warawara', 'sakebigoe', 'cho_monotaore', 'aurora_gate', 'sanren_attack', 'trio_beam_z', 'shinpi_no_mamori', 'choonpa'],
     plant:     ['renkon', 'tane_gun', 'kafun', 'combination', 'tane_machinegun', 'flower_beam', 'face_drill', 'drain', 'doku_no_kona'],
-    kyubi:     ['hikkaki', 'kagerou', 'kitsunebi', 'cho_kitsunebi', 'yuuwaku', 'kokonoe_shingan', 'tenga_tensho'],
+    kyubi:     ['hikkaki', 'kagerou', 'kitsunebi', 'cho_kitsunebi', 'yuuwaku', 'kokonoe_shingan', 'tenga_tensho', 'akubi', 'youko_no_inori'],
     ham:       ['one_two_punch', 'sobat', 'atamatsuki', 'seoinage', 'cho_atamatsuki', 'machinegun_punch', 'onara', 'cho_ogoe'],
     arrowhead: ['tail_attack', 'zoom_punch', 'rocket_punch', 'needle_turn', 'w_needle_turn', 'tornado_attack', 'tail_blade', 'jiraibari'],
     nendoro:   ['zoom_punch_nendoro', 'mach_punch', 'meido_no_miyage', 'ganduke', 'body_press_nendoro', 'nagekiss_nendoro', 'nendo_gatame', 'youkaieki'],

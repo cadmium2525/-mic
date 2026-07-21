@@ -1465,6 +1465,14 @@ function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs) {
 
     if (unit.life <= 0) return;
 
+    // あくび：命中してから自身の行動ターンを2回消化すると、自動的にねむり状態になる
+    if (unit.yawnTurns > 0) {
+        unit.yawnTurns--;
+        if (unit.yawnTurns === 0 && !(unit.sleepTurns > 0)) {
+            unit.sleepTurns = 2;
+        }
+    }
+
     // ねむり：2ターンの間、確率判定なしで必ず行動不能になる
     if (unit.sleepTurns > 0) {
         unit.sleepTurns--;
