@@ -470,6 +470,12 @@ function maybeExecuteKinNejikiEnemySwitch() {
     renderMonsterVisual(document.getElementById('battle-enemy-icon'), newUnit.visualName || newUnit.monsterBaseName, newUnit.emoji, newUnit.isAwakened);
     document.getElementById('battle-enemy-type').textContent = newUnit.name;
     renderAuraBadge('enemy-aura-badge', newUnit.aura, newUnit.monsterBaseName);
+
+    // ステルスロックが設置されている場合、場に出た瞬間にダメージを受ける
+    // （このタイミングでの戦闘不能はターン開始処理側の生死チェックに委ねる）
+    if (typeof applyStealthRockDamageOnSwitchIn === 'function') {
+        applyStealthRockDamageOnSwitchIn('enemy', newUnit);
+    }
     return true;
 }
 
@@ -670,6 +676,11 @@ function launchKinNejikiBattleEngine(opponentTeamRaw, floorText, isNejiki, aiLev
     MASMON_BATTLE_STATE.playerItemsInitial = { ...MASMON_BATTLE_STATE.playerItems };
     MASMON_BATTLE_STATE.enemyItems = { mango: 0, kuri: 0, toro: 0 };
     MASMON_BATTLE_STATE.opponentOwnerName = (opponentTeamRaw[0] || {}).ownerName || 'レンタル使い';
+    // 陣営（フィールド）単位で持続する効果は、新しいバトルの開始時に必ずリセットする
+    MASMON_BATTLE_STATE.playerSubstituteHits = 0;
+    MASMON_BATTLE_STATE.enemySubstituteHits = 0;
+    MASMON_BATTLE_STATE.playerFieldStealthRock = false;
+    MASMON_BATTLE_STATE.enemyFieldStealthRock = false;
     MASMON_BATTLE_STATE.kinNejiki = {
         inRun: true,
         set: KIN_NEJIKI_STATE.set,

@@ -54,6 +54,11 @@ const MASMON_BATTLE_STATE = {
     // （モンスターを交換しても消えない）。0なら身代わり無し。
     playerSubstituteHits: 0,
     enemySubstituteHits: 0,
+    // 「ステルスロック」で設置された岩。ユニット単位ではなくチーム（陣営）のフィールド単位で持続する
+    // （モンスターを交換しても消えない＝永続）。true の間、そのフィールド側にモンスターが
+    // 交代で場に出るたびに、そのモンスターは最大ライフの1/8のダメージを受ける。
+    playerFieldStealthRock: false, // 自分のフィールドに設置されている（＝相手が設置した）
+    enemyFieldStealthRock: false,  // 相手のフィールドに設置されている（＝自分が設置した）
     playerItemsInitial: { mango: 0, kuri: 0, toro: 0 }, // 持ち込み時点の初期所持数（UI表示用）
     // 「ガッツファクトリー」レンタルバトル進行中のみ使用する追加情報（js/kinnejiki.js が読み書きする）
     // { inRun: true, set: 1〜7, battleIndex: 1〜7, isNejiki: bool, aiLevel: 1〜4 }
@@ -135,8 +140,36 @@ function convertMasmonToBattleUnit(masmonData, equippedItem) {
             moveSpeedRank: getMoveSpeedRankForMasmon(masmonData)
         },
         skills: [...(masmonData.skills || [])],
-        skillEnhancements: JSON.parse(JSON.stringify(masmonData.skillEnhancements || {})) // 技の強化データ { skKey: { forceBonus, hitBonus, level } }
+        skillEnhancements: JSON.parse(JSON.stringify(masmonData.skillEnhancements || {})), // 技の強化データ { skKey: { forceBonus, hitBonus, level } }
+        // 技ごとの使用回数（バトル中通算。交代しても引き継がれる＝ユニット単位）。
+        // SKILLS_DB側で maxUses が定義されている技（例：八重ざくら）のみ、この回数と比較して使用制限をかける。
+        skillUseCounts: {}
     };
+}
+
+// --- 指定した技の「1バトルあたりの最大使用回数」を取得する（未設定なら null＝無制限） ---
+function getSkillMaxUses(skKey) {
+    const sk = SKILLS_DB[skKey];
+    return (sk && sk.maxUses) || null;
+}
+
+// --- 指定ユニットが指定の技をこれまで何回使用したかを取得する ---
+function getSkillUseCount(unit, skKey) {
+    return (unit && unit.skillUseCounts && unit.skillUseCounts[skKey]) || 0;
+}
+
+// --- 指定ユニットが指定の技をもう使用できない（上限に達している）かどうかを判定する ---
+function isSkillUseLimitReached(unit, skKey) {
+    const maxUses = getSkillMaxUses(skKey);
+    if (!maxUses) return false;
+    return getSkillUseCount(unit, skKey) >= maxUses;
+}
+
+// --- 技の使用回数を1回分カウントアップする（実際に技を繰り出した時点で呼ぶ） ---
+function incrementSkillUseCount(unit, skKey) {
+    if (!unit) return;
+    if (!unit.skillUseCounts) unit.skillUseCounts = {};
+    unit.skillUseCounts[skKey] = (unit.skillUseCounts[skKey] || 0) + 1;
 }
 
 // --- 技の強化データを反映した実効ステータス（force/hitRate）を取得 ---
@@ -382,6 +415,12 @@ function applyPlayerSwitch(targetIdx) {
 
     renderTeamIcons();
     updateMasmonBattleStatsUI();
+
+    // ステルスロックが設置されている場合、場に出た瞬間にダメージを受ける。
+    // これによって戦闘不能になった場合は、続けて交代処理を行う（team全滅ならバトル終了）。
+    if (applyStealthRockDamageOnSwitchIn('player', target)) {
+        checkFaintAndProceed('player');
+    }
 }
 
 // --- 相手側のマスモンを交代する（UI更新込み） ---
@@ -406,6 +445,11 @@ function applyEnemySwitch(targetIdx) {
 
     renderTeamIcons();
     updateMasmonBattleStatsUI();
+
+    // ステルスロックが設置されている場合、場に出た瞬間にダメージを受ける。
+    if (applyStealthRockDamageOnSwitchIn('enemy', target)) {
+        checkFaintAndProceed('enemy');
+    }
 }
 
 // --- 交代候補ボタン用：オーラ・モン類バッジのHTMLを生成する ---
@@ -863,6 +907,7 @@ function renderMasmonBattleSkills() {
         if (sk.type.startsWith('buff')) typeIcon = '⭐';
         if (sk.type === 'heal') typeIcon = '💖';
         if (sk.type === 'substitute') typeIcon = '🌸';
+        if (sk.type === 'hazard') typeIcon = '🪨';
 
         const enhBadge = isEnhanced
             ? `<span class="text-[8px] bg-purple-900 text-purple-200 px-1 py-0.5 rounded font-bold ml-1">⚔️Lv.${enh.level}</span>`
@@ -879,13 +924,27 @@ function renderMasmonBattleSkills() {
             hitRateDisplay = `<span class="${style.textIntensity} text-[9px] font-bold font-mono hit-rate-text">命中:${Math.round(actualHitForIcon)}%</span>`;
         }
 
+        // 使用回数に上限がある技（例：八重ざくら）は、選択画面の時点で使用回数/上限と、
+        // 上限に達している場合はボタン自体を押せないようにして分かりやすく表示する
+        const maxUses = getSkillMaxUses(skKey);
+        const useCount = getSkillUseCount(p, skKey);
+        const useLimitReached = maxUses ? useCount >= maxUses : false;
+        const useCountBadge = maxUses
+            ? `<span class="text-[8px] ${useLimitReached ? 'bg-red-900 text-red-200' : 'bg-stone-800 text-stone-300'} px-1 py-0.5 rounded font-bold ml-1">使用:${useCount}/${maxUses}</span>`
+            : '';
+
+        if (useLimitReached) {
+            btn.disabled = true;
+            btn.classList.add('opacity-40', 'grayscale', 'cursor-not-allowed');
+        }
+
         btn.innerHTML = `
             <div class="flex justify-between items-center w-full">
-                <span class="font-bold text-xs">${sk.name} ${typeIcon}${enhBadge} <span class="ml-1 text-[10px] ${rankColor} bg-[#1a120b]/10 px-1 py-0.2 rounded">ランク:${rank}</span></span>
+                <span class="font-bold text-xs">${sk.name} ${typeIcon}${enhBadge}${useCountBadge} <span class="ml-1 text-[10px] ${rankColor} bg-[#1a120b]/10 px-1 py-0.2 rounded">ランク:${rank}</span></span>
                 <span class="text-[9px] font-bold">G:${sk.cost}</span>
             </div>
             <div class="flex justify-between items-center mt-0.5 w-full">
-                <div class="text-[8px] opacity-85 line-clamp-1 flex-1">GUTS-DOWN:${sk.gutsDown || 0}</div>
+                <div class="text-[8px] opacity-85 line-clamp-1 flex-1">GUTS-DOWN:${sk.gutsDown || 0}${useLimitReached ? '　<span class="text-red-400 font-bold">使用回数の上限に到達</span>' : ''}</div>
                 <div class="ml-1 shrink-0">${hitRateDisplay}</div>
             </div>
         `;
@@ -990,6 +1049,14 @@ function executeMasmonSwitch(targetIdx) {
     updateMasmonBattleStatsUI();
     renderMasmonBattleSkills();
 
+    // ステルスロックが設置されている場合、場に出た瞬間にダメージを受ける。
+    // これで戦闘不能になった場合は交代処理を行い、バトルが終わっていればここで打ち切る。
+    if (applyStealthRockDamageOnSwitchIn('player', target)) {
+        const battleEnded = checkFaintAndProceed('player');
+        if (battleEnded || MASMON_BATTLE_STATE.isBattleEnd) return;
+        renderMasmonBattleSkills();
+    }
+
     // 交代は行動順に関わらず必ず先に処理される（既存仕様のまま）。
     // 交代自体はここで既に完了しているので、行動順エンジンには「済み」の行動として渡す。
     submitMasmonPlayerAction({ actionType: 'switch', alreadyResolved: true });
@@ -1013,10 +1080,13 @@ function openMasmonSkillModal(skKey) {
     document.getElementById('modal-skill-cost').textContent = sk.cost;
     document.getElementById('modal-skill-rank').textContent = getDamageRank(sk.force, sk.type);
     document.getElementById('modal-skill-gutsdown').textContent = sk.gutsDown || 0;
-    document.getElementById('modal-skill-desc').textContent = sk.desc || "説明はありません。";
+    const maxUses = getSkillMaxUses(skKey);
+    const useCount = getSkillUseCount(p, skKey);
+    const useLimitNote = maxUses ? `\n（使用回数：${useCount}/${maxUses}回${useCount >= maxUses ? '　※上限に到達済み' : ''}）` : '';
+    document.getElementById('modal-skill-desc').textContent = (sk.desc || "説明はありません。") + useLimitNote;
     document.getElementById('modal-current-guts').textContent = currentGuts;
 
-    if (sk.type === 'heal' || sk.type.startsWith('buff') || sk.type === 'substitute') {
+    if (sk.type === 'heal' || sk.type.startsWith('buff') || sk.type === 'substitute' || sk.type === 'hazard') {
         document.getElementById('modal-guts-dmg-scale').textContent = "なし (補助)";
         document.getElementById('modal-guts-hit-rate').textContent = "必中";
     } else {
@@ -1039,6 +1109,7 @@ function openMasmonSkillModal(skKey) {
     if (sk.type === 'heal') typeStr = "回復技";
     if (sk.type.startsWith('buff')) typeStr = "補助技";
     if (sk.type === 'substitute') typeStr = "身代わり技";
+    if (sk.type === 'hazard') typeStr = "設置技";
     document.getElementById('modal-skill-type').textContent = typeStr;
 
     document.getElementById('skill-modal').classList.remove('hidden');
@@ -1164,6 +1235,7 @@ function executeMasmonPlayerSkill(skKey) {
     const p = getPlayerActive();
     const sk = getMasmonEffectiveSkill(p, skKey);
     if (p.guts < sk.cost) return; // ターン開始時点のガッツを基準に使用可否を判定する
+    if (isSkillUseLimitReached(p, skKey)) return; // 使用回数の上限に達している技は選択させない
 
     beginActionLog();
     submitMasmonPlayerAction({ actionType: 'skill', skKey: skKey });
@@ -1296,7 +1368,7 @@ function decideMasmonEnemyAction() {
     const p = getPlayerActive();
     const affordableSkills = e.skills
         .map(skKey => ({ key: skKey, info: getMasmonEffectiveSkill(e, skKey) }))
-        .filter(skObj => skObj.info && e.guts >= skObj.info.cost);
+        .filter(skObj => skObj.info && e.guts >= skObj.info.cost && !isSkillUseLimitReached(e, skObj.key));
 
     if (affordableSkills.length === 0) {
         return { actionType: 'none', reason: 'noguts' };
@@ -1474,7 +1546,16 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
             return;
         }
 
+        // 使用回数に上限がある技（例：八重ざくら）は、実行直前に改めて上限到達をチェックする
+        if (isSkillUseLimitReached(unit, action.skKey)) {
+            addLog(`💦 ${unit.name} は【${sk.name}】をこれ以上使えない！（使用回数の上限に達している）`);
+            showEffect('💨 NO ACTION 💨');
+            setTimeout(onComplete, BATTLE_STEP_DELAY.afterHitEffect);
+            return;
+        }
+
         unit.guts -= sk.cost;
+        incrementSkillUseCount(unit, action.skKey);
         updateMasmonBattleStatsUI();
 
         const steps = [];
@@ -1488,6 +1569,8 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
             buildHealSteps(steps, side, unit);
         } else if (sk.type === 'substitute') {
             buildSubstituteSteps(steps, side, unit, sk);
+        } else if (sk.type === 'hazard') {
+            buildHazardSteps(steps, side, unit, sk);
         }
 
         runBattleStepSequence(steps, () => {
@@ -1836,6 +1919,45 @@ function buildHealSteps(steps, side, unit) {
         },
         wait: BATTLE_STEP_DELAY.afterHitEffect
     });
+}
+
+// --- ステルスロック：相手フィールドに鋭い岩を設置する演出ステップ ---
+// みがわり餅と同様、ユニットではなく MASMON_BATTLE_STATE（陣営のフィールド）側に持続させる。
+// 一度設置すると、相手がモンスターを交代して場に出すたびに最大ライフの1/8のダメージを与え続ける（永続）。
+function buildHazardSteps(steps, side, unit, sk) {
+    const cfg = SIDE_UI[side];
+    // 技を出した側から見て「相手側」のフィールドに岩を設置する
+    const targetFieldKey = side === 'player' ? 'enemyFieldStealthRock' : 'playerFieldStealthRock';
+    const targetLabel = side === 'player' ? '相手' : 'あなた';
+    steps.push({
+        run: () => {
+            const already = !!MASMON_BATTLE_STATE[targetFieldKey];
+            MASMON_BATTLE_STATE[targetFieldKey] = true;
+            addLog(already
+                ? `🪨 ${targetLabel}のフィールドにはすでに鋭い岩が広がっている！`
+                : `🪨 ${unit.name} は${targetLabel}のフィールド上に鋭い岩をばら撒いた！（相手はこれ以降、モンスターを交代して繰り出すたびにダメージを受ける）`);
+            showEffect(cfg.buffEffect);
+            updateMasmonBattleStatsUI();
+        },
+        wait: BATTLE_STEP_DELAY.afterHitEffect
+    });
+}
+
+// --- ステルスロックによる交代ダメージ：モンスターが場に出た瞬間に呼ぶ ---
+// side: 今回「場に出た」側（'player' | 'enemy'）／unit: 場に出たユニット
+// 戻り値: true の場合、このダメージによってユニットが戦闘不能になったことを示す
+//        （呼び出し元は必要に応じて checkFaintAndProceed 等で交代処理を続けること）
+function applyStealthRockDamageOnSwitchIn(side, unit) {
+    if (!unit || unit.stats.life <= 0) return false;
+    const fieldKey = side === 'player' ? 'playerFieldStealthRock' : 'enemyFieldStealthRock';
+    if (!MASMON_BATTLE_STATE[fieldKey]) return false;
+
+    const dmg = Math.max(1, Math.floor(unit.stats.maxLife / 8));
+    unit.stats.life = Math.max(0, unit.stats.life - dmg);
+    addLog(`🪨 ${unit.name} はフィールドに広がる鋭い岩でダメージを受けた！（${dmg}ダメージ、現在: ${Math.floor(unit.stats.life)}）`);
+    showEffect('🪨 ステルスロック！ 🪨');
+    updateMasmonBattleStatsUI();
+    return unit.stats.life <= 0;
 }
 
 

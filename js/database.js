@@ -453,7 +453,7 @@ const SKILLS_DB = {
     cho_rollinmochi: { name: '超ローリンモッチ', cost: 40, type: 'pow', hitRate: 65, force: 2.3, gutsDown: 20, effect: 'def_down_15_perma', desc: '大回転して激突する。相手GUTS-20。さらに命中した場合、相手が交代するまでの間、丈夫さを15%低下させる' },
     cho_mochihou: { name: '超もっち砲', cost: 45, type: 'int', hitRate: 70, force: 2.5, gutsDown: 15, effect: 'dot_mine', desc: '最大出力のエネルギー弾。相手GUTS-15。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与える。' },
     mossama: { name: 'もっさま', cost: 35, type: 'pow', hitRate: 75, force: 1.8, gutsDown: 25, effect: 'selfcrit_up_3', desc: '強烈な威圧を伴う打撃。相手GUTS-25。さらに命中した場合、3ターンの間自身のクリティカル率が25%アップする' },
-    yaezakura: { name: '八重ざくら', cost: 30, type: 'heal', hitRate: 100, force: 0, gutsDown: 0, effect: 'heal_hp', desc: '桜の結界でライフを大幅回復する' },
+    yaezakura: { name: '八重ざくら', cost: 30, type: 'heal', hitRate: 100, force: 0, gutsDown: 0, effect: 'heal_hp', maxUses: 5, desc: '桜の結界でライフを大幅回復する。（1バトルにつき5回まで使用可能）' },
 
     // --- スエゾー系統 ---
     meiso: { name: '瞑想', cost: 25, type: 'buff_pow', hitRate: 100, force: 0, gutsDown: 0, useEffect: 'meiso', desc: '瞑想による集中力上昇により、自身のかしこさと命中を30%上昇させる。丈夫さは10%下がる。3回まで重複可。25%の確率でねむり状態になってしまう。' },
@@ -473,6 +473,7 @@ const SKILLS_DB = {
     honoo_taiatari: { name: '炎のたいあたり', cost: 40, type: 'pow', hitRate: 65, force: 2.4, gutsDown: 15, effect: 'burn_30', desc: '燃え盛る炎を纏って突進する。相手GUTS-15。さらに技命中時30%の確率でやけど状態にする（バトル終了まで治らず、毎ターン終了時に最大ライフの1/16のダメージを受ける）' },
     hizageri: { name: 'ひざげり', cost: 25, type: 'pow', hitRate: 80, force: 1.5, gutsDown: 10, effect: 'selfcrit_up_3', desc: '鋭い跳び膝蹴りを叩き込む。相手GUTS-10。さらに命中した場合、3ターンの間自身のクリティカル率が25%アップする' },
     kurohizacombo: { name: '黒ひざコンボ', cost: 50, type: 'pow', hitRate: 75, force: 2.8, gutsDown: 15, effect: 'flinch_50_1t', desc: '連続で膝蹴りを叩き込む破壊技。相手GUTS-15。さらに命中した場合、強烈な衝撃で次のターン相手は50%の確率で怯んで行動に失敗する' },
+    stealth_rock: { name: 'ステルスロック', cost: 20, type: 'hazard', hitRate: 100, force: 0, gutsDown: 0, noDamage: true, effect: 'stealth_rock', desc: '相手フィールド上に鋭い岩をばら撒く。相手はモンスターを交代して繰り出すたびに、最大ライフの1/8のダメージを受けるようになる（一度設置すると、バトルが終わるまでずっと効果が持続する）。' },
 
     // --- モノリス系統 ---
     monotaore: { name: 'たおれこみ', cost: 15, type: 'pow', hitRate: 85, force: 0.8, gutsDown: 10, effect: null, desc: '巨体を活かした体当たり基本技。相手GUTS-10' },
@@ -776,7 +777,7 @@ function getGutsDownMitigation(defStat) {
 
 // --- ダメージランク判定ヘルパー ---
 function getDamageRank(force, type) {
-    if (type === 'heal' || type === 'buff_guts' || type === 'buff_pow') return 'G';
+    if (type === 'heal' || type === 'buff_guts' || type === 'buff_pow' || type === 'hazard') return 'G';
     if (force >= 3.0) return 'S+';
     if (force >= 2.5) return 'S';
     if (force >= 2.0) return 'A';
@@ -824,6 +825,14 @@ function getSkillStyle(sk) {
             borderClass: 'border-pink-700',
             textClass: 'text-pink-200',
             textIntensity: 'text-pink-300'
+        };
+    }
+    if (type === 'hazard') {
+        return {
+            bgClass: 'bg-stone-800/60 hover:bg-stone-700/70',
+            borderClass: 'border-stone-500',
+            textClass: 'text-stone-200',
+            textIntensity: 'text-stone-300'
         };
     }
     // 'pow'（ちから技）およびそれ以外はデフォルトで赤系
@@ -1569,7 +1578,7 @@ const KIN_NEJIKI_SPECIES_POOL = ['mochi', 'suezo', 'dino', 'monolith', 'plant', 
 const KIN_NEJIKI_SKILL_POOL = {
     mochi:     ['sakuranomai', 'migawarimochi', 'gaccho', 'sakurafubuki', 'cho_rollinmochi', 'cho_mochihou', 'mossama', 'yaezakura'],
     suezo:     ['meiso', 'nameru', 'kamitsuki', 'kuu', 'psychokinesis', 'cho_netsushisen', 'utau', 'berobinta'],
-    dino:      ['shippo', 'kamitsuki_dino', 'sunakake', 'kamitsukinage', 'honoo_taiatari', 'hizageri', 'kurohizacombo'],
+    dino:      ['shippo', 'kamitsuki_dino', 'sunakake', 'kamitsukinage', 'honoo_taiatari', 'hizageri', 'kurohizacombo', 'stealth_rock'],
     monolith:  ['monotaore', 'warawara', 'sakebigoe', 'cho_monotaore', 'aurora_gate', 'sanren_attack', 'trio_beam_z'],
     plant:     ['renkon', 'tane_gun', 'kafun', 'combination', 'tane_machinegun', 'flower_beam', 'face_drill', 'drain', 'doku_no_kona'],
     kyubi:     ['hikkaki', 'kagerou', 'kitsunebi', 'cho_kitsunebi', 'yuuwaku', 'kokonoe_shingan', 'tenga_tensho'],
@@ -1654,7 +1663,7 @@ const MONSTER_MOLDS = {
         { skills: ['しっぽ', 'かみつき', '砂かけ', 'かみつき投げ'], equipment: '荒縄のガントレット' },
         { skills: ['かみつき投げ', 'ひざげり', '砂かけ', '炎のたいあたり'], equipment: '鉄爪の欠片' },
         { skills: ['炎のたいあたり', 'ひざげり', 'かみつき投げ', '砂かけ'], equipment: '闘魂の紅玉' },
-        { skills: ['黒ひざコンボ', '炎のたいあたり', 'かみつき投げ', 'ひざげり'], equipment: '闘気の勾玉' }
+        { skills: ['黒ひざコンボ', '炎のたいあたり', 'かみつき投げ', 'ステルスロック'], equipment: '闘気の勾玉' }
     ],
     'モノリス': [
         // --- 型1：ちから特化型／かしこさ特化型 ---
