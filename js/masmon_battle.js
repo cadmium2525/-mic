@@ -834,7 +834,7 @@ function updateMasmonBattleStatsUI() {
                 hitSpan.textContent = `命中:必中`;
             } else {
                 const mods = getGutsModifiers(gutsVal);
-                let actualHit = Math.max(10, Math.min(99, (effSk.hitRate + mods.hitMod) + (getBuffedHitStat(p, p.stats.hit) - getEvasionStat(e, e.stats.spd)) * 0.5));
+                let actualHit = Math.max(10, Math.min(99, (effSk.hitRate + mods.hitMod) + (getBuffedHitStat(p, p.stats.hit) - getEvasionStat(e, e.stats.spd)) * 0.5 - getBlindHitPenalty(p)));
                 if (p.isShuchuActive) actualHit = Math.min(99, actualHit * 1.5);
                 hitSpan.textContent = `命中:${Math.round(actualHit)}%`;
             }
@@ -920,7 +920,7 @@ function renderMasmonBattleSkills() {
         } else if (sk.hitRate === 100) {
             hitRateDisplay = `<span class="${style.textIntensity} text-[9px] font-bold font-mono hit-rate-text">命中:必中</span>`;
         } else {
-            let actualHitForIcon = Math.max(10, Math.min(99, (sk.hitRate + gutsModsForHit.hitMod) + (getBuffedHitStat(p, p.stats.hit) - getEvasionStat(e, e.stats.spd)) * 0.5));
+            let actualHitForIcon = Math.max(10, Math.min(99, (sk.hitRate + gutsModsForHit.hitMod) + (getBuffedHitStat(p, p.stats.hit) - getEvasionStat(e, e.stats.spd)) * 0.5 - getBlindHitPenalty(p)));
             if (p.isShuchuActive) actualHitForIcon = Math.min(99, actualHitForIcon * 1.5);
             hitRateDisplay = `<span class="${style.textIntensity} text-[9px] font-bold font-mono hit-rate-text">命中:${Math.round(actualHitForIcon)}%</span>`;
         }
@@ -1096,11 +1096,11 @@ function openMasmonSkillModal(skKey) {
         if (sk.hitRate === 100) {
             document.getElementById('modal-guts-hit-rate').textContent = "必中 🎯";
         } else if (e) {
-            let actualHit = Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (getBuffedHitStat(p, p.stats.hit) - getEvasionStat(e, e.stats.spd)) * 0.5));
+            let actualHit = Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (getBuffedHitStat(p, p.stats.hit) - getEvasionStat(e, e.stats.spd)) * 0.5 - getBlindHitPenalty(p)));
             if (p.isShuchuActive) actualHit = Math.min(99, actualHit * 1.5);
             document.getElementById('modal-guts-hit-rate').textContent = Math.round(actualHit) + "%";
         } else {
-            const actualHit = Math.max(10, Math.min(99, sk.hitRate + mods.hitMod));
+            const actualHit = Math.max(10, Math.min(99, sk.hitRate + mods.hitMod - getBlindHitPenalty(p)));
             document.getElementById('modal-guts-hit-rate').textContent = Math.round(actualHit) + "%";
         }
     }
@@ -1208,6 +1208,8 @@ const SIDE_UI = {
         critEffect: '💥 CRITICAL!! 💥',
         missEffect: '💨 MISS 💨',
         buffEffect: '💪 ちからUP! 💪',
+        substituteEffect: '🌸 みがわり設置! 🌸',
+        hazardEffect: '🪨 トラップ設置! 🪨',
         healEffect: '💚 ライフ回復! 💚'
     },
     enemy: {
@@ -1220,6 +1222,8 @@ const SIDE_UI = {
         critEffect: '⚡ 会心の一撃!! ⚡',
         missEffect: '💨 回避!! 💨',
         buffEffect: '💪 相手の攻撃UP! 💪',
+        substituteEffect: '🌸 相手がみがわりを設置! 🌸',
+        hazardEffect: '🪨 相手がトラップを設置! 🪨',
         healEffect: '💚 相手回復! 💚'
     }
 };
@@ -1560,7 +1564,7 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
         updateMasmonBattleStatsUI();
 
         const steps = [];
-        buildSkillNameStep(steps, side, unit, sk);
+        buildSkillNameStep(steps, side, unit, sk, action.skKey);
 
         if (sk.type === 'pow' || sk.type === 'int') {
             buildAttackSkillSteps(steps, side, unit, opponent, sk);
@@ -1585,12 +1589,13 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
 }
 
 // --- 技名表示ステップ（技発動時の自己強化効果もここで解決する） ---
-function buildSkillNameStep(steps, side, unit, sk) {
+function buildSkillNameStep(steps, side, unit, sk, skKey) {
     const cfg = SIDE_UI[side];
     steps.push({
         run: () => {
             addLog(`${unit.name} の 【${sk.name}】！`);
             animateSprite(cfg.spriteContainer, cfg.spriteAnim);
+            if (skKey && typeof playSkillVisualEffect === 'function') playSkillVisualEffect(skKey, side);
             applySkillOnUseEffect(unit, sk).forEach(msg => addLog(msg));
         },
         wait: BATTLE_STEP_DELAY.afterSkillName
@@ -1892,7 +1897,7 @@ function buildSubstituteSteps(steps, side, unit, sk) {
             addLog(already
                 ? `🌸 ${unit.name} は新しい桜餅を設置し直した！（身代わりの残り回数が2回に更新された）`
                 : `🌸 ${unit.name} は自身と同じ大きさの桜餅を設置した！（次の攻撃を2回まで防ぐ。モンスターを交換しても場に残り続ける）`);
-            showEffect(cfg.buffEffect);
+            showEffect(cfg.substituteEffect);
 
             const selfDamagePct = (sk && sk.selfDamagePct) || 0;
             if (selfDamagePct > 0) {
@@ -1937,7 +1942,7 @@ function buildHazardSteps(steps, side, unit, sk) {
             addLog(already
                 ? `🪨 ${targetLabel}のフィールドにはすでに鋭い岩が広がっている！`
                 : `🪨 ${unit.name} は${targetLabel}のフィールド上に鋭い岩をばら撒いた！（相手はこれ以降、モンスターを交代して繰り出すたびにダメージを受ける）`);
-            showEffect(cfg.buffEffect);
+            showEffect(cfg.hazardEffect);
             updateMasmonBattleStatsUI();
         },
         wait: BATTLE_STEP_DELAY.afterHitEffect

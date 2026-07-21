@@ -492,7 +492,7 @@ const SKILLS_DB = {
 
     // --- プラント系統 ---
     renkon: { name: '連続根っこ', cost: 20, type: 'pow', hitRate: 100, force: 0.8, gutsDown: 10, effect: null, desc: '地中の根っこを操り連続で打ちすえる。回避を完全に無視して【必中】する！相手GUTS-10' },
-    combination: { name: 'コンビネーション', cost: 35, type: 'pow', hitRate: 78, force: 1.8, gutsDown: 15, effect: null, desc: '枝と根を使った連続コンビネーション攻撃。相手GUTS-15' },
+    combination_plant: { name: 'コンビネーション', cost: 35, type: 'pow', hitRate: 78, force: 1.8, gutsDown: 15, effect: null, desc: '枝と根を使った連続コンビネーション攻撃。相手GUTS-15' },
     face_drill: { name: 'フェイスドリル', cost: 45, type: 'pow', hitRate: 68, force: 2.3, gutsDown: 20, effect: 'def_down_15', desc: '顔面の突起を高速回転させ突き刺す大技。相手GUTS-20。さらに命中した場合、30%の確率で相手の丈夫さを15%低下させる（交代するまで持続）' },
     tane_gun: { name: '種ガン', cost: 20, type: 'int', hitRate: 82, force: 1.1, gutsDown: 10, effect: 'hitdown_stack_3', desc: '硬い種を弾丸のように撃ち出す基本技。相手GUTS-10。さらに命中した場合、相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
     tane_machinegun: { name: '種マシンガン', cost: 32, type: 'int', hitRate: 78, force: 1.4, gutsDown: 15, effect: 'hitdown_stack_3', desc: '種を連射して相手を蜂の巣にする。相手GUTS-15。さらに命中した場合、相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
@@ -1632,7 +1632,7 @@ const KIN_NEJIKI_SKILL_POOL = {
     suezo:     ['meiso', 'nameru', 'kamitsuki', 'kuu', 'psychokinesis', 'cho_netsushisen', 'utau', 'berobinta'],
     dino:      ['shippo', 'kamitsuki_dino', 'sunakake', 'kamitsukinage', 'honoo_taiatari', 'hizageri', 'kurohizacombo', 'stealth_rock'],
     monolith:  ['monotaore', 'warawara', 'sakebigoe', 'cho_monotaore', 'aurora_gate', 'sanren_attack', 'trio_beam_z', 'shinpi_no_mamori', 'choonpa'],
-    plant:     ['renkon', 'tane_gun', 'kafun', 'combination', 'tane_machinegun', 'flower_beam', 'face_drill', 'drain', 'doku_no_kona'],
+    plant:     ['renkon', 'tane_gun', 'kafun', 'combination_plant', 'tane_machinegun', 'flower_beam', 'face_drill', 'drain', 'doku_no_kona'],
     kyubi:     ['hikkaki', 'kagerou', 'kitsunebi', 'cho_kitsunebi', 'yuuwaku', 'kokonoe_shingan', 'tenga_tensho', 'akubi', 'youko_no_inori'],
     ham:       ['one_two_punch', 'sobat', 'atamatsuki', 'seoinage', 'cho_atamatsuki', 'machinegun_punch', 'onara', 'cho_ogoe'],
     arrowhead: ['tail_attack', 'zoom_punch', 'rocket_punch', 'needle_turn', 'w_needle_turn', 'tornado_attack', 'tail_blade', 'jiraibari'],

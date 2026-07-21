@@ -847,23 +847,40 @@ function kinNejikiFinishRun(cleared) {
     changeScreen('screen-kinnejiki-result');
 }
 
+// ランキング保存はtransaction()を使い、サーバー側の最新値を基準に「自己ベストを更新する
+// 場合のみ上書きする」処理を完全にアトミックに行う。
+// 以前は ref.once('value') で現在の記録を読んでからクライアント側で比較し ref.set() する
+// 実装だったが、この方式は読み取りと書き込みの間に別の書き込みが挟まったり、
+// 直前の書き込みが完了する前にアプリが閉じられたりすると、既存の高い記録が
+// 後から来た低い記録で上書きされてしまう不具合があった
+// （例：自己ベスト23勝の後にアプリを閉じ、続けて友人が7勝で終えたところ、
+// 23勝の記録が消えて7勝だけが残ってしまった、という報告があった）。
+// transaction()はサーバー側の最新値を基準に再試行してくれるため、この種の競合が起きない。
 async function saveKinNejikiRanking(wins, cleared) {
     if (typeof initFirebase !== 'function' || !initFirebase()) return;
     const pid = getMyPlayerId();
     const name = (typeof GAME_STATE !== 'undefined' && GAME_STATE.playerName) ? GAME_STATE.playerName : 'ブリーダー';
     try {
         const ref = firebaseDb.ref(`kinnejiki_ranking/${pid}`);
-        const snap = await ref.once('value');
-        const current = snap.val();
-        const best = current ? (current.bestWins || 0) : 0;
-        if (!current || wins > best) {
-            await ref.set({
+        await ref.transaction(current => {
+            const best = (current && current.bestWins) || 0;
+            if (current && wins <= best) {
+                // 自己ベストを更新しない場合でも、名前やクリア済みフラグは最新化する
+                // （winsは既存の自己ベストのまま維持し、絶対に下げない）
+                return {
+                    name,
+                    bestWins: best,
+                    bestCleared: !!(current.bestCleared || cleared),
+                    updatedAt: current.updatedAt || Date.now()
+                };
+            }
+            return {
                 name,
-                bestWins: Math.max(wins, best),
+                bestWins: wins,
                 bestCleared: !!(cleared || (current && current.bestCleared)),
                 updatedAt: Date.now()
-            });
-        }
+            };
+        });
     } catch (e) {
         console.error('[ガッツファクトリー] ランキング保存エラー:', e);
     }

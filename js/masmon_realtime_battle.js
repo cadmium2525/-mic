@@ -541,6 +541,13 @@ function triggerRealtimeCombatEffects(entry) {
     const defenderIcon = isMyAction ? 'battle-enemy-sprite-container' : 'battle-player-sprite-container';
     const defenderPopup = isMyAction ? 'enemy-dmg-popup' : 'player-dmg-popup';
 
+    // 技発動時の視覚エフェクト（技名からイメージしたパーティクルを再生。skill_effects.js）
+    // ログの技キーは同期されないため、「◯◯の【技名】！」の技名部分から引く。
+    const skillNameMatch = text.match(/の【(.+?)】！$/);
+    if (skillNameMatch && typeof playSkillVisualEffectByName === 'function') {
+        playSkillVisualEffectByName(skillNameMatch[1], isMyAction ? 'player' : 'enemy');
+    }
+
     // ダメージ命中（通常／クリティカル）
     const dmgMatch = text.match(/に\s*(\d+)\s*ダメージ！$/);
     if (dmgMatch) {
@@ -849,11 +856,11 @@ function renderRealtimeBattleSkills(state) {
         } else if (sk.hitRate === 100) {
             hitRateDisplay = `<span class="${style.textIntensity} text-[9px] font-bold font-mono">命中:必中</span>`;
         } else if (opp) {
-            let actualHitForIcon = Math.max(10, Math.min(99, (sk.hitRate + gutsModsForHit.hitMod) + (me.hit - getEvasionStat(opp, opp.spd)) * 0.5));
+            let actualHitForIcon = Math.max(10, Math.min(99, (sk.hitRate + gutsModsForHit.hitMod) + (me.hit - getEvasionStat(opp, opp.spd)) * 0.5 - getBlindHitPenalty(me)));
             if (me.isShuchuActive) actualHitForIcon = Math.min(99, actualHitForIcon * 1.5);
             hitRateDisplay = `<span class="${style.textIntensity} text-[9px] font-bold font-mono">命中:${Math.round(actualHitForIcon)}%</span>`;
         } else {
-            const actualHitForIcon = Math.max(10, Math.min(99, sk.hitRate + gutsModsForHit.hitMod));
+            const actualHitForIcon = Math.max(10, Math.min(99, sk.hitRate + gutsModsForHit.hitMod - getBlindHitPenalty(me)));
             hitRateDisplay = `<span class="${style.textIntensity} text-[9px] font-bold font-mono">命中:${Math.round(actualHitForIcon)}%</span>`;
         }
 
@@ -983,11 +990,11 @@ function openRealtimeSkillModal(skKey, state) {
         if (sk.hitRate === 100) {
             document.getElementById('modal-guts-hit-rate').textContent = "必中 🎯";
         } else if (opp) {
-            let actualHit = Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (me.hit - getEvasionStat(opp, opp.spd)) * 0.5));
+            let actualHit = Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (me.hit - getEvasionStat(opp, opp.spd)) * 0.5 - getBlindHitPenalty(me)));
             if (me.isShuchuActive) actualHit = Math.min(99, actualHit * 1.5);
             document.getElementById('modal-guts-hit-rate').textContent = Math.round(actualHit) + "%";
         } else {
-            const actualHit = Math.max(10, Math.min(99, sk.hitRate + mods.hitMod));
+            const actualHit = Math.max(10, Math.min(99, sk.hitRate + mods.hitMod - getBlindHitPenalty(me)));
             document.getElementById('modal-guts-hit-rate').textContent = Math.round(actualHit) + "%";
         }
     }
