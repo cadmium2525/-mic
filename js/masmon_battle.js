@@ -82,6 +82,11 @@ const BATTLE_STEP_DELAY = {
     beforeNextTurn: 500   // 全ての演出が終わってから次のターンに移るまでの間
 };
 
+// 「⚠️ ENEMY TURN ⚠️」バナー（showEffectで表示）が完全に消え切るまでの時間。
+// showEffect側の「800ms表示→300msでフェードアウト（#battle-effect-overlayのduration-300）」と
+// 一致させ、敵の行動エフェクトがバナーと重なって見えなくなるのを防ぐ。
+const ENEMY_TURN_BANNER_HOLD_MS = 1100;
+
 // steps: [{ run: () => void, wait: ms }, ...] を順番に実行し、
 // 全て終わったら onComplete を呼ぶ。演出のたびに毎回 setTimeout を書かずに済むようにする。
 function runBattleStepSequence(steps, onComplete) {
@@ -1454,36 +1459,49 @@ function runMasmonActionInOrder(order, idx) {
         return;
     }
 
+    let enemyTurnBannerShown = false;
     if (side === 'enemy' && action && (action.actionType === 'skill' || action.actionType === 'none')) {
         addLog(`--- ${unit.name} のターン ---`);
         showEffect('⚠️ ENEMY TURN ⚠️');
+        enemyTurnBannerShown = true;
     }
 
-    executeMasmonSideAction(side, unit, opponent, action, () => {
-        if (MASMON_BATTLE_STATE.isBattleEnd) return;
-        const opponentSide = (side === 'player') ? 'enemy' : 'player';
+    const runEnemyActionNow = () => {
+        executeMasmonSideAction(side, unit, opponent, action, () => {
+            if (MASMON_BATTLE_STATE.isBattleEnd) return;
+            const opponentSide = (side === 'player') ? 'enemy' : 'player';
 
-        // 相手が戦闘不能になったかチェック（① 自分側なら選択交代 / ② 相手側なら自動交代＋こちらの交代確認）
-        handleFaintAndSwitch(opponentSide, (r1) => {
-            if (r1.battleEnded) return; // 勝敗判定済み
-            if (r1.turnShouldEnd) {
-                // 交代が発生した場合、このターンの残りの行動（後攻側の行動）は実行せず、
-                // ターンを仕切り直す（ポケットモンスターのバトル仕様を踏襲）
-                setTimeout(() => finishMasmonTurn(), BATTLE_STEP_DELAY.beforeNextTurn);
-                return;
-            }
-
-            // 自分自身が反動等で戦闘不能になったかチェック
-            handleFaintAndSwitch(side, (r2) => {
-                if (r2.battleEnded) return;
-                if (r2.turnShouldEnd) {
+            // 相手が戦闘不能になったかチェック（① 自分側なら選択交代 / ② 相手側なら自動交代＋こちらの交代確認）
+            handleFaintAndSwitch(opponentSide, (r1) => {
+                if (r1.battleEnded) return; // 勝敗判定済み
+                if (r1.turnShouldEnd) {
+                    // 交代が発生した場合、このターンの残りの行動（後攻側の行動）は実行せず、
+                    // ターンを仕切り直す（ポケットモンスターのバトル仕様を踏襲）
                     setTimeout(() => finishMasmonTurn(), BATTLE_STEP_DELAY.beforeNextTurn);
                     return;
                 }
-                setTimeout(() => runMasmonActionInOrder(order, idx + 1), BATTLE_STEP_DELAY.beforeNextTurn);
+
+                // 自分自身が反動等で戦闘不能になったかチェック
+                handleFaintAndSwitch(side, (r2) => {
+                    if (r2.battleEnded) return;
+                    if (r2.turnShouldEnd) {
+                        setTimeout(() => finishMasmonTurn(), BATTLE_STEP_DELAY.beforeNextTurn);
+                        return;
+                    }
+                    setTimeout(() => runMasmonActionInOrder(order, idx + 1), BATTLE_STEP_DELAY.beforeNextTurn);
+                });
             });
         });
-    });
+    };
+
+    if (enemyTurnBannerShown) {
+        // 「⚠️ ENEMY TURN ⚠️」の表示（showEffect：800ms表示＋300msフェードアウト）が
+        // 完全に消え切ってから敵の行動を開始する。これにより、敵の攻撃エフェクトが
+        // バナー表示に隠れて見えなくなってしまう問題を防ぐ。
+        setTimeout(runEnemyActionNow, ENEMY_TURN_BANNER_HOLD_MS);
+    } else {
+        runEnemyActionNow();
+    }
 }
 
 // --- 両者の行動が終わったらターンを進める ---
