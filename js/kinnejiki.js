@@ -937,12 +937,18 @@ async function saveKinNejikiRanking(wins, cleared) {
 async function fetchKinNejikiRanking(limit = 100) {
     if (typeof initFirebase !== 'function' || !initFirebase()) return [];
     try {
-        const snap = await firebaseDb.ref('kinnejiki_ranking').orderByChild('bestWins').limitToLast(limit).once('value');
+        // orderByChild('bestWins').limitToLast(limit) だと、bestWinsが存在しない/型が
+        // 揃っていないデータが混ざった場合に正しく並び替えられず、結果的にほぼ1件しか
+        // 表示されない不具合が起きていた。
+        // そのため、kinnejiki_ranking配下のデータを一旦すべて取得し、
+        // クライアント側で確実にソート・件数制限をかける方式に変更する。
+        const snap = await firebaseDb.ref('kinnejiki_ranking').once('value');
         const list = [];
-        snap.forEach(child => list.push({ id: child.key, ...child.val() }));
+        snap.forEach(child => {
+            list.push({ id: child.key, ...child.val() });
+        });
         list.sort((a, b) => (b.bestWins || 0) - (a.bestWins || 0));
-        console.log('[ガッツファクトリー デバッグ] Firebaseから取得した件数:', list.length, list); // TODO: 原因特定後に削除
-        return list;
+        return list.slice(0, limit);
     } catch (e) {
         console.error('[ガッツファクトリー] ランキング取得エラー:', e);
         return [];

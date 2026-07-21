@@ -136,7 +136,9 @@ async function recordPvpMatchHistory(mode, season, playerId, playerName, oppId, 
     try {
         const snap = await ref.once('value');
         const items = [];
-        snap.forEach(child => items.push({ key: child.key, ts: (child.val() || {}).ts || 0 }));
+        snap.forEach(child => {
+            items.push({ key: child.key, ts: (child.val() || {}).ts || 0 });
+        });
         if (items.length > PVP_MATCH_HISTORY_LIMIT) {
             items.sort((a, b) => a.ts - b.ts);
             const toDelete = items.slice(0, items.length - PVP_MATCH_HISTORY_LIMIT);
