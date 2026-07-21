@@ -434,12 +434,20 @@
                         <div class="text-[10px] text-sky-300 font-bold mb-1.5">① モンスターを選択</div>
                         <div class="grid grid-cols-4 gap-1.5" id="pvp-preset-monster-species-list"></div>
                     </div>
+                    <div id="pvp-preset-monster-stattype-section" class="hidden">
+                        <div class="text-[10px] text-rose-300 font-bold mb-1.5">② タイプを選択（ちから特化型／かしこさ特化型）</div>
+                        <div class="flex gap-1.5">
+                            <button id="pvp-preset-monster-stattype-pow-btn" onclick="selectPvpPresetMonsterStatType('pow')" class="flex-1 py-2 text-xs font-bold rounded-lg border transition-all bg-[#16202b] border-rose-900/40 text-gray-400">💪 ちから型</button>
+                            <button id="pvp-preset-monster-stattype-int-btn" onclick="selectPvpPresetMonsterStatType('int')" class="flex-1 py-2 text-xs font-bold rounded-lg border transition-all bg-[#16202b] border-rose-900/40 text-gray-400">🧠 かしこさ型</button>
+                        </div>
+                        <p class="text-[9px] text-gray-500 mt-1 leading-relaxed">ちから型はちから+25%／かしこさ-25%、かしこさ型はその逆になります。</p>
+                    </div>
                     <div id="pvp-preset-monster-skills-section" class="hidden">
-                        <div class="text-[10px] text-sky-300 font-bold mb-1.5">② 技を選択 <span id="pvp-preset-monster-skill-count" class="text-gray-500 font-normal"></span></div>
+                        <div class="text-[10px] text-sky-300 font-bold mb-1.5">③ 技を選択 <span id="pvp-preset-monster-skill-count" class="text-gray-500 font-normal"></span></div>
                         <div class="space-y-1.5" id="pvp-preset-monster-skill-list"></div>
                     </div>
                     <div id="pvp-preset-monster-equip-section" class="hidden">
-                        <div class="text-[10px] text-purple-300 font-bold mb-1.5">③ 装備を選択（任意）</div>
+                        <div class="text-[10px] text-purple-300 font-bold mb-1.5">④ 装備を選択（任意）</div>
                         <div class="space-y-1.5" id="pvp-preset-monster-equip-list"></div>
                     </div>
                 </div>

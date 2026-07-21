@@ -49,7 +49,12 @@ function createEmptyPvpPresetDraft(slotIndex) {
 }
 
 function isPvpPresetMonsterComplete(m) {
-    return !!(m && m.speciesId && MONSTER_TEMPLATES[m.speciesId] && Array.isArray(m.skills) && m.skills.length > 0);
+    if (!m || !m.speciesId) return false;
+    const tmpl = MONSTER_TEMPLATES[m.speciesId];
+    if (!tmpl) return false;
+    if (!Array.isArray(m.skills) || m.skills.length === 0) return false;
+    if (tmpl.dualStatType && m.statType !== 'pow' && m.statType !== 'int') return false;
+    return true;
 }
 
 function isPvpPresetComplete(preset) {
@@ -298,8 +303,11 @@ function renderPvpPresetEditorScreen() {
                 renderMonsterVisual(iconWrap, tmpl.name, tmpl.emoji, false, true);
                 const skillNames = m.skills.map(sk => (SKILLS_DB[sk] ? SKILLS_DB[sk].name : sk)).join('、');
                 const equipText = (m.equipId && EQUIPMENT_DB[m.equipId]) ? EQUIPMENT_DB[m.equipId].name : '未装備';
+                const typeBadge = tmpl.dualStatType
+                    ? `<span class="ml-1 text-[8px] font-bold px-1 py-0.5 rounded bg-rose-900/60 text-rose-200">${m.statType === 'pow' ? 'ちから型' : 'かしこさ型'}</span>`
+                    : '';
                 info.innerHTML = `
-                    <div class="text-xs font-bold text-sky-200">${idx + 1}体目：${tmpl.name}</div>
+                    <div class="text-xs font-bold text-sky-200">${idx + 1}体目：${tmpl.name}${typeBadge}</div>
                     <div class="text-[9px] text-gray-500 mt-0.5 truncate">技: ${skillNames}</div>
                     <div class="text-[9px] text-purple-300 mt-0.5">装備: ${equipText}</div>
                 `;
@@ -373,14 +381,14 @@ function cancelPvpPresetEditor() {
 }
 
 // -----------------------------------------------------
-// モンスター1体編集画面（① 種族 → ② 技（最大4） → ③ 装備）
+// モンスター1体編集画面（① 種族 → ② タイプ（ちから型/かしこさ型・対象種族のみ） → ③ 技（最大4） → ④ 装備）
 // -----------------------------------------------------
 function openPvpPresetMonsterEditor(monsterIndex) {
     PVP_PRESET_STATE.editingMonsterIndex = monsterIndex;
     const existing = PVP_PRESET_STATE.draftPreset.monsters[monsterIndex];
     PVP_PRESET_STATE.draftMonster = existing
         ? JSON.parse(JSON.stringify(existing))
-        : { speciesId: null, skills: [], equipId: null };
+        : { speciesId: null, skills: [], equipId: null, statType: null };
     changeScreen('screen-pvp-preset-monster-editor');
     renderPvpPresetMonsterEditorScreen();
 }
@@ -425,14 +433,31 @@ function renderPvpPresetMonsterEditorScreen() {
         });
     }
 
+    const statTypeSection = document.getElementById('pvp-preset-monster-stattype-section');
     const skillsSection = document.getElementById('pvp-preset-monster-skills-section');
     const equipSection = document.getElementById('pvp-preset-monster-equip-section');
 
     if (!m.speciesId) {
+        if (statTypeSection) statTypeSection.classList.add('hidden');
         if (skillsSection) skillsSection.classList.add('hidden');
         if (equipSection) equipSection.classList.add('hidden');
         updatePvpPresetMonsterConfirmButton();
         return;
+    }
+
+    const tmpl = MONSTER_TEMPLATES[m.speciesId];
+    const isDualStatType = !!(tmpl && tmpl.dualStatType);
+
+    if (statTypeSection) {
+        statTypeSection.classList.toggle('hidden', !isDualStatType);
+        if (isDualStatType) {
+            const powBtn = document.getElementById('pvp-preset-monster-stattype-pow-btn');
+            const intBtn = document.getElementById('pvp-preset-monster-stattype-int-btn');
+            const activeCls = 'flex-1 py-2 text-xs font-bold rounded-lg border transition-all bg-rose-900 border-rose-400 text-rose-100';
+            const inactiveCls = 'flex-1 py-2 text-xs font-bold rounded-lg border transition-all bg-[#16202b] border-rose-900/40 text-gray-400';
+            if (powBtn) powBtn.className = m.statType === 'pow' ? activeCls : inactiveCls;
+            if (intBtn) intBtn.className = m.statType === 'int' ? activeCls : inactiveCls;
+        }
     }
 
     if (skillsSection) skillsSection.classList.remove('hidden');
@@ -502,6 +527,15 @@ function selectPvpPresetMonsterSpecies(speciesId) {
     if (!m || m.speciesId === speciesId) return;
     m.speciesId = speciesId;
     m.skills = []; // 種族が変わると技候補も変わるため選択済みの技はリセットする
+    m.statType = null; // 種族が変わるとタイプ（ちから型/かしこさ型）の対象も変わるためリセットする
+    renderPvpPresetMonsterEditorScreen();
+}
+
+// --- ちから特化型／かしこさ特化型の2系統を持つ種族（モッチー・モノリスなど）向け：型を選ぶ ---
+function selectPvpPresetMonsterStatType(statType) {
+    const m = PVP_PRESET_STATE.draftMonster;
+    if (!m) return;
+    m.statType = statType;
     renderPvpPresetMonsterEditorScreen();
 }
 
@@ -532,8 +566,7 @@ function selectPvpPresetMonsterEquip(equipId) {
 function updatePvpPresetMonsterConfirmButton() {
     const btn = document.getElementById('pvp-preset-monster-editor-confirm-btn');
     if (!btn) return;
-    const m = PVP_PRESET_STATE.draftMonster;
-    const ok = !!(m && m.speciesId && m.skills && m.skills.length > 0);
+    const ok = isPvpPresetMonsterComplete(PVP_PRESET_STATE.draftMonster);
     btn.disabled = !ok;
     btn.classList.toggle('opacity-50', !ok);
 }
@@ -542,6 +575,11 @@ function confirmPvpPresetMonsterEditor() {
     const m = PVP_PRESET_STATE.draftMonster;
     if (!m || !m.speciesId || !m.skills || m.skills.length === 0) {
         showToast('モンスターと技を1つ以上選択してください。');
+        return;
+    }
+    const tmpl = MONSTER_TEMPLATES[m.speciesId];
+    if (tmpl && tmpl.dualStatType && m.statType !== 'pow' && m.statType !== 'int') {
+        showToast('ちから型／かしこさ型のどちらかを選択してください。');
         return;
     }
     const idx = PVP_PRESET_STATE.editingMonsterIndex;

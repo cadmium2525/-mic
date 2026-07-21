@@ -168,7 +168,7 @@ const AudioManager = (() => {
     function noiseBurst({ duration = 0.12, when = 0, volume = 1, filterFreq = 1200, gainNode }) {
         const c = ensureContext();
         const buf = getNoiseBuffer();
-        if (!c || !buf) return;
+        if (!c || !buf) return null;
         const src = c.createBufferSource();
         src.buffer = buf;
         const filter = c.createBiquadFilter();
@@ -183,6 +183,7 @@ const AudioManager = (() => {
         g.connect(gainNode);
         src.start(startAt);
         src.stop(startAt + duration + 0.03);
+        return { osc: src, gain: g };
     }
 
     // ---------------------------------------------------
@@ -331,6 +332,32 @@ const AudioManager = (() => {
                 ['D2',0.5],['D2',0.5],['A2',0.5],['A2',0.5],['D2',0.5],['D2',0.5],['A2',0.5],['A2',0.5],
                 ['A#2',0.5],['A#2',0.5],['F2',0.5],['F2',0.5],['G2',0.5],['G2',0.5],['C3',0.5],[null,0.5],
             ],
+            // --- ハーモニー（和音）レイヤー：Dm/Bb/F/C/Amのコードを4拍ごとに敷き、厚みを出す ---
+            harmony: [
+                // --- イントロ (8拍)：Dmを保持して土台を作る ---
+                [['D3','F3','A3'],4],[['D3','F3','A3'],4],
+                // --- ヴァース (16拍)：Dm→Bb→Dm→C のコード進行 ---
+                [['D3','F3','A3'],4],[['A#2','D3','F3'],4],[['D3','F3','A3'],4],[['C3','E3','G3'],4],
+                // --- サビ (16拍)：Bb→F→Dm→Am で少し開けた響きにする ---
+                [['A#2','D3','F3'],4],[['F2','A2','C3'],4],[['D3','F3','A3'],4],[['A2','C3','E3'],4],
+                // --- ヴァース (16拍・再) ---
+                [['D3','F3','A3'],4],[['A#2','D3','F3'],4],[['D3','F3','A3'],4],[['C3','E3','G3'],4],
+                // --- サビ (16拍・再) ---
+                [['A#2','D3','F3'],4],[['F2','A2','C3'],4],[['D3','F3','A3'],4],[['A2','C3','E3'],4],
+            ],
+            // --- パーカッションレイヤー：合成ドラム（kick/snare/hat）で駆動感を強める ---
+            perc: [
+                // 4拍ごとに kick-hat-snare-hat を繰り返す、疾走感のあるドラムパターン (72拍 = 18セット)
+                ['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+            ],
         },
         // レジェンドブリーダー・コルト（3セット目ボス戦）専用BGM。
         // 低音を厚めにしたテンポ控えめの重厚な曲調で「ボス戦」感を強調する。
@@ -351,6 +378,24 @@ const AudioManager = (() => {
                 ['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],
                 ['F2',0.5],['F2',0.5],['F2',0.5],['F2',0.5],['C3',0.5],['C3',0.5],['C3',0.5],['C3',0.5],
                 ['D2',2],['A2',2],['A#2',2],['D2',2],
+            ],
+            // --- ハーモニー（和音）レイヤー：Dm→(G#を含む不協和)→Bbで重厚さと不穏さを補強 ---
+            harmony: [
+                // --- イントロ (8拍)：Dmを保持し重々しい入りを支える ---
+                [['D3','F3','A3'],8],
+                // --- 展開 (8拍)：G#を含む不協和な響きで不穏さを強調 ---
+                [['D3','F3','G#3'],8],
+                // --- 頂点 (8拍)：Bbへ移り、スペースを取った強打を下支えする ---
+                [['A#2','D3','F3'],8],
+            ],
+            // --- パーカッションレイヤー：合成ドラム（kick/snare/hat）で「ボス戦」の踏みしめる重さを出す ---
+            perc: [
+                // イントロ (8拍)：主音のキックで重厚に踏みしめる
+                ['kick',1],['kick',1],['kick',1],['kick',1],['kick',1],['kick',1],['kick',1],['kick',1],
+                // 展開 (8拍)：8分刻みのキック+ハットで畳みかける
+                ['kick',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['kick',0.5],['hat',0.5],['kick',0.5],['hat',0.5],
+                // 頂点 (8拍)：間を取ったキック/スネアの強打
+                ['kick',2],['snare',2],['kick',2],['snare',2],
             ],
         },
         // レジェンドブリーダー・コルト（7セット目・最終決戦）専用BGM（完全新規オリジナル作曲）。
@@ -411,6 +456,32 @@ const AudioManager = (() => {
                 ['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],
                 ['E2',0.5],['E2',0.5],['E2',0.5],['E2',0.5],['E2',0.5],['E2',0.5],['E2',0.5],[null,0.5],
             ],
+            // --- ハーモニー（和音）レイヤー：Am/F/Dm/E(ハーモニックマイナーの導音を含む)で劇的さを補強 ---
+            harmony: [
+                // --- イントロ (8拍)：Amを保持して土台を作る ---
+                [['A2','C3','E3'],4],[['A2','C3','E3'],4],
+                // --- ヴァース (16拍)：Am→F→Dm→E のコード進行 ---
+                [['A2','C3','E3'],4],[['F2','A2','C3'],4],[['D3','F3','A3'],4],[['E2','G#2','B2'],4],
+                // --- サビ (16拍)：F→Dm→Am→E でハーモニックマイナー特有の劇的な響きに ---
+                [['F2','A2','C3'],4],[['D3','F3','A3'],4],[['A2','C3','E3'],4],[['E2','G#2','B2'],4],
+                // --- ヴァース (16拍・再) ---
+                [['A2','C3','E3'],4],[['F2','A2','C3'],4],[['D3','F3','A3'],4],[['E2','G#2','B2'],4],
+                // --- サビ (16拍・再) ---
+                [['F2','A2','C3'],4],[['D3','F3','A3'],4],[['A2','C3','E3'],4],[['E2','G#2','B2'],4],
+            ],
+            // --- パーカッションレイヤー：battleより一段と攻撃的な合成ドラムで最終決戦の圧を出す ---
+            perc: [
+                // 4拍ごとに kick-kick-hat-snare-kick-hat-snare-hat を繰り返す、より攻撃的な疾走ドラム (72拍 = 18セット)
+                ['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+                ['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],['kick',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['kick',0.5],['hat',0.5],['snare',0.5],['hat',0.5],
+            ],
         },
         victory: {
             tempo: 132, leadType: 'square', bassType: 'triangle',
@@ -425,6 +496,27 @@ const AudioManager = (() => {
             bass: [['D3',2],['A2',2],['B2',2],['E2',2],['A2',2],['D2',2]],
         },
     };
+
+    // --- BGM用の簡易ドラム1打分（kick/snare/hat）を合成する ---
+    // ・kick : 低いサイン波のピッチ落ち（サブベース的などすん、という一撃）
+    // ・snare: 中域を残したノイズバースト＋短い三角波のスナップ音
+    // ・hat  : 高域だけを残した極短ノイズバースト
+    function schedulePercHit(hitType, when, beatSec) {
+        const nodes = [];
+        if (hitType === 'kick') {
+            const n = tone({ freq: 150, freqEnd: 45, duration: Math.min(0.16, beatSec * 0.9), type: 'sine', when, volume: 0.5, gainNode: masterBgmGain });
+            if (n) nodes.push(n);
+        } else if (hitType === 'snare') {
+            const n1 = noiseBurst({ duration: Math.min(0.12, beatSec * 0.7), when, volume: 0.32, filterFreq: 2200, gainNode: masterBgmGain });
+            if (n1) nodes.push(n1);
+            const n2 = tone({ freq: 320, freqEnd: 180, duration: 0.06, type: 'triangle', when, volume: 0.22, gainNode: masterBgmGain });
+            if (n2) nodes.push(n2);
+        } else if (hitType === 'hat') {
+            const n = noiseBurst({ duration: Math.min(0.045, beatSec * 0.4), when, volume: 0.14, filterFreq: 8500, gainNode: masterBgmGain });
+            if (n) nodes.push(n);
+        }
+        return nodes;
+    }
 
     function totalBeats(seq) {
         return seq.reduce((s, [, d]) => s + d, 0);
@@ -458,6 +550,31 @@ const AudioManager = (() => {
             if (freq) {
                 const node = tone({ freq, duration: d * beatSec * 0.92, type: track.bassType, when: t, volume: 0.4, gainNode: masterBgmGain });
                 if (node) scheduledNodes.push(node);
+            }
+            t += d * beatSec;
+        });
+
+        // --- ハーモニー（和音）レイヤー：任意。コード（複数音同時）を薄く重ねて厚みを出す ---
+        t = startAt;
+        (track.harmony || []).forEach(([chord, d]) => {
+            if (chord) {
+                const notes = Array.isArray(chord) ? chord : [chord];
+                notes.forEach((n) => {
+                    const freq = noteFreq(n);
+                    if (freq) {
+                        const node = tone({ freq, duration: d * beatSec * 0.9, type: track.harmonyType || 'triangle', when: t, volume: track.harmonyVolume || 0.16, gainNode: masterBgmGain });
+                        if (node) scheduledNodes.push(node);
+                    }
+                });
+            }
+            t += d * beatSec;
+        });
+
+        // --- パーカッションレイヤー：任意。'kick'/'snare'/'hat' の簡易ドラムパターン ---
+        t = startAt;
+        (track.perc || []).forEach(([hit, d]) => {
+            if (hit) {
+                schedulePercHit(hit, t, beatSec).forEach((node) => scheduledNodes.push(node));
             }
             t += d * beatSec;
         });
@@ -680,6 +797,17 @@ const AudioManager = (() => {
             return originalShowToast(message);
         };
     }
+})();
+
+// =====================================================
+// 起動直後の初期画面（例: タイトル画面）に対応するBGMを鳴らす。
+// index.html側でHTML読み込み時から直接 class="active" が付与されている
+// 最初の画面は changeScreen() を一度も経由しないため、上のフック（attachAudioHooks）
+// だけでは対応するBGMが一度も再生されない不具合があった。
+// ここで現在アクティブな画面をDOMから直接検出し、明示的にBGMを鳴らす。
+(function playInitialScreenBgm() {
+    const activeScreen = document.querySelector('.screen.active');
+    if (activeScreen) AudioManager.onScreenChange(activeScreen.id);
 })();
 
 // =====================================================

@@ -25,17 +25,30 @@ const PVP_RENTAL_STATE = {
     selectedPreset: null // マッチングに使用する編成プリセット（js/pvp_preset.js で選択・設定される）
 };
 
-// --- 編成プリセットの1モンスタースロット（speciesId/skills/equipId）から実際の対戦用モンスターを生成 ---
+// ちから特化型／かしこさ特化型の2系統を持つ種族（モッチー・モノリスなど、MONSTER_TEMPLATES上で
+// dualStatType: true のもの）向けのステータス倍率。PvPプリセット編集画面でユーザーが選んだ型を、
+// ガッツファクトリー等の「型」システム（MONSTER_MOLDSのstatMod）と同じ倍率で適用する。
+const PVP_PRESET_DUAL_STAT_MOD = {
+    pow: { pow: 1.25, int: 0.75 },
+    int: { pow: 0.75, int: 1.25 }
+};
+
+// --- 編成プリセットの1モンスタースロット（speciesId/skills/equipId/statType）から実際の対戦用モンスターを生成 ---
 function generatePvpMonsterFromPresetSlot(slot) {
     if (!slot || !slot.speciesId) return null;
     const tmpl = MONSTER_TEMPLATES[slot.speciesId];
     if (!tmpl) return null;
 
+    // ちから型/かしこさ型のどちらかを選ぶ種族の場合、選択された型に応じてpow/intへ倍率をかける
+    const statMod = (tmpl.dualStatType && PVP_PRESET_DUAL_STAT_MOD[slot.statType]) || null;
+    const powMod = (statMod && statMod.pow) || 1;
+    const intMod = (statMod && statMod.int) || 1;
+
     const variance = () => 0.95 + Math.random() * 0.1; // PvPは公平性重視で個体差を小さめに(±5%)
     const stats = {
         maxLife: Math.round(tmpl.stats.maxLife * variance()),
-        pow: Math.round(tmpl.stats.pow * variance()),
-        int: Math.round(tmpl.stats.int * variance()),
+        pow: Math.round(tmpl.stats.pow * powMod * variance()),
+        int: Math.round(tmpl.stats.int * intMod * variance()),
         hit: Math.round(tmpl.stats.hit * variance()),
         spd: Math.round(tmpl.stats.spd * variance()),
         def: Math.round(tmpl.stats.def * variance()),
