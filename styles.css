@@ -16,6 +16,14 @@ body {
     height: -webkit-fill-available;
     min-height: 0;
 }
+/* body側のuser-select:noneは誤選択防止のためだが、そのままだと一部のモバイルブラウザ／WebViewで
+   入力欄内のカーソル配置やペースト操作まで巻き込んで無効化されてしまうことがあるため、
+   フォーム要素だけは明示的にテキスト選択・入力操作を復活させる
+   （「アカウント管理」の以前のIDで復帰する欄などで文字入力・ペーストができない不具合の修正）。 */
+input, textarea, select {
+    user-select: text;
+    -webkit-user-select: text;
+}
 .pixel-font {
     font-family: 'DotGothic16', sans-serif;
 }

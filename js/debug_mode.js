@@ -34,9 +34,20 @@ const DEBUG_STATE = {
     }
 };
 
-// -----------------------------------------------------
-// 隠しコマンド：フッター文言を素早く7回タップすると起動する
-// -----------------------------------------------------
+// ボス専用モンスター（コルトのゴビ／コルトのモスト）を種族セレクトに混ぜて選べるようにするための
+// 疑似種族キー。KIN_NEJIKI_BOSSES のキー（set3/set7）と対応させる。
+const DEBUG_BOSS_SPECIES_KEY_PREFIX = '__boss_';
+function isDebugBossSpeciesKey(speciesKey) {
+    return typeof speciesKey === 'string' && speciesKey.startsWith(DEBUG_BOSS_SPECIES_KEY_PREFIX);
+}
+function getDebugBossDefFromSpeciesKey(speciesKey) {
+    const bossKey = speciesKey.slice(DEBUG_BOSS_SPECIES_KEY_PREFIX.length); // 'set3' or 'set7'
+    return { bossKey, bossDef: KIN_NEJIKI_BOSSES[bossKey] };
+}
+// ボスの専用イラスト名（renderKinNejikiBreederVisual等と同じ対応関係）
+const DEBUG_BOSS_VISUAL_NAME = { set3: 'ゴビ', set7: 'モスト' };
+
+
 (function setupSecretDebugTrigger() {
     let tapCount = 0;
     let resetTimer = null;
@@ -88,6 +99,18 @@ function renderDebugSpeciesOptionsInto(selectEl) {
         opt.textContent = `${tmpl.emoji || ''} ${tmpl.name}`;
         selectEl.appendChild(opt);
     });
+
+    // ガッツファクトリーの専属ボス（コルトのゴビ／コルトのモスト）も種族と同列で選べるようにする
+    const bossGroup = document.createElement('optgroup');
+    bossGroup.label = '── 専属ボス ──';
+    Object.keys(KIN_NEJIKI_BOSSES).forEach(bossKey => {
+        const bossDef = KIN_NEJIKI_BOSSES[bossKey];
+        const opt = document.createElement('option');
+        opt.value = DEBUG_BOSS_SPECIES_KEY_PREFIX + bossKey;
+        opt.textContent = `${bossDef.emoji || ''} ${bossDef.name}（ボス）`;
+        bossGroup.appendChild(opt);
+    });
+    selectEl.appendChild(bossGroup);
 }
 
 // 種族セレクトが変更されたら、その種族の技候補チェックボックス一覧を描画する
@@ -102,7 +125,9 @@ function onDebugSpeciesChange(side) {
     skillsWrapEl.innerHTML = '';
     if (!speciesId) return;
 
-    const pool = KIN_NEJIKI_SKILL_POOL[speciesId] || [];
+    const pool = isDebugBossSpeciesKey(speciesId)
+        ? (getDebugBossDefFromSpeciesKey(speciesId).bossDef || {}).skills || []
+        : (KIN_NEJIKI_SKILL_POOL[speciesId] || []);
     pool.forEach(skKey => {
         const sk = SKILLS_DB[skKey];
         if (!sk) return;
@@ -141,6 +166,37 @@ function buildDebugMonster(side) {
         showToast('先に種族を選択してください。');
         return null;
     }
+
+    const ownerName = side === 'player' ? (GAME_STATE.playerName || 'ブリーダー') : 'デバッグ対戦相手';
+
+    // --- 専属ボス（コルトのゴビ／コルトのモスト）が選択された場合 ---
+    if (isDebugBossSpeciesKey(builder.speciesId)) {
+        const { bossKey, bossDef } = getDebugBossDefFromSpeciesKey(builder.speciesId);
+        if (!bossDef) return null;
+
+        const skills = builder.selectedSkills.length > 0
+            ? [...builder.selectedSkills]
+            : (bossDef.skills || []).slice(0, 4); // 未選択時は既定4技を自動採用
+
+        return {
+            name: bossDef.name,
+            monsterBaseName: bossDef.templateId ? (MONSTER_TEMPLATES[bossDef.templateId] || {}).name || bossDef.name : bossDef.name,
+            visualName: DEBUG_BOSS_VISUAL_NAME[bossKey] || null,
+            emoji: bossDef.emoji,
+            speciesId: bossDef.templateId,
+            aura: null,
+            isAwakened: false,
+            statusEffect: null,
+            difficulty: 'debug',
+            stats: { ...bossDef.statsBase, life: bossDef.statsBase.maxLife },
+            skills,
+            skillEnhancements: {},
+            equip: null,
+            ownerName
+        };
+    }
+
+    // --- 通常種族の場合 ---
     const tmpl = MONSTER_TEMPLATES[builder.speciesId];
     if (!tmpl) return null;
 
@@ -161,7 +217,7 @@ function buildDebugMonster(side) {
         skills,
         skillEnhancements: {},
         equip: null,
-        ownerName: side === 'player' ? (GAME_STATE.playerName || 'ブリーダー') : 'デバッグ対戦相手'
+        ownerName
     };
 }
 
