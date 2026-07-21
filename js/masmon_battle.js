@@ -239,7 +239,7 @@ function startMasmonBattleCommon(floorText) {
     renderAuraBadge('enemy-aura-badge', e.aura, e.monsterBaseName);
     renderStatusAilmentBadge('enemy-status-badge', e);
 
-    renderMonsterVisual(document.getElementById('battle-player-icon'), p.monsterBaseName, p.emoji, p.isAwakened, true);
+    renderMonsterVisual(document.getElementById('battle-player-icon'), p.visualName || p.monsterBaseName, p.emoji, p.isAwakened, true);
     document.getElementById('battle-player-name').textContent = p.name;
     renderAuraBadge('player-aura-badge', p.aura, p.monsterBaseName);
     renderStatusAilmentBadge('player-status-badge', p);
@@ -417,7 +417,7 @@ function applyPlayerSwitch(targetIdx) {
     MASMON_BATTLE_STATE.isDefending = false;
 
     addLog(`あなたは【${target.name}】を繰り出した！`);
-    renderMonsterVisual(document.getElementById('battle-player-icon'), target.monsterBaseName, target.emoji, target.isAwakened, true);
+    renderMonsterVisual(document.getElementById('battle-player-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened, true);
     document.getElementById('battle-player-name').textContent = target.name;
     renderAuraBadge('player-aura-badge', target.aura, target.monsterBaseName);
     renderStatusAilmentBadge('player-status-badge', target);
@@ -1051,7 +1051,7 @@ function executeMasmonSwitch(targetIdx) {
     addLog(`${prev.name} を引っ込め、【${target.name}】を繰り出した！`);
     showEffect('🔄 交代！ 🔄');
 
-    renderMonsterVisual(document.getElementById('battle-player-icon'), target.monsterBaseName, target.emoji, target.isAwakened, true);
+    renderMonsterVisual(document.getElementById('battle-player-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened, true);
     document.getElementById('battle-player-name').textContent = target.name;
     renderAuraBadge('player-aura-badge', target.aura, target.monsterBaseName);
     renderStatusAilmentBadge('player-status-badge', target);
