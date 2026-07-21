@@ -1218,31 +1218,50 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             // 次技威力アップ（オーロラゲート等）の消費は命中判定に関わらず技を撃った時点で消費する
             const usedForce = consumeForceBoost(me, sk.force) * recoilForceMultiplier;
 
+            // プラズマの「次の技を2回攻撃扱いにする」効果：命中判定に関わらず技を撃った時点で消費する。
+            // 命中判定自体は1回だけ行うが、命中していればダメージ・ガッツダウン・命中時追加効果の抽選を
+            // 2回分（2撃分）まとめて処理する（外れた場合は当然2回分まとめて外れる）。
+            const isDoubleHit = !!me.doubleHitNext;
+            if (me.doubleHitNext) me.doubleHitNext = false;
+            let hitCount = isDoubleHit ? 2 : 1;
+
             if (isHit && otherTeam.substituteHits > 0) {
-                otherTeam.substituteHits -= 1;
-                resultLogs.push(`🌸 桜餅の身代わりが${opp.name}の代わりに攻撃を受けた！（身代わりの残り回数: ${otherTeam.substituteHits}）`);
-            } else if (isHit && sk.noDamage) {
+                // みがわり餅が残っている場合、2回攻撃扱いの分だけ多く消費する。
+                // 身代わりの残り回数を超える分は身代わりを貫通し、実際に相手へ攻撃が届く
+                // （プラズマでみがわりを1つ削ってから攻撃技を打つことで、みがわりを削りきり相手を攻撃するための仕様）。
+                const consumedSub = Math.min(otherTeam.substituteHits, hitCount);
+                otherTeam.substituteHits -= consumedSub;
+                resultLogs.push(`🌸 桜餅の身代わりが${opp.name}の代わりに攻撃を${consumedSub > 1 ? consumedSub + '回分' : ''}受けた！（身代わりの残り回数: ${otherTeam.substituteHits}）`);
+                hitCount -= consumedSub;
+            }
+
+            if (isHit && hitCount > 0 && sk.noDamage) {
                 // ダメージ無し・状態異常付与のみを狙う技（どくのこな等）
-                resultLogs.push(`${opp.name} に技が命中した！`);
+                for (let hitNo = 0; hitNo < hitCount; hitNo++) {
+                    const hitTag = hitCount > 1 ? `（${hitNo + 1}撃目）` : '';
+                    resultLogs.push(`${opp.name} に技が命中した！${hitTag}`);
 
-                let finalGutsDown = sk.gutsDown || 0;
-                if (me.isGyakujoActive && finalGutsDown > 0) {
-                    finalGutsDown = Math.floor(finalGutsDown * 1.2);
-                }
-                if (finalGutsDown > 0) {
-                    const mitigatedGutsDown = Math.floor(finalGutsDown * getGutsDownMitigation(opp.def) * (1 - getEquipmentGutsDownCutRate(opp)));
-                    const actualGutsDown = Math.min(opp.guts, mitigatedGutsDown);
-                    opp.guts = Math.max(0, opp.guts - actualGutsDown);
-                    if (actualGutsDown > 0) {
-                        resultLogs.push(`相手のガッツを ${actualGutsDown} 奪った！(現在: ${Math.floor(opp.guts)})`);
+                    let finalGutsDown = sk.gutsDown || 0;
+                    if (me.isGyakujoActive && finalGutsDown > 0) {
+                        finalGutsDown = Math.floor(finalGutsDown * 1.2);
                     }
-                }
+                    if (finalGutsDown > 0) {
+                        const mitigatedGutsDown = Math.floor(finalGutsDown * getGutsDownMitigation(opp.def) * (1 - getEquipmentGutsDownCutRate(opp)));
+                        const actualGutsDown = Math.min(opp.guts, mitigatedGutsDown);
+                        opp.guts = Math.max(0, opp.guts - actualGutsDown);
+                        if (actualGutsDown > 0) {
+                            resultLogs.push(`相手のガッツを ${actualGutsDown} 奪った！(現在: ${Math.floor(opp.guts)})`);
+                        }
+                    }
 
-                applySkillOnHitEffect(me, opp, sk).forEach(msg => resultLogs.push(msg));
+                    applySkillOnHitEffect(me, opp, sk).forEach(msg => resultLogs.push(msg));
+                }
 
                 me.isSokojikaraActive = false;
                 me.isShuchuActive = false;
-            } else if (isHit) {
+            } else if (isHit && hitCount > 0) {
+                for (let hitNo = 0; hitNo < hitCount; hitNo++) {
+                const hitTag = hitCount > 1 ? `（${hitNo + 1}撃目）` : '';
                 const isPow = sk.type === 'pow';
                 // useDefAsAtk：自身の丈夫さの値を攻撃の値として扱う技（例：ボディプレス）
                 const attackerStat = (sk.useDefAsAtk
@@ -1281,7 +1300,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                     meExtraDmgMsg += monClassMod > 1.0 ? ` (モン類相性有利×${monClassMod})` : ` (モン類相性不利×${monClassMod})`;
                 }
 
-                const critChance = 0.10 + (me.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(me) + getSkillCritBonus(sk);
+                const critChance = 0.10 + (me.critBonusTurns > 0 ? 0.25 : 0) + ((me.critUpStacks || 0) * 0.25) + getEquipmentCritBonus(me) + getSkillCritBonus(sk);
                 const isCrit = Math.random() < critChance;
                 if (isCrit) damage = Math.floor(damage * 1.5);
 
@@ -1297,9 +1316,13 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                 damage = shieldResult.finalDamage;
 
                 opp.life = Math.max(0, opp.life - damage);
-                resultLogs.push(isCrit ? `★クリティカル！ ${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}` : `${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}`);
+                resultLogs.push(isCrit ? `★クリティカル！ ${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}${hitTag}` : `${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}${hitTag}`);
                 if (shieldResult.absorbed > 0) {
                     resultLogs.push(`🛡️ ${opp.name} のシールドが ${shieldResult.absorbed} のダメージを吸収した！(シールド残量: ${opp.shieldValue})`);
+                }
+                {
+                    const michizureLog = checkMichizureTrigger(opp, me, () => opp.life, () => me.life, (v) => { me.life = v; });
+                    if (michizureLog) resultLogs.push(michizureLog);
                 }
 
                 // 根性・底力の発動判定（ダメージを受けた側）
@@ -1356,10 +1379,11 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                     me.life = Math.min(me.maxLife, me.life + drainHeal);
                     resultLogs.push(`🌿 ${me.name} は相手の生命力を吸収し、ライフが ${drainHeal} 回復した！`);
                 }
+                } // end hitCount loop
 
                 me.isSokojikaraActive = false;
                 me.isShuchuActive = false;
-            } else {
+            } else if (!isHit) {
                 if (isGuaranteedDodge) {
                     resultLogs.push(`🌫️ ${opp.name} は陽炎の効果で攻撃を確実に回避した！`);
                 } else {
@@ -1436,6 +1460,9 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
 function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs) {
     if (!unit || unit.life <= 0) return;
 
+    // みちづれ：効果は発動したそのターン限りのため、次のターンが始まる時点で待機状態を解除する
+    unit.michizureActive = false;
+
     if (unit.critBonusTurns > 0) unit.critBonusTurns--;
     unit.isDefending = false;
     // 衰弱（weaken_pow_int）はターン経過では解除されず、交代するまで持続する。
@@ -1468,6 +1495,10 @@ function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs) {
     if (bleedDamage > 0 || burnDamage > 0 || poisonDamage > 0) {
         const dotLogs = applyDotDamageAndBuildLogs(unit.name, dotResult, () => unit.life, (v) => { unit.life = v; });
         dotLogs.forEach(line => resultLogs.push(line));
+        if (opponentUnit) {
+            const michizureLog = checkMichizureTrigger(unit, opponentUnit, () => unit.life, () => opponentUnit.life, (v) => { opponentUnit.life = v; });
+            if (michizureLog) resultLogs.push(michizureLog);
+        }
     }
 
     if (unit.life <= 0) return;

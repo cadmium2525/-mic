@@ -9,17 +9,27 @@ body {
     font-family: 'M PLUS Rounded 1c', sans-serif;
     background-color: #120b07;
     color: #f5f2eb;
-    user-select: none;
-    -webkit-user-select: none;
     height: 100vh; /* フォールバック */
     height: 100dvh; /* 動的ビューポート高さ：スマホのツールバー分を正しく除外 */
     height: -webkit-fill-available;
     min-height: 0;
 }
-/* body側のuser-select:noneは誤選択防止のためだが、そのままだと一部のモバイルブラウザ／WebViewで
-   入力欄内のカーソル配置やペースト操作まで巻き込んで無効化されてしまうことがあるため、
-   フォーム要素だけは明示的にテキスト選択・入力操作を復活させる
-   （「アカウント管理」の以前のIDで復帰する欄などで文字入力・ペーストができない不具合の修正）。 */
+/* body側のuser-select:noneは誤選択防止のためのものだが、iOSでホーム画面に追加した
+   PWA（standalone表示）では、ページ内のどこかに -webkit-user-select: none が
+   存在するだけで、入力欄側で user-select: text を明示していてもソフトウェアキーボードが
+   開かなくなる（文字入力そのものができなくなる）というWebKitの既知の不具合がある。
+   ブラウザの通常タブでは問題が起きないため、この誤選択防止スタイルは
+   「PWAとしてインストールされていない（=display-modeがstandalone/fullscreenではない）」
+   場合に限定して適用する
+   （PWA化するとブリーダー名やアカウントIDの入力ができなくなる不具合の修正）。 */
+@media (display-mode: browser) {
+    body {
+        user-select: none;
+        -webkit-user-select: none;
+    }
+}
+/* フォーム要素は上記のPWA不具合とは別に、通常タブ利用時も文字選択・カーソル配置・
+   ペースト操作ができるよう明示的にテキスト選択を有効にしておく。 */
 input, textarea, select {
     user-select: text;
     -webkit-user-select: text;

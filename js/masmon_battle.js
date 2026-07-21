@@ -592,6 +592,10 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
     const p = getPlayerActive();
     const e = getEnemyActive();
 
+    // みちづれ：効果は発動したそのターン限りのため、次のターンが始まる時点で待機状態を解除する
+    if (p) p.michizureActive = false;
+    if (e) e.michizureActive = false;
+
     if (p.critBonusTurns > 0) {
         p.critBonusTurns--;
         if (p.critBonusTurns === 0) addLog(`${p.name} のクリティカル率上昇効果が切れた。`);
@@ -651,6 +655,10 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
     if (confusionResult.dotDamage > 0) {
         const dotLogs = applyDotDamageAndBuildLogs(p.name, confusionResult, () => p.stats.life, (v) => { p.stats.life = v; });
         dotLogs.forEach(addLog);
+        if (e) {
+            const michizureLog = checkMichizureTrigger(p, e, () => p.stats.life, () => e.stats.life, (v) => { e.stats.life = v; });
+            if (michizureLog) addLog(michizureLog);
+        }
         updateMasmonBattleStatsUI();
         handleFaintAndSwitch('player', (result) => {
             if (result.battleEnded) return;
@@ -1368,6 +1376,11 @@ function decideMasmonEnemyAction() {
     if (enemyConfusionResult.dotDamage > 0) {
         const dotLogs = applyDotDamageAndBuildLogs(e.name, enemyConfusionResult, () => e.stats.life, (v) => { e.stats.life = v; });
         dotLogs.forEach(addLog);
+        const playerActiveForMichizure = getPlayerActive();
+        if (playerActiveForMichizure) {
+            const michizureLog = checkMichizureTrigger(e, playerActiveForMichizure, () => e.stats.life, () => playerActiveForMichizure.stats.life, (v) => { playerActiveForMichizure.stats.life = v; });
+            if (michizureLog) addLog(michizureLog);
+        }
         updateMasmonBattleStatsUI();
         if (checkFaintAndProceed('enemy')) {
             return { actionType: 'none', battleEnded: true };
@@ -1671,58 +1684,74 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
     // 次技威力アップ（オーロラゲート等）の消費は命中判定に関わらず技を撃った時点で消費する
     const usedForce = consumeForceBoost(attacker, sk.force) * recoilForceMultiplier;
 
-    // みがわり餅で設置された身代わりが残っている場合、攻撃はダメージ・ガッツダウン・追加効果一切なしで防がれる
+    // プラズマの「次の技を2回攻撃扱いにする」効果：命中判定に関わらず技を撃った時点で消費する。
+    // 命中判定自体は1回だけ行うが、命中していればダメージ・ガッツダウン・命中時追加効果の抽選を
+    // 2回分（2撃分）まとめて処理する（外れた場合は当然2回分まとめて外れる）。
+    const isDoubleHit = !!attacker.doubleHitNext;
+    if (attacker.doubleHitNext) attacker.doubleHitNext = false;
+    let hitCount = isDoubleHit ? 2 : 1;
+
+    // みがわり餅で設置された身代わりが残っている場合、攻撃はダメージ・ガッツダウン・追加効果一切なしで防がれる。
+    // 2回攻撃扱いの場合、身代わりの残り回数を超える分は身代わりを貫通し、実際に相手へ攻撃が届く
+    // （プラズマでみがわりを1つ削ってから攻撃技を打つことで、みがわりを削りきり相手を攻撃するための仕様）。
     const defenderSubKey = side === 'player' ? 'enemySubstituteHits' : 'playerSubstituteHits';
     if (isHit && MASMON_BATTLE_STATE[defenderSubKey] > 0) {
-        MASMON_BATTLE_STATE[defenderSubKey] -= 1;
+        const consumedSub = Math.min(MASMON_BATTLE_STATE[defenderSubKey], hitCount);
+        MASMON_BATTLE_STATE[defenderSubKey] -= consumedSub;
         const remaining = MASMON_BATTLE_STATE[defenderSubKey];
         steps.push({
             run: () => {
                 showEffect('🌸 身代わり！');
-                addLog(`🌸 桜餅の身代わりが${defender.name}の代わりに攻撃を受けた！（身代わりの残り回数: ${remaining}）`);
+                addLog(`🌸 桜餅の身代わりが${defender.name}の代わりに攻撃を${consumedSub > 1 ? consumedSub + '回分' : ''}受けた！（身代わりの残り回数: ${remaining}）`);
             },
             wait: BATTLE_STEP_DELAY.afterHitEffect
         });
-        return;
+        hitCount -= consumedSub;
+        if (hitCount <= 0) {
+            return;
+        }
     }
 
     // ダメージ無し・状態異常付与のみを狙う技（どくのこな等）：命中判定・追加効果は通常通り行うが、ダメージ演算は一切行わない
     if (isHit && sk.noDamage) {
-        steps.push({
-            run: () => {
-                showEffect(cfg.hitEffect);
-                animateSprite(cfg.oppSpriteContainer, cfg.oppSpriteAnim);
-                addLog(side === 'player'
-                    ? `${defender.name} に技が命中した！`
-                    : `${defender.name} に技が命中した！`);
-            },
-            wait: BATTLE_STEP_DELAY.afterHitEffect
-        });
-
-        let finalGutsDown = sk.gutsDown || 0;
-        if (attacker.isGyakujoActive && finalGutsDown > 0) {
-            finalGutsDown = Math.floor(finalGutsDown * 1.2);
-        }
-        if (finalGutsDown > 0) {
+        for (let hitNo = 0; hitNo < hitCount; hitNo++) {
+            const hitTag = hitCount > 1 ? `（${hitNo + 1}撃目）` : '';
             steps.push({
                 run: () => {
-                    const mitigatedGutsDown = Math.floor(finalGutsDown * getGutsDownMitigation(defender.stats.def) * (1 - getEquipmentGutsDownCutRate(defender)));
-                    const actualGutsDown = Math.min(defender.guts, mitigatedGutsDown);
-                    defender.guts = Math.max(0, defender.guts - actualGutsDown);
+                    showEffect(cfg.hitEffect);
+                    animateSprite(cfg.oppSpriteContainer, cfg.oppSpriteAnim);
                     addLog(side === 'player'
-                        ? `さらに！相手のガッツを ${actualGutsDown} 奪い取った！${attacker.isGyakujoActive ? " (逆上×1.2)" : ""} (現在: ${Math.floor(defender.guts)})`
-                        : `さらに！ ${defender.name} のガッツが ${actualGutsDown} 奪われた！(現在: ${Math.floor(defender.guts)})`);
-                    updateMasmonBattleStatsUI();
-                    checkMasmonGyakujoTrigger(defender);
+                        ? `${defender.name} に技が命中した！${hitTag}`
+                        : `${defender.name} に技が命中した！${hitTag}`);
                 },
-                wait: BATTLE_STEP_DELAY.perExtraLog
+                wait: BATTLE_STEP_DELAY.afterHitEffect
+            });
+
+            let finalGutsDown = sk.gutsDown || 0;
+            if (attacker.isGyakujoActive && finalGutsDown > 0) {
+                finalGutsDown = Math.floor(finalGutsDown * 1.2);
+            }
+            if (finalGutsDown > 0) {
+                steps.push({
+                    run: () => {
+                        const mitigatedGutsDown = Math.floor(finalGutsDown * getGutsDownMitigation(defender.stats.def) * (1 - getEquipmentGutsDownCutRate(defender)));
+                        const actualGutsDown = Math.min(defender.guts, mitigatedGutsDown);
+                        defender.guts = Math.max(0, defender.guts - actualGutsDown);
+                        addLog(side === 'player'
+                            ? `さらに！相手のガッツを ${actualGutsDown} 奪い取った！${attacker.isGyakujoActive ? " (逆上×1.2)" : ""} (現在: ${Math.floor(defender.guts)})`
+                            : `さらに！ ${defender.name} のガッツが ${actualGutsDown} 奪われた！(現在: ${Math.floor(defender.guts)})`);
+                        updateMasmonBattleStatsUI();
+                        checkMasmonGyakujoTrigger(defender);
+                    },
+                    wait: BATTLE_STEP_DELAY.perExtraLog
+                });
+            }
+
+            const onHitMsgs = applySkillOnHitEffect(attacker, defender, sk);
+            onHitMsgs.forEach(msg => {
+                steps.push({ run: () => addLog(msg), wait: BATTLE_STEP_DELAY.perExtraLog });
             });
         }
-
-        const onHitMsgs = applySkillOnHitEffect(attacker, defender, sk);
-        onHitMsgs.forEach(msg => {
-            steps.push({ run: () => addLog(msg), wait: BATTLE_STEP_DELAY.perExtraLog });
-        });
 
         attacker.isSokojikaraActive = false;
         attacker.isShuchuActive = false;
@@ -1730,6 +1759,8 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
     }
 
     if (isHit) {
+        for (let hitNo = 0; hitNo < hitCount; hitNo++) {
+        const hitTag = hitCount > 1 ? `（${hitNo + 1}撃目）` : '';
         const isPow = sk.type === 'pow';
         // useDefAsAtk：自身の丈夫さの値を攻撃の値として扱う技（例：ボディプレス）
         const attackerStat = (sk.useDefAsAtk
@@ -1769,7 +1800,7 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
             extraDmgMsg += monClassMod > 1.0 ? ` (モン類相性有利×${monClassMod})` : ` (モン類相性不利×${monClassMod})`;
         }
 
-        const critChance = 0.10 + (attacker.critBonusTurns > 0 ? 0.25 : 0) + getEquipmentCritBonus(attacker) + getSkillCritBonus(sk);
+        const critChance = 0.10 + (attacker.critBonusTurns > 0 ? 0.25 : 0) + (((attacker.critUpStacks || 0) * 0.25)) + getEquipmentCritBonus(attacker) + getSkillCritBonus(sk);
         let isCrit = Math.random() < critChance;
         if (isCrit) {
             damage = Math.floor(damage * 1.5);
@@ -1798,12 +1829,12 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
             run: () => {
                 if (isCrit) {
                     addLog(side === 'player'
-                        ? `★クリティカルヒット！ ${defender.name} に ${damage} ダメージ！${extraDmgMsg}`
-                        : `★相手のクリティカル！ ${defender.name} は ${damage} ダメージを受けた！${extraDmgMsg}`);
+                        ? `★クリティカルヒット！ ${defender.name} に ${damage} ダメージ！${extraDmgMsg}${hitTag}`
+                        : `★相手のクリティカル！ ${defender.name} は ${damage} ダメージを受けた！${extraDmgMsg}${hitTag}`);
                 } else {
                     addLog(side === 'player'
-                        ? `${defender.name} に ${damage} ダメージ！${extraDmgMsg}`
-                        : `${defender.name} は ${damage} ダメージを受けた！${extraDmgMsg}`);
+                        ? `${defender.name} に ${damage} ダメージ！${extraDmgMsg}${hitTag}`
+                        : `${defender.name} は ${damage} ダメージを受けた！${extraDmgMsg}${hitTag}`);
                 }
                 if (side === 'enemy' && MASMON_BATTLE_STATE.isDefending) {
                     addLog(`【防御効果】攻撃を盾で受け流し、ダメージを半減した！`);
@@ -1819,6 +1850,11 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
                 if (enduranceLog) addLog(enduranceLog);
                 const lifesaverLog = checkAndApplyEquipmentLifesaverEffect(defender);
                 if (lifesaverLog) addLog(lifesaverLog);
+                const michizureLog = checkMichizureTrigger(defender, attacker, () => defender.stats.life, () => attacker.stats.life, (v) => { attacker.stats.life = v; });
+                if (michizureLog) {
+                    addLog(michizureLog);
+                    updateMasmonBattleStatsUI();
+                }
             },
             wait: BATTLE_STEP_DELAY.afterDamage
         });
@@ -1870,6 +1906,7 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
                 wait: BATTLE_STEP_DELAY.perExtraLog
             });
         }
+        } // end hitCount loop
 
         attacker.isSokojikaraActive = false;
         attacker.isShuchuActive = false;
