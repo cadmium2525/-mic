@@ -39,6 +39,12 @@ body {
     /* justify-betweenだとスクロール時に要素間が間延びするため通常フローに変更 */
     justify-content: flex-start !important;
 }
+/* 対戦相手対峙演出画面（screen-kinnejiki-encounter）は中身が短く、常に画面中央に
+   縦centeringして見せたい画面のため、上記の一律上書きの対象から除外する
+   （このメッセージがずっと画面上部に寄ってしまっていた問題の修正） */
+#game-container > div.flex-1 > #screen-kinnejiki-encounter.screen.h-full {
+    justify-content: center !important;
+}
 /* カスタムスクロールバー */
 ::-webkit-scrollbar {
     width: 6px;

@@ -689,12 +689,68 @@ function startKinNejikiBattleEngine(opponentTeamRaw, floorText, isNejiki, aiLeve
     showKinNejikiEncounterScreen(breederName, isNejiki);
 }
 
+// --- 対戦相手ブリーダーの顔グラフィック名鑑 ---
+// KIN_NEJIKI_BREEDER_NAMES（二つ名付きのフルネーム）→ images/フォルダの実ファイル名（二つ名を除いた名前）。
+// ※ 「ミスターG」のみ二つ名部分が無いため、フルネームがそのままファイル名になる。
+const KIN_NEJIKI_BREEDER_VISUAL_NAME = {
+    '白銀の騎士アルベルト': 'アルベルト',
+    '飛燕のセシリア': 'セシリア',
+    '鉄腕ガルシア': 'ガルシア',
+    '不敗のマキシム': 'マキシム',
+    'エリートブリーダークロウ': 'クロウ',
+    'ただのララ': 'ララ',
+    '怪老ゲンジ': 'ゲンジ',
+    '幻惑のシルバ': 'シルバ',
+    '熱血ブリーダーダイゴ': 'ダイゴ',
+    'お嬢様カトリーヌ': 'カトリーヌ',
+    'ミスターG': 'ミスターG',
+    '迷子のトト': 'トト',
+    '神速のレオン': 'レオン',
+    '冥府の門番ハデス': 'ハデス',
+    '大地の母エレーナ': 'エレーナ'
+};
+
+// --- ブリーダーの顔グラフィックを描画する ---
+// 対応する画像が無い相手（レジェンドブリーダー・コルト等）や、画像の読み込みに失敗した場合は
+// フォールバックの絵文字をそのまま表示する（renderMonsterVisualと同様の考え方）。
+function renderKinNejikiBreederVisual(containerEl, breederName, fallbackEmoji) {
+    if (!containerEl) return;
+    containerEl.innerHTML = '';
+
+    const visualName = KIN_NEJIKI_BREEDER_VISUAL_NAME[breederName];
+    if (!visualName) {
+        containerEl.textContent = fallbackEmoji || '🥊';
+        return;
+    }
+
+    const imagePath = `images/${visualName}.png`;
+    containerEl.dataset.visualSrc = imagePath;
+    containerEl.textContent = ''; // 画像読み込み完了までは空表示（フォールバック絵文字とのちらつきを防ぐ）
+
+    const img = new Image();
+    img.src = imagePath;
+    img.onload = () => {
+        if (containerEl.dataset.visualSrc !== imagePath) return;
+        containerEl.innerHTML = '';
+        const imgEl = document.createElement('img');
+        imgEl.src = imagePath;
+        imgEl.alt = breederName;
+        imgEl.className = 'w-full h-full object-cover';
+        containerEl.appendChild(imgEl);
+    };
+    img.onerror = () => {
+        console.warn(`[renderKinNejikiBreederVisual] 画像が見つかりません: ${imagePath}`);
+        if (containerEl.dataset.visualSrc !== imagePath) return;
+        containerEl.textContent = fallbackEmoji || '🥊';
+    };
+}
+
 // --- 「○○が勝負を仕掛けてきた！」演出画面を表示する ---
 function showKinNejikiEncounterScreen(breederName, isNejiki) {
     const msgEl = document.getElementById('kinnejiki-encounter-message');
     if (msgEl) msgEl.textContent = `${breederName}が勝負を仕掛けてきた！`;
     const iconEl = document.getElementById('kinnejiki-encounter-icon');
-    if (iconEl) iconEl.textContent = isNejiki ? '👑' : '🥊';
+    renderKinNejikiBreederVisual(iconEl, breederName, isNejiki ? '👑' : '🥊');
     changeScreen('screen-kinnejiki-encounter');
 }
 
