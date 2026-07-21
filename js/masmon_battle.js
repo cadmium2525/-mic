@@ -1384,7 +1384,7 @@ function decideMasmonEnemyAction() {
     // ※ AIはここで「自分が先攻になるか後攻になるか」を考慮したい場合、
     //    chooseKinNejikiEnemySkill 側で MASMON_BATTLE_STATE の速度比較結果を参照する形で拡張できる。
     const skKey = (MASMON_BATTLE_STATE.kinNejiki && typeof chooseKinNejikiEnemySkill === 'function')
-        ? chooseKinNejikiEnemySkill(e, p, affordableSkills, MASMON_BATTLE_STATE.kinNejiki.aiLevel || 1)
+        ? chooseKinNejikiEnemySkill(e, p, affordableSkills, MASMON_BATTLE_STATE.kinNejiki.aiLevel || 1, MASMON_BATTLE_STATE.kinNejiki.aiPersonality)
         : affordableSkills.slice().sort((a, b) => b.info.cost - a.info.cost)[0].key;
 
     return { actionType: 'skill', skKey: skKey };

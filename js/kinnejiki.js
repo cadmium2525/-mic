@@ -379,7 +379,18 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, e
 // =====================================================
 
 // --- 敵の技選択（アイテムAI runEnemyItemAI とは別に、ガッツファクトリー戦のみ masmon_battle.js から呼ばれる） ---
-function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel) {
+// --- 敵AIの「性格」をバトルごとにランダムで1つ割り当てる ---
+// 同じ相手・同じAIレベルでも毎回立ち回りが変わるようにするための仕組み。
+//   speedy   : 速攻型 … 確殺があれば当然狙うが、それ以外は常に最大火力の技を選ぶ
+//   control  : 搦め手型 … 確殺が無ければガッツダウン値の高い技を優先し、じわじわ制圧してくる
+//   sustain  : 粘り型 … 自身のライフが40%を切ると、回復技があれば最優先で使ってくる
+//   balanced : バランス型 … 既存のレベル別ロジックそのまま（特別な偏りなし）
+const KIN_NEJIKI_AI_PERSONALITIES = ['speedy', 'control', 'sustain', 'balanced'];
+function pickKinNejikiAiPersonality() {
+    return KIN_NEJIKI_AI_PERSONALITIES[Math.floor(Math.random() * KIN_NEJIKI_AI_PERSONALITIES.length)];
+}
+
+function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel, personality) {
     if (!affordableSkills || affordableSkills.length === 0) return null;
 
     if (aiLevel <= 1) {
@@ -396,6 +407,39 @@ function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel) {
         return Math.max(1, raw) * dmgMultiplier;
     };
     const withEstimate = affordableSkills.map(s => ({ ...s, estDmg: estimate(s.info) }));
+
+    // --- 性格によるバイアス（レベル2以上にのみ適用。レベル1は完全ランダムのまま） ---
+    if (personality === 'sustain') {
+        const lifeRatio = e.stats.life / e.stats.maxLife;
+        if (lifeRatio < 0.4) {
+            const healOptions = affordableSkills.filter(s => s.info.type === 'heal');
+            if (healOptions.length > 0) {
+                return healOptions[Math.floor(Math.random() * healOptions.length)].key;
+            }
+        }
+    }
+    if (personality === 'control') {
+        const lethalCheck = withEstimate.filter(s => s.estDmg >= p.stats.life);
+        if (lethalCheck.length === 0) {
+            const control = withEstimate.filter(s => (s.info.gutsDown || 0) >= 15);
+            if (control.length > 0) {
+                control.sort((a, b) => (b.info.gutsDown || 0) - (a.info.gutsDown || 0));
+                return control[0].key;
+            }
+        }
+    }
+    if (personality === 'speedy') {
+        const lethal = withEstimate.filter(s => s.estDmg >= p.stats.life);
+        if (lethal.length > 0) {
+            lethal.sort((a, b) => b.estDmg - a.estDmg);
+            return lethal[0].key;
+        }
+        withEstimate.sort((a, b) => b.estDmg - a.estDmg);
+        return withEstimate[0].key;
+    }
+
+    // ここから下は「バランス型」、および性格による分岐に該当しなかった場合の
+    // 通常ロジック（従来通りのレベル別の判断基準）。
 
     // レベル4（ボス級）：確殺が狙えるなら最大火力、そうでなければ制圧（ガッツダウン／状態異常）を優先
     if (aiLevel >= 4) {
@@ -686,7 +730,8 @@ function launchKinNejikiBattleEngine(opponentTeamRaw, floorText, isNejiki, aiLev
         set: KIN_NEJIKI_STATE.set,
         battleIndex: KIN_NEJIKI_STATE.battleInSet,
         isNejiki: !!isNejiki,
-        aiLevel: aiLevel
+        aiLevel: aiLevel,
+        aiPersonality: pickKinNejikiAiPersonality()
     };
 
     startMasmonBattleCommon(floorText);
@@ -838,11 +883,14 @@ function proceedAfterKinNejikiSwap() {
 // =====================================================
 // ラン終了・ランキング
 // =====================================================
-function kinNejikiFinishRun(cleared) {
+async function kinNejikiFinishRun(cleared) {
     KIN_NEJIKI_STATE.active = false;
     clearKinNejikiSuspendSave(); // 敗北時・クリア時のいずれも一時セーブは削除する（コンティニュー用途ではないため）
     const finalWins = KIN_NEJIKI_STATE.totalWins;
-    saveKinNejikiRanking(finalWins, cleared);
+    // 保存が終わる前に結果画面へ進んでしまうと、プレイヤーがすぐタブを閉じた場合に
+    // ランキングへの書き込みが完了しないまま消えてしまう（特に早期敗退時に起きやすい）。
+    // そのため画面遷移の前に保存の完了を待つ。
+    await saveKinNejikiRanking(finalWins, cleared);
     renderKinNejikiResultScreen(finalWins, cleared);
     changeScreen('screen-kinnejiki-result');
 }
@@ -893,6 +941,7 @@ async function fetchKinNejikiRanking(limit = 100) {
         const list = [];
         snap.forEach(child => list.push({ id: child.key, ...child.val() }));
         list.sort((a, b) => (b.bestWins || 0) - (a.bestWins || 0));
+        console.log('[ガッツファクトリー デバッグ] Firebaseから取得した件数:', list.length, list); // TODO: 原因特定後に削除
         return list;
     } catch (e) {
         console.error('[ガッツファクトリー] ランキング取得エラー:', e);
