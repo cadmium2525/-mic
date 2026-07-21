@@ -349,8 +349,9 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, e
             name: bossDef.name,
             monsterBaseName: bossDef.templateId ? (MONSTER_TEMPLATES[bossDef.templateId] || {}).name || bossDef.name : bossDef.name,
             // 専用イラストが用意されているボスは、モン類判定用のmonsterBaseNameとは別に
-            // 表示イラスト名を上書きする（例：set3ボスはゴーレム種だが「ゴビ.png」を使用する）
-            visualName: (bossKey === 'set3') ? 'ゴビ' : null,
+            // 表示イラスト名を上書きする（例：set3ボスはゴーレム種だが「ゴビ.png」、
+            // set7ボスは特定種族に属さないが「モスト.png」を使用する）
+            visualName: (bossKey === 'set3') ? 'ゴビ' : (bossKey === 'set7') ? 'モスト' : null,
             emoji: bossDef.emoji,
             speciesId: bossDef.templateId,
             aura: getRandomAuraKey(),

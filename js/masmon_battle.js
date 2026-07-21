@@ -106,6 +106,10 @@ function convertMasmonToBattleUnit(masmonData, equippedItem) {
     return {
         name: masmonData.name,
         monsterBaseName: masmonData.monsterBaseName || masmonData.name,
+        // 専用イラスト名の上書き（例：コルトのゴビ／コルトのモスト等、種族名とは別のファイル名の
+        // 画像を使わせたいボス）。ここで引き継がないと、生成元オブジェクト側でどれだけ
+        // visualName を指定してもバトル画面の描画時には失われてしまう。
+        visualName: masmonData.visualName || null,
         emoji: masmonData.emoji,
         aura: masmonData.aura || null,
         isAwakened: !!masmonData.isAwakened,
