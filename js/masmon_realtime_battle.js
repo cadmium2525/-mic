@@ -162,6 +162,7 @@ function convertRoomMasmonToRealtimeUnit(masmon) {
         isSokojikaraActive: false,
         isShuchuActive: false,
         isWeakened: false,     // わらわら等で受ける「ちから・かしこさ低下」（交代するまで持続）
+        weakenStacks: 0,       // 衰弱（weaken_pow_int）の重複回数（1回につき10%低下、3回まで重複可・交代するまで持続）
         isConfused: false,     // サケビ声等で受ける「混乱」状態（毎ターン30%で解除、解除されなければ40%で行動失敗）
         flinchTurns: 0,        // 黒ひざコンボ等で受ける「怯み」の残行動回数
         forceBoost: 0,         // オーロラゲート等で得る「次の技威力アップ」倍率
@@ -411,7 +412,7 @@ function renderRealtimeBattleUI(state) {
         turnIndicator.classList.add('hidden');
     }
 
-    const myGutsRecovery = 30 + getEquipmentGutsRecoveryBonus(me);
+    const myGutsRecovery = 30 + getEquipmentGutsRecoveryBonus(me) + getSkillGutsRecoveryBonus(me);
     document.getElementById('turn-guts-notice').textContent = canAct
         ? `💡 行動を選んでください（GUTS回復:+${myGutsRecovery}）。両者の選択が揃うと同時に解決されます`
         : (myActed ? `✅ 行動を送信しました。相手の選択を待っています…` : `⏳ お待ちください…`);
@@ -1499,7 +1500,7 @@ function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs) {
     if (unit.statusEffect === "闘魂" && opponentUnit && opponentUnit.guts > 70) {
         recovery = Math.floor(recovery * 1.5);
     }
-    recovery += getEquipmentGutsRecoveryBonus(unit);
+    recovery += getEquipmentGutsRecoveryBonus(unit) + getSkillGutsRecoveryBonus(unit);
     if (unit.gutsRecoveryDownNext > 0) {
         recovery = Math.max(0, recovery - unit.gutsRecoveryDownNext);
         unit.gutsRecoveryDownNext = 0;

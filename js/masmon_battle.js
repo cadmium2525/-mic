@@ -117,6 +117,7 @@ function convertMasmonToBattleUnit(masmonData, equippedItem) {
         isSokojikaraActive: false,
         isShuchuActive: false,
         isWeakened: false,   // わらわら等で受ける「ちから・かしこさ低下」（交代するまで持続）
+        weakenStacks: 0,     // 衰弱（weaken_pow_int）の重複回数（1回につき10%低下、3回まで重複可・交代するまで持続）
         isConfused: false,  // サケビ声等で受ける「混乱」状態（毎ターン30%で解除、解除されなければ40%で行動失敗）
         forceBoost: 0,    // オーロラゲート等で得る「次の技威力アップ」倍率
         shieldValue: 0,   // 九重神眼等で得るシールド（被ダメージ吸収）の残量
@@ -599,7 +600,7 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
         if (p.statusEffect === "闘魂" && e && e.guts > 70) {
             recovery = Math.floor(recovery * 1.5);
         }
-        recovery += getEquipmentGutsRecoveryBonus(p);
+        recovery += getEquipmentGutsRecoveryBonus(p) + getSkillGutsRecoveryBonus(p);
         if (p.gutsRecoveryDownNext > 0) {
             recovery = Math.max(0, recovery - p.gutsRecoveryDownNext);
             p.gutsRecoveryDownNext = 0;
@@ -618,7 +619,7 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
             if (e.statusEffect === "闘魂" && p.guts > 70) {
                 enemyRecovery = Math.floor(enemyRecovery * 1.5);
             }
-            enemyRecovery += getEquipmentGutsRecoveryBonus(e);
+            enemyRecovery += getEquipmentGutsRecoveryBonus(e) + getSkillGutsRecoveryBonus(e);
             if (e.gutsRecoveryDownNext > 0) {
                 enemyRecovery = Math.max(0, enemyRecovery - e.gutsRecoveryDownNext);
                 e.gutsRecoveryDownNext = 0;
@@ -840,7 +841,7 @@ function updateMasmonBattleStatsUI() {
         }
     });
 
-    const baseGutsRecovery = 30 + getEquipmentGutsRecoveryBonus(p);
+    const baseGutsRecovery = 30 + getEquipmentGutsRecoveryBonus(p) + getSkillGutsRecoveryBonus(p);
     document.getElementById('turn-guts-notice').textContent = `💡 あなたのガッツ回復力: +${baseGutsRecovery} / ターン`;
 
     updateMasmonStatusEffectUI();
