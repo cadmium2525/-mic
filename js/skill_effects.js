@@ -66,7 +66,7 @@ const SKILL_EFFECT_TYPE = {
 // count    : 粒の数 / size: フォントサイズ(px) / duration: 1粒あたりの再生時間(ms)
 // 攻撃エフェクト（パーティクル）の再生速度係数。1.0が元の速さ、大きいほどゆっくり再生される。
 // 「もう少しゆっくり」の要望に合わせて少し引き伸ばしている。
-const EFFECT_SPEED_MULTIPLIER = 1.35;
+const EFFECT_SPEED_MULTIPLIER = 1.8;
 
 const SKILL_EFFECT_CONFIGS = {
     fire_small:    { particles: ['🔥'],          motion: 'projectile',     count: 1, size: 22, duration: 500 },
