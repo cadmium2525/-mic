@@ -362,27 +362,93 @@
             <!-- ==================== SCREEN 8.5: PvP対戦 対戦形式選択画面 ==================== -->
             <div id="screen-pvp-rental-select" class="screen flex-col justify-between h-full p-4 bg-[#0a0f1a] space-y-3">
                 <div class="bg-sky-950/40 p-2.5 rounded-xl border border-sky-700 text-center space-y-2">
-                    <h2 class="text-sm font-black text-sky-300 pixel-font">レンタルモンスターでPvP対戦！</h2>
+                    <h2 class="text-sm font-black text-sky-300 pixel-font">オリジナル編成でPvP対戦！</h2>
                     <div class="flex space-x-2">
                         <button id="pvp-rental-tab-solo" onclick="switchPvpRentalBattleType('solo')" class="flex-1 py-2 text-xs font-bold rounded-lg border transition-all bg-[#2a1b15] border-sky-950 text-gray-400">個人戦（1体）</button>
                         <button id="pvp-rental-tab-team" onclick="switchPvpRentalBattleType('team')" class="flex-1 py-2 text-xs font-bold rounded-lg border transition-all bg-sky-900 border-sky-600 text-sky-300">団体戦（3体）</button>
                     </div>
-                    <p class="text-[9px] text-gray-400 leading-relaxed">対戦形式を選んでください。<br>モンスターの候補6体は、マッチングが成立するまでわかりません。<br>成立後にお互いの候補を確認しながら選出します。</p>
+                    <p class="text-[9px] text-gray-400 leading-relaxed">対戦形式を選んでください。<br>技構成・装備をカスタマイズした自分だけの編成プリセット（6体）から出す候補を選びます。<br>相手の候補は、マッチングが成立するまでわかりません。</p>
                 </div>
 
                 <div class="flex-1 flex items-center justify-center">
                     <div class="text-center text-gray-500 text-xs leading-relaxed">
-                        <div class="text-4xl mb-2">❓</div>
-                        モンスター候補は<br>マッチング成立後に判明します
+                        <div class="text-4xl mb-2">🎨</div>
+                        まずは編成プリセットを<br>準備しましょう
                     </div>
                 </div>
 
                 <div class="space-y-2">
-                    <button id="pvp-rental-confirm-btn" onclick="proceedToRealtimeMatchingFromRental()" class="w-full py-3.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl text-sm shadow-lg transform active:scale-95 transition-all pixel-font border-b-4 border-sky-800">
-                        次へ（愛言葉の入力へ）
+                    <button id="pvp-rental-confirm-btn" onclick="goToPvpPresetSelectFromEntry()" class="w-full py-3.5 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl text-sm shadow-lg transform active:scale-95 transition-all pixel-font border-b-4 border-sky-800">
+                        次へ（編成プリセットを選ぶ）
+                    </button>
+                    <button onclick="openPvpPresetManageScreen(false)" class="w-full py-2.5 bg-[#2a1b15] hover:bg-[#3c2a21] text-amber-300 font-bold rounded-xl text-xs border border-amber-900/50 transition-all active:scale-95">
+                        🎨 マイ編成を管理する
                     </button>
                     <button onclick="changeScreen('screen-title')" class="w-full py-2 bg-[#1a120b] hover:bg-[#2a1b15] text-gray-400 font-bold rounded-xl text-xs shadow border border-gray-700 transition-all active:scale-95">
                         タイトルに戻る
+                    </button>
+                </div>
+            </div>
+
+            <!-- ==================== SCREEN 8.51: PvP オリジナル編成プリセット一覧 ==================== -->
+            <div id="screen-pvp-preset-list" class="screen flex-col h-full bg-[#0a0f1a]">
+                <div class="p-3 border-b border-sky-950 bg-[#16202b] flex-shrink-0 text-center">
+                    <h2 id="pvp-preset-list-title" class="text-sm font-black text-sky-300 pixel-font">マイ編成を管理</h2>
+                    <p id="pvp-preset-list-desc" class="text-[9px] text-gray-400 mt-1 leading-relaxed"></p>
+                </div>
+                <div class="flex-1 overflow-y-auto p-3 space-y-2" id="pvp-preset-list-container"></div>
+                <div class="p-3 border-t border-sky-950 bg-[#16202b] flex-shrink-0">
+                    <button onclick="returnFromPvpPresetList()" class="w-full py-2.5 bg-[#3c2a21] hover:bg-[#4a352a] text-white font-bold rounded-xl text-xs border border-amber-800 transition-all active:scale-95">
+                        戻る
+                    </button>
+                </div>
+            </div>
+
+            <!-- ==================== SCREEN 8.52: PvP 編成プリセット編集（6体分のスロット） ==================== -->
+            <div id="screen-pvp-preset-editor" class="screen flex-col h-full bg-[#0a0f1a]">
+                <div class="p-3 border-b border-sky-950 bg-[#16202b] flex-shrink-0 space-y-1.5">
+                    <h2 class="text-sm font-black text-sky-300 pixel-font text-center">編成プリセット編集</h2>
+                    <input id="pvp-preset-editor-name-input" type="text" maxlength="20" placeholder="プリセット名"
+                        oninput="onPvpPresetEditorNameInput(this.value)"
+                        class="w-full p-2 bg-[#1a120b] border border-sky-800 rounded-lg text-xs text-white text-center placeholder-gray-600 focus:outline-none focus:border-sky-400" />
+                    <p class="text-[9px] text-gray-500 text-center leading-relaxed">技構成・装備をカスタマイズした6体を1セットとして保存します。各モンスターをタップして編集してください。</p>
+                </div>
+                <div class="flex-1 overflow-y-auto p-3 space-y-2" id="pvp-preset-editor-monster-list"></div>
+                <div class="p-3 border-t border-sky-950 bg-[#16202b] flex-shrink-0 space-y-2">
+                    <button id="pvp-preset-editor-save-btn" onclick="savePvpPresetEditor()" disabled class="w-full py-3 bg-sky-600 hover:bg-sky-500 disabled:cursor-not-allowed text-white font-bold rounded-xl text-sm transition-all active:scale-95 opacity-50">
+                        保存する
+                    </button>
+                    <button onclick="cancelPvpPresetEditor()" class="w-full py-2.5 bg-[#3c2a21] hover:bg-[#4a352a] text-white font-bold rounded-xl text-xs border border-amber-800 transition-all active:scale-95">
+                        保存せず戻る
+                    </button>
+                </div>
+            </div>
+
+            <!-- ==================== SCREEN 8.53: PvP 編成プリセット：モンスター1体編集（種族/技/装備） ==================== -->
+            <div id="screen-pvp-preset-monster-editor" class="screen flex-col h-full bg-[#0a0f1a]">
+                <div class="p-3 border-b border-sky-950 bg-[#16202b] flex-shrink-0">
+                    <h2 id="pvp-preset-monster-editor-title" class="text-sm font-black text-sky-300 pixel-font text-center"></h2>
+                </div>
+                <div class="flex-1 overflow-y-auto p-3 space-y-3">
+                    <div>
+                        <div class="text-[10px] text-sky-300 font-bold mb-1.5">① モンスターを選択</div>
+                        <div class="grid grid-cols-4 gap-1.5" id="pvp-preset-monster-species-list"></div>
+                    </div>
+                    <div id="pvp-preset-monster-skills-section" class="hidden">
+                        <div class="text-[10px] text-sky-300 font-bold mb-1.5">② 技を選択 <span id="pvp-preset-monster-skill-count" class="text-gray-500 font-normal"></span></div>
+                        <div class="space-y-1.5" id="pvp-preset-monster-skill-list"></div>
+                    </div>
+                    <div id="pvp-preset-monster-equip-section" class="hidden">
+                        <div class="text-[10px] text-purple-300 font-bold mb-1.5">③ 装備を選択（任意）</div>
+                        <div class="space-y-1.5" id="pvp-preset-monster-equip-list"></div>
+                    </div>
+                </div>
+                <div class="p-3 border-t border-sky-950 bg-[#16202b] flex-shrink-0 space-y-2">
+                    <button id="pvp-preset-monster-editor-confirm-btn" onclick="confirmPvpPresetMonsterEditor()" disabled class="w-full py-3 bg-sky-600 hover:bg-sky-500 disabled:cursor-not-allowed text-white font-bold rounded-xl text-sm transition-all active:scale-95 opacity-50">
+                        この内容で確定
+                    </button>
+                    <button onclick="cancelPvpPresetMonsterEditor()" class="w-full py-2.5 bg-[#3c2a21] hover:bg-[#4a352a] text-white font-bold rounded-xl text-xs border border-amber-800 transition-all active:scale-95">
+                        キャンセル
                     </button>
                 </div>
             </div>
@@ -693,7 +759,7 @@
         </div>
     </div>
 
-    <!-- サウンド設定モーダル（BGM/SEの音量：OFF・小・中・大） -->
+    <!-- サウンド設定モーダル（BGM/SEの音量：0〜100の数値でそれぞれ指定） -->
     <div id="audio-settings-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeAudioSettingsModal()">
         <div class="bg-[#2a1b15] w-full max-w-xs p-4 rounded-2xl border-2 border-amber-600 space-y-4 shadow-2xl" onclick="event.stopPropagation()">
             <h4 class="text-base font-black text-white pixel-font flex items-center space-x-2 border-b border-amber-800 pb-2">
@@ -703,24 +769,24 @@
 
             <!-- BGM 音量 -->
             <div>
-                <p class="text-xs text-amber-300 font-bold mb-1.5">🎵 BGM 音量</p>
-                <div class="grid grid-cols-4 gap-1.5" id="audio-bgm-row">
-                    <button id="audio-btn-bgm-off" onclick="setAudioLevel('bgm','off')" class="py-2 rounded-lg border text-[11px] font-bold transition-all bg-[#1a120b] text-gray-400 border-amber-900">OFF</button>
-                    <button id="audio-btn-bgm-small" onclick="setAudioLevel('bgm','small')" class="py-2 rounded-lg border text-[11px] font-bold transition-all bg-[#1a120b] text-gray-400 border-amber-900">小</button>
-                    <button id="audio-btn-bgm-mid" onclick="setAudioLevel('bgm','mid')" class="py-2 rounded-lg border text-[11px] font-bold transition-all bg-[#1a120b] text-gray-400 border-amber-900">中</button>
-                    <button id="audio-btn-bgm-large" onclick="setAudioLevel('bgm','large')" class="py-2 rounded-lg border text-[11px] font-bold transition-all bg-[#1a120b] text-gray-400 border-amber-900">大</button>
+                <div class="flex items-center justify-between mb-1.5">
+                    <p class="text-xs text-amber-300 font-bold">🎵 BGM 音量</p>
+                    <span id="audio-value-bgm" class="text-xs text-amber-200 font-bold tabular-nums">0</span>
                 </div>
+                <input id="audio-slider-bgm" type="range" min="0" max="100" step="1" value="0"
+                    oninput="setAudioVolume('bgm', this.value)" onchange="confirmAudioVolume('bgm', this.value)"
+                    class="w-full accent-amber-500" />
             </div>
 
             <!-- SE 音量 -->
             <div>
-                <p class="text-xs text-amber-300 font-bold mb-1.5">🔔 効果音（SE）音量</p>
-                <div class="grid grid-cols-4 gap-1.5" id="audio-se-row">
-                    <button id="audio-btn-se-off" onclick="setAudioLevel('se','off')" class="py-2 rounded-lg border text-[11px] font-bold transition-all bg-[#1a120b] text-gray-400 border-amber-900">OFF</button>
-                    <button id="audio-btn-se-small" onclick="setAudioLevel('se','small')" class="py-2 rounded-lg border text-[11px] font-bold transition-all bg-[#1a120b] text-gray-400 border-amber-900">小</button>
-                    <button id="audio-btn-se-mid" onclick="setAudioLevel('se','mid')" class="py-2 rounded-lg border text-[11px] font-bold transition-all bg-[#1a120b] text-gray-400 border-amber-900">中</button>
-                    <button id="audio-btn-se-large" onclick="setAudioLevel('se','large')" class="py-2 rounded-lg border text-[11px] font-bold transition-all bg-[#1a120b] text-gray-400 border-amber-900">大</button>
+                <div class="flex items-center justify-between mb-1.5">
+                    <p class="text-xs text-amber-300 font-bold">🔔 効果音（SE）音量</p>
+                    <span id="audio-value-se" class="text-xs text-amber-200 font-bold tabular-nums">0</span>
                 </div>
+                <input id="audio-slider-se" type="range" min="0" max="100" step="1" value="0"
+                    oninput="setAudioVolume('se', this.value)" onchange="confirmAudioVolume('se', this.value)"
+                    class="w-full accent-amber-500" />
             </div>
 
             <button onclick="closeAudioSettingsModal()" class="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl text-xs transition-all">
@@ -788,6 +854,7 @@
     <script src="js/masmon_realtime_battle.js"></script>
     <script src="js/kinnejiki.js"></script>
     <script src="js/pvp_rental.js"></script>
+    <script src="js/pvp_preset.js"></script>
     <script src="js/monster_dex.js"></script>
     <script src="js/equipment_dex.js"></script>
     <!-- BGM/SE 管理（他スクリプトの関数をラップするため必ず最後に読み込む） -->

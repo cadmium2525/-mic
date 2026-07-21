@@ -1354,8 +1354,8 @@ function consumeForceBoost(unit, baseForce) {
 }
 
 // --- 装備アイテムデータベース ---
-// ガッツファクトリー／PvP（レンタルモンスター）で、レンタルモンスター生成時に
-// ランダムで抽選・付与される（pvpRentalRollEquipment 等）。
+// ガッツファクトリーのレンタルモンスター生成時にランダムで抽選・付与されるほか、
+// PvP編成プリセット（js/pvp_preset.js）ではユーザーが自由に選択して装備させる。
 // mode: 'normal' / 'hard' は抽選プールの区分（'both' は両方から抽選される）。
 // type: 'stat'    -> statKey のステータスが range[0]～range[1] の間でランダムに上昇する
 //       'special' -> 戦闘中に特殊効果 (effect) が発動する

@@ -1,59 +1,41 @@
 // =====================================================
 // pvp_rental.js
-// PvP（リアルタイム対戦）で使用するパーティを、保存済みマスモンではなく
-// その場で生成するレンタルモンスターから選ぶための画面ロジック。
+// PvP（リアルタイム対戦）で使用するパーティを、ユーザー自身が技構成・装備を
+// カスタマイズして保存した「編成プリセット」（js/pvp_preset.js で管理）から
+// 選ぶための画面ロジック。
 // 実際のマッチング・ターン同期は masmon_realtime.js / masmon_realtime_battle.js
 // （既存のリアルタイム対戦エンジン）へそのまま引き継ぐ。
 //
 // 選出フロー（読み合い方式）：
-//   1. タイトル→対戦形式（個人戦/団体戦）を選ぶ（この時点では候補は一切わからない）
-//   2. 愛言葉あり/なしを選んでマッチング開始。候補6体はこのタイミングで
-//      抽選されるが、本人にも非公開のまま扱う（masmon_realtime.js 側で保持）
-//   3. マッチング成立後、PVP_PICK_STATE（本ファイル下部）にて
+//   1. タイトル→対戦形式（個人戦/団体戦）を選ぶ
+//   2. 使用する編成プリセット（自分で作成した6体・最大6セットまで保存可）を選ぶ
+//      （js/pvp_preset.js の画面。自分の候補は選んだ時点で既知だが、相手の候補は
+//      マッチングが成立するまでわからない）
+//   3. 愛言葉あり/なしを選んでマッチング開始。
+//   4. マッチング成立後、PVP_PICK_STATE（本ファイル下部）にて
 //      お互いの候補6体を初めて見せ合いながら、実際に出す規定数を選出する
 //      （相手の最終選出は、お互い選出完了するまで伏せられる）
+//
+// ※ ガッツファクトリー（js/kinnejiki.js）は本ファイルの機能とは独立しており、
+//   引き続きその場で抽選されるレンタルモンスターを使用する（変更なし）。
 // =====================================================
 
 const PVP_RENTAL_STATE = {
-    battleType: 'team' // 'solo' | 'team'
+    battleType: 'team', // 'solo' | 'team'
+    selectedPreset: null // マッチングに使用する編成プリセット（js/pvp_preset.js で選択・設定される）
 };
 
-// --- PvP用レンタル装備抽選：段階を設けず、ノーマル〜特殊効果まで幅広くミックスする ---
-function pvpRentalRollEquipment() {
-    if (Math.random() < 0.2) return null; // 未装備の余地も残す
-    const pool = Object.values(EQUIPMENT_DB).filter(e => e.type === 'stat' || e.type === 'special');
-    if (pool.length === 0) return null;
-    return buildEquipmentInstanceFromBase(pool[Math.floor(Math.random() * pool.length)]);
-}
-
-// --- PvP用レンタルモンスター1体を生成（ガッツファクトリーと同じ12種族プール・「型」データを使用） ---
-// PvPレンタル対戦には「周回」の概念が無いため、型は常に上位の型（型3・型4）のみから抽選する。
-function generatePvpRentalMonster(speciesId) {
-    const tmpl = MONSTER_TEMPLATES[speciesId];
+// --- 編成プリセットの1モンスタースロット（speciesId/skills/equipId）から実際の対戦用モンスターを生成 ---
+function generatePvpMonsterFromPresetSlot(slot) {
+    if (!slot || !slot.speciesId) return null;
+    const tmpl = MONSTER_TEMPLATES[slot.speciesId];
     if (!tmpl) return null;
 
-    const mold = (typeof pickMonsterMold === 'function') ? pickMonsterMold(speciesId, 4, null, 2) : null;
-    let chosenSkills, equipInstance;
-    if (mold) {
-        chosenSkills = mold.skills;
-        equipInstance = mold.equip;
-    } else {
-        // 型データが無い（未定義の）種族向けフォールバック：従来通りのランダム抽選
-        const skillPool = KIN_NEJIKI_SKILL_POOL[speciesId] || [];
-        const shuffledSkills = [...skillPool].sort(() => Math.random() - 0.5);
-        chosenSkills = shuffledSkills.slice(0, Math.min(4, shuffledSkills.length));
-        equipInstance = pvpRentalRollEquipment();
-    }
-
     const variance = () => 0.95 + Math.random() * 0.1; // PvPは公平性重視で個体差を小さめに(±5%)
-    // ちから/かしこさ特化型（dualStatType種族）の場合、型ごとのstatModをpow/intに乗算する
-    const powMod = (mold && mold.statMod && mold.statMod.pow) || 1;
-    const intMod = (mold && mold.statMod && mold.statMod.int) || 1;
-
     const stats = {
         maxLife: Math.round(tmpl.stats.maxLife * variance()),
-        pow: Math.round(tmpl.stats.pow * powMod * variance()),
-        int: Math.round(tmpl.stats.int * intMod * variance()),
+        pow: Math.round(tmpl.stats.pow * variance()),
+        int: Math.round(tmpl.stats.int * variance()),
         hit: Math.round(tmpl.stats.hit * variance()),
         spd: Math.round(tmpl.stats.spd * variance()),
         def: Math.round(tmpl.stats.def * variance()),
@@ -61,34 +43,44 @@ function generatePvpRentalMonster(speciesId) {
     };
     stats.life = stats.maxLife;
 
+    const equipBase = slot.equipId ? EQUIPMENT_DB[slot.equipId] : null;
+    const equipInstance = equipBase ? buildEquipmentInstanceFromBase(equipBase) : null;
+
     return {
         name: tmpl.name,
         monsterBaseName: tmpl.name,
         emoji: tmpl.emoji,
-        speciesId: speciesId,
+        speciesId: slot.speciesId,
         aura: getRandomAuraKey(), // 全モンスターに必ずオーラを付与する
         isAwakened: false,
         statusEffect: null,
         difficulty: 'pvp',
         stats: stats,
-        skills: chosenSkills,
+        skills: [...(slot.skills || [])],
         skillEnhancements: {},
         equip: equipInstance
     };
 }
 
-function generatePvpRentalOffer() {
-    const shuffledSpecies = [...KIN_NEJIKI_SPECIES_POOL].sort(() => Math.random() - 0.5);
-    return shuffledSpecies.slice(0, 6).map(sp => generatePvpRentalMonster(sp));
+// --- 編成プリセット（6体分のスロット）から、マッチングで使用する候補6体を生成する ---
+function generatePvpPresetOffer(preset) {
+    if (!preset || !Array.isArray(preset.monsters)) return null;
+    const offer = preset.monsters.map(slot => generatePvpMonsterFromPresetSlot(slot));
+    if (offer.some(m => !m)) return null; // 未設定のスロットが残っている場合は無効
+    return offer;
 }
 
 // --- タイトルから：PvP対戦の対戦形式選択画面へ ---
-// この時点では対戦形式（個人戦/団体戦）を決めるのみ。候補6体はまだ抽選しない
-// （抽選はマッチング開始時、実際に出すモンスターの選出はマッチング成立後に行う）。
 function startPvpRentalEntry(battleType = 'team') {
     PVP_RENTAL_STATE.battleType = battleType;
+    PVP_RENTAL_STATE.selectedPreset = null;
     renderPvpRentalSelectScreen();
     changeScreen('screen-pvp-rental-select');
+}
+
+// --- 対戦形式を選んだあと：使用する編成プリセットを選ぶ画面へ（js/pvp_preset.js） ---
+function goToPvpPresetSelectFromEntry() {
+    openPvpPresetManageScreen(true);
 }
 
 function switchPvpRentalBattleType(battleType) {
@@ -145,8 +137,7 @@ function renderPvpRentalSelectScreen() {
     }
 }
 
-// --- 対戦形式が確定した状態でマッチング画面（合言葉/ランダム）へ進む ---
-// 候補6体はまだ存在しない（マッチング開始時に初めて抽選される）。
+// --- 対戦形式・編成プリセットが確定した状態でマッチング画面（合言葉/ランダム）へ進む ---
 function proceedToRealtimeMatchingFromRental() {
     showRealtimeKeywordScreen([], PVP_RENTAL_STATE.battleType);
 }

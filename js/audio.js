@@ -5,8 +5,10 @@
 // 外部の音声ファイルを一切使わず、Web Audio API でその場で波形を
 // 合成して再生する（＝アセット不要で軽量、オフラインPWAとも相性が良い）。
 //
-// ・音量は BGM/SE それぞれ「OFF・小・中・大」の4段階。初期値はどちらも OFF。
+// ・音量は BGM/SE それぞれ 0〜100 の数値で個別に指定できる。初期値はどちらも 0（無音）。
 // ・設定は localStorage に保存され、次回起動時も復元される。
+//   （旧バージョンの「OFF・小・中・大」の4段階設定が残っている場合は、
+//   相当する数値へ自動的に変換して引き継ぐ）
 // ・画面遷移（changeScreen）・戦闘演出（showEffect）・通知（showToast）を
 //   ラップして自動的に適切な音を鳴らす。個々の画面のコードは変更不要。
 //
@@ -18,12 +20,15 @@
 const AudioManager = (() => {
 
     const STORAGE_KEY = 'mfload_audio_settings';
-    const LEVELS = ['off', 'small', 'mid', 'large'];
-    const LEVEL_LABEL = { off: 'OFF', small: '小', mid: '中', large: '大' };
-    const BGM_GAIN = { off: 0, small: 0.08, mid: 0.15, large: 0.28 };
-    const SE_GAIN = { off: 0, small: 0.22, mid: 0.45, large: 0.8 };
+    const VOLUME_MIN = 0;
+    const VOLUME_MAX = 100;
+    // 音量100%時の実際のゲイン値（旧「大」相当の値を踏襲）
+    const BGM_MAX_GAIN = 0.28;
+    const SE_MAX_GAIN = 0.8;
+    // 旧バージョン（OFF/小/中/大の4段階）からの移行用：相当する0〜100の数値に変換する
+    const LEGACY_LEVEL_TO_VOLUME = { off: 0, small: 30, mid: 55, large: 100 };
 
-    let settings = { bgm: 'off', se: 'off' };
+    let settings = { bgm: 0, se: 0 };
 
     let ctx = null;
     let masterBgmGain = null;
@@ -35,6 +40,20 @@ const AudioManager = (() => {
     let bgmToken = 0;
     let activeBgmNodes = []; // 現在スケジュール済みのBGM用osc/gainノード（曲切り替え時に即座に停止するため）
 
+    function clampVolume(v) {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return 0;
+        return Math.max(VOLUME_MIN, Math.min(VOLUME_MAX, Math.round(n)));
+    }
+
+    function bgmVolumeToGain(v) {
+        return (clampVolume(v) / VOLUME_MAX) * BGM_MAX_GAIN;
+    }
+
+    function seVolumeToGain(v) {
+        return (clampVolume(v) / VOLUME_MAX) * SE_MAX_GAIN;
+    }
+
     // ---------------------------------------------------
     // 設定の読み書き（LocalStorage）
     // ---------------------------------------------------
@@ -43,10 +62,13 @@ const AudioManager = (() => {
             const raw = localStorage.getItem(STORAGE_KEY);
             if (!raw) return;
             const saved = JSON.parse(raw);
-            if (saved && LEVELS.includes(saved.bgm) && LEVELS.includes(saved.se)) {
-                settings = saved;
-            }
-        } catch (e) { /* 読み込み失敗時は初期値(OFF)のまま */ }
+            if (!saved) return;
+            // 旧形式（'off'|'small'|'mid'|'large'）からの移行
+            const bgmRaw = (typeof saved.bgm === 'string') ? LEGACY_LEVEL_TO_VOLUME[saved.bgm] : saved.bgm;
+            const seRaw = (typeof saved.se === 'string') ? LEGACY_LEVEL_TO_VOLUME[saved.se] : saved.se;
+            if (typeof bgmRaw === 'number') settings.bgm = clampVolume(bgmRaw);
+            if (typeof seRaw === 'number') settings.se = clampVolume(seRaw);
+        } catch (e) { /* 読み込み失敗時は初期値(0)のまま */ }
     }
 
     function saveSettings() {
@@ -65,11 +87,11 @@ const AudioManager = (() => {
             if (!Ctor) return null;
             ctx = new Ctor();
             masterBgmGain = ctx.createGain();
-            masterBgmGain.gain.value = BGM_GAIN[settings.bgm];
+            masterBgmGain.gain.value = bgmVolumeToGain(settings.bgm);
             masterBgmGain.connect(ctx.destination);
 
             masterSeGain = ctx.createGain();
-            masterSeGain.gain.value = SE_GAIN[settings.se];
+            masterSeGain.gain.value = seVolumeToGain(settings.se);
             masterSeGain.connect(ctx.destination);
         } catch (e) {
             console.warn('[AudioManager] Web Audio API が利用できません:', e);
@@ -226,7 +248,7 @@ const AudioManager = (() => {
     };
 
     function playSE(name) {
-        if (settings.se === 'off') return;
+        if (settings.se === 0) return;
         const c = ensureContext();
         if (!c) return;
         resume();
@@ -253,44 +275,61 @@ const AudioManager = (() => {
             bass: [['A3',2],['E3',2],['F3',2],['C3',2],['A3',2],['E3',2],['G3',1],['A3',1],['D3',2]],
         },
         battle: {
-            // 「イントロ→メロディ→サビ→メロディ→サビ」の1周40拍構成。
-            // 旧バージョンは8拍(約3.2秒)しかなくループの繋ぎ目が不自然だったため、
-            // 導入とサビを追加して1周を大幅に長くし、終端(サビの着地)から
-            // 先頭のイントロ(休符始まり)へ自然に戻るようにしている。
-            tempo: 150, leadType: 'square', bassType: 'sawtooth',
+            // 疾走感のあるJRPG風バトル曲（完全新規オリジナル作曲）。
+            // Dナチュラルマイナー・テンポ168のハイテンポ構成で、ガロップ気味の
+            // ベースラインの上に、跳躍を多用したサビ（アルペジオ）を乗せることで
+            // 緊迫感・高揚感を狙っている。「イントロ→ヴァース→サビ→ヴァース→サビ」の
+            // 1周72拍構成で、サビの着地からイントロ冒頭へ自然にループする。
+            tempo: 168, leadType: 'square', bassType: 'sawtooth',
             lead: [
-                // --- イントロ (8拍) ---
-                [null,0.5],['E4',0.5],['E4',0.5],['G4',0.5],['A4',0.5],['B4',0.5],['A4',0.5],['G4',0.5],
-                ['E4',0.5],['G4',0.5],['A4',0.5],['B4',0.5],['C5',0.5],['B4',0.5],['A4',0.5],['G4',0.5],
-                // --- メロディ (8拍) ---
-                ['E4',0.5],['E4',0.5],['A4',0.5],['E4',0.5],['G4',0.5],['E4',0.5],['C5',0.5],['B4',0.5],
-                ['E4',0.5],['E4',0.5],['A4',0.5],['E4',0.5],['D5',0.5],['C5',0.5],['B4',0.5],['A4',0.5],
-                // --- サビ (8拍) ---
-                ['A4',0.5],['C5',0.5],['E5',0.5],['C5',0.5],['A4',0.5],['C5',0.5],['E5',0.5],['G5',0.5],
-                ['F5',0.5],['E5',0.5],['D5',0.5],['C5',0.5],['B4',0.5],['D5',0.5],['C5',0.5],['A4',0.5],
-                // --- メロディ (8拍・再) ---
-                ['E4',0.5],['E4',0.5],['A4',0.5],['E4',0.5],['G4',0.5],['E4',0.5],['C5',0.5],['B4',0.5],
-                ['E4',0.5],['E4',0.5],['A4',0.5],['E4',0.5],['D5',0.5],['C5',0.5],['B4',0.5],['A4',0.5],
-                // --- サビ (8拍・再) ---
-                ['A4',0.5],['C5',0.5],['E5',0.5],['C5',0.5],['A4',0.5],['C5',0.5],['E5',0.5],['G5',0.5],
-                ['F5',0.5],['E5',0.5],['D5',0.5],['C5',0.5],['B4',0.5],['D5',0.5],['C5',0.5],['A4',0.5],
+                // --- イントロ (8拍)：主音と属音を交互に刻みながら駆け上がる ---
+                ['D4',0.5],['D4',0.5],['F4',0.5],['D4',0.5],['A4',0.5],['D5',0.5],['C5',0.5],['A4',0.5],
+                ['F4',0.5],['A4',0.5],['C5',0.5],['D5',0.5],['A4',0.5],['F4',0.5],['D4',0.5],['A4',0.5],
+                // --- ヴァース (16拍)：下降シーケンスを軸にしたメロディ ---
+                ['A4',0.5],['C5',0.5],['D5',0.5],['C5',0.5],['A4',0.5],['F4',0.5],['G4',0.5],['A4',0.5],
+                ['A4',0.5],['C5',0.5],['D5',0.5],['C5',0.5],['A4',0.5],['G4',0.5],['F4',0.5],['D4',0.5],
+                ['G4',0.5],['A4',0.5],['A#4',0.5],['A4',0.5],['G4',0.5],['F4',0.5],['E4',0.5],['D4',0.5],
+                ['F4',0.5],['G4',0.5],['A4',0.5],['G4',0.5],['F4',0.5],['E4',0.5],['D4',0.5],[null,0.5],
+                // --- サビ (16拍)：オクターブ跳躍のアルペジオで一気に盛り上げる ---
+                ['D5',0.5],['F5',0.5],['A5',0.5],['F5',0.5],['D5',0.5],['F5',0.5],['A5',0.5],['C6',0.5],
+                ['A#5',0.5],['A5',0.5],['G5',0.5],['F5',0.5],['E5',0.5],['G5',0.5],['F5',0.5],['D5',0.5],
+                ['D5',0.5],['F5',0.5],['A5',0.5],['F5',0.5],['D5',0.5],['F5',0.5],['A5',0.5],['C6',0.5],
+                ['A#5',0.5],['A5',0.5],['G5',0.5],['F5',0.5],['E5',0.5],['D5',0.5],['C5',0.5],[null,0.5],
+                // --- ヴァース (16拍・再) ---
+                ['A4',0.5],['C5',0.5],['D5',0.5],['C5',0.5],['A4',0.5],['F4',0.5],['G4',0.5],['A4',0.5],
+                ['A4',0.5],['C5',0.5],['D5',0.5],['C5',0.5],['A4',0.5],['G4',0.5],['F4',0.5],['D4',0.5],
+                ['G4',0.5],['A4',0.5],['A#4',0.5],['A4',0.5],['G4',0.5],['F4',0.5],['E4',0.5],['D4',0.5],
+                ['F4',0.5],['G4',0.5],['A4',0.5],['G4',0.5],['F4',0.5],['E4',0.5],['D4',0.5],[null,0.5],
+                // --- サビ (16拍・再) ---
+                ['D5',0.5],['F5',0.5],['A5',0.5],['F5',0.5],['D5',0.5],['F5',0.5],['A5',0.5],['C6',0.5],
+                ['A#5',0.5],['A5',0.5],['G5',0.5],['F5',0.5],['E5',0.5],['G5',0.5],['F5',0.5],['D5',0.5],
+                ['D5',0.5],['F5',0.5],['A5',0.5],['F5',0.5],['D5',0.5],['F5',0.5],['A5',0.5],['C6',0.5],
+                ['A#5',0.5],['A5',0.5],['G5',0.5],['F5',0.5],['E5',0.5],['D5',0.5],['C5',0.5],[null,0.5],
             ],
             bass: [
-                // --- イントロ (8拍) ---
-                ['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['E3',0.5],['E3',0.5],
-                ['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['F2',0.5],['F2',0.5],['C3',0.5],['C3',0.5],
-                // --- メロディ (8拍) ---
-                ['A2',0.5],['A2',0.5],['E3',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['E3',0.5],['A2',0.5],
-                ['F2',0.5],['F2',0.5],['C3',0.5],['F2',0.5],['G2',0.5],['G2',0.5],['D3',0.5],['G2',0.5],
-                // --- サビ (8拍) ---
-                ['F2',0.5],['F2',0.5],['C3',0.5],['F2',0.5],['C2',0.5],['C2',0.5],['G2',0.5],['C2',0.5],
-                ['G2',0.5],['G2',0.5],['D3',0.5],['G2',0.5],['A2',0.5],['A2',0.5],['E3',0.5],['A2',0.5],
-                // --- メロディ (8拍・再) ---
-                ['A2',0.5],['A2',0.5],['E3',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['E3',0.5],['A2',0.5],
-                ['F2',0.5],['F2',0.5],['C3',0.5],['F2',0.5],['G2',0.5],['G2',0.5],['D3',0.5],['G2',0.5],
-                // --- サビ (8拍・再) ---
-                ['F2',0.5],['F2',0.5],['C3',0.5],['F2',0.5],['C2',0.5],['C2',0.5],['G2',0.5],['C2',0.5],
-                ['G2',0.5],['G2',0.5],['D3',0.5],['G2',0.5],['A2',0.5],['A2',0.5],['E3',0.5],['A2',0.5],
+                // --- イントロ (8拍)：主音固定のガロップ刻み ---
+                ['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],
+                ['F2',0.5],['F2',0.5],['F2',0.5],['F2',0.5],['G2',0.5],['G2',0.5],['G2',0.5],['G2',0.5],
+                // --- ヴァース (16拍)：ルート-5度の往復 ---
+                ['D2',0.5],['A2',0.5],['D2',0.5],['A2',0.5],['F2',0.5],['C3',0.5],['F2',0.5],['C3',0.5],
+                ['D2',0.5],['A2',0.5],['D2',0.5],['A2',0.5],['G2',0.5],['D3',0.5],['G2',0.5],[null,0.5],
+                ['A#2',0.5],['F3',0.5],['A#2',0.5],['F3',0.5],['G2',0.5],['D3',0.5],['G2',0.5],['D3',0.5],
+                ['F2',0.5],['C3',0.5],['F2',0.5],['C3',0.5],['G2',0.5],['D3',0.5],['G2',0.5],[null,0.5],
+                // --- サビ (16拍)：8分刻みで畳みかける ---
+                ['D2',0.5],['D2',0.5],['A2',0.5],['A2',0.5],['D2',0.5],['D2',0.5],['A2',0.5],['A2',0.5],
+                ['A#2',0.5],['A#2',0.5],['F2',0.5],['F2',0.5],['A#2',0.5],['A#2',0.5],['F2',0.5],['F2',0.5],
+                ['D2',0.5],['D2',0.5],['A2',0.5],['A2',0.5],['D2',0.5],['D2',0.5],['A2',0.5],['A2',0.5],
+                ['A#2',0.5],['A#2',0.5],['F2',0.5],['F2',0.5],['G2',0.5],['G2',0.5],['C3',0.5],[null,0.5],
+                // --- ヴァース (16拍・再) ---
+                ['D2',0.5],['A2',0.5],['D2',0.5],['A2',0.5],['F2',0.5],['C3',0.5],['F2',0.5],['C3',0.5],
+                ['D2',0.5],['A2',0.5],['D2',0.5],['A2',0.5],['G2',0.5],['D3',0.5],['G2',0.5],[null,0.5],
+                ['A#2',0.5],['F3',0.5],['A#2',0.5],['F3',0.5],['G2',0.5],['D3',0.5],['G2',0.5],['D3',0.5],
+                ['F2',0.5],['C3',0.5],['F2',0.5],['C3',0.5],['G2',0.5],['D3',0.5],['G2',0.5],[null,0.5],
+                // --- サビ (16拍・再) ---
+                ['D2',0.5],['D2',0.5],['A2',0.5],['A2',0.5],['D2',0.5],['D2',0.5],['A2',0.5],['A2',0.5],
+                ['A#2',0.5],['A#2',0.5],['F2',0.5],['F2',0.5],['A#2',0.5],['A#2',0.5],['F2',0.5],['F2',0.5],
+                ['D2',0.5],['D2',0.5],['A2',0.5],['A2',0.5],['D2',0.5],['D2',0.5],['A2',0.5],['A2',0.5],
+                ['A#2',0.5],['A#2',0.5],['F2',0.5],['F2',0.5],['G2',0.5],['G2',0.5],['C3',0.5],[null,0.5],
             ],
         },
         // レジェンドブリーダー・コルト（3セット目ボス戦）専用BGM。
@@ -314,23 +353,63 @@ const AudioManager = (() => {
                 ['D2',2],['A2',2],['A#2',2],['D2',2],
             ],
         },
-        // レジェンドブリーダー・コルト（7セット目・最終決戦）専用BGM。
-        // フリジアン調の音階とサイン波中心の柔らかい音色で、神秘的・不穏な最終ボス感を出す。
+        // レジェンドブリーダー・コルト（7セット目・最終決戦）専用BGM（完全新規オリジナル作曲）。
+        // Aハーモニックマイナー・テンポ176の疾走感あるドラマチックな構成で、
+        // 「壮大なラスボス決戦」のムードを狙っている（特定の既存楽曲の引用・模倣ではない）。
+        // ノコギリ波の鋭いリードと矩形波の力強いオクターブ刻みベースで畳みかけつつ、
+        // サビでは跳躍の大きいアルペジオにより頂点の高揚感を演出する。
+        // 「イントロ→ヴァース→サビ→ヴァース→サビ」の1周72拍構成で自然にループする。
         finalboss: {
-            tempo: 92, leadType: 'sine', bassType: 'triangle',
+            tempo: 176, leadType: 'sawtooth', bassType: 'square',
             lead: [
-                // イントロ：間を大きく取った浮遊感のあるフレーズ (8拍)
-                ['E5',1],[null,2],['F5',0.5],['E5',0.5],[null,1],['B4',1],[null,1],['C5',1],
-                // 展開：フリジアン特有の半音(E-F)を活かした不穏なメロディ (8拍)
-                ['E4',0.5],['F4',0.5],['G4',0.5],['E4',0.5],['B4',0.5],['C5',0.5],['B4',0.5],['G4',0.5],
-                ['F4',0.5],['E4',0.5],['D4',0.5],['E4',0.5],['F4',1],['E4',1],
-                // 頂点：高音域の緊張が持続したのち静かに収束する (8拍)
-                ['B4',0.5],['C5',0.5],['D5',0.5],['C5',0.5],['B4',0.5],['G4',0.5],['F4',1],['E4',2],[null,1],['E4',1],
+                // --- イントロ (8拍)：主音のオクターブ連打から一気に駆け上がる ---
+                ['A4',0.5],['A4',0.5],['A4',0.5],['A4',0.5],['E5',0.5],['E5',0.5],['E5',0.5],['E5',0.5],
+                ['F5',0.5],['F5',0.5],['E5',0.5],['E5',0.5],['D5',0.5],['D5',0.5],['C5',0.5],['C5',0.5],
+                // --- ヴァース (16拍)：ハーモニックマイナー特有の増2度(F-G#)を含む緊迫したメロディ ---
+                ['E5',0.5],['D5',0.5],['C5',0.5],['B4',0.5],['A4',0.5],['G#4',0.5],['A4',0.5],['C5',0.5],
+                ['E5',0.5],['D5',0.5],['C5',0.5],['B4',0.5],['A4',0.5],['G#4',0.5],['A4',0.5],['B4',0.5],
+                ['C5',0.5],['B4',0.5],['A4',0.5],['G#4',0.5],['A4',0.5],['B4',0.5],['C5',0.5],['D5',0.5],
+                ['E5',0.5],['F5',0.5],['E5',0.5],['D5',0.5],['C5',0.5],['B4',0.5],['A4',0.5],[null,0.5],
+                // --- サビ (16拍)：オクターブ跳躍のアルペジオで一気に頂点へ ---
+                ['A5',0.5],['E5',0.5],['C5',0.5],['E5',0.5],['A5',0.5],['E5',0.5],['C5',0.5],['E5',0.5],
+                ['G#5',0.5],['E5',0.5],['C5',0.5],['E5',0.5],['G#5',0.5],['E5',0.5],['C5',0.5],['E5',0.5],
+                ['F5',0.5],['C5',0.5],['A4',0.5],['C5',0.5],['F5',0.5],['C5',0.5],['A4',0.5],['C5',0.5],
+                ['E5',0.5],['C5',0.5],['A4',0.5],['G#4',0.5],['A4',0.5],['B4',0.5],['C5',0.5],[null,0.5],
+                // --- ヴァース (16拍・再) ---
+                ['E5',0.5],['D5',0.5],['C5',0.5],['B4',0.5],['A4',0.5],['G#4',0.5],['A4',0.5],['C5',0.5],
+                ['E5',0.5],['D5',0.5],['C5',0.5],['B4',0.5],['A4',0.5],['G#4',0.5],['A4',0.5],['B4',0.5],
+                ['C5',0.5],['B4',0.5],['A4',0.5],['G#4',0.5],['A4',0.5],['B4',0.5],['C5',0.5],['D5',0.5],
+                ['E5',0.5],['F5',0.5],['E5',0.5],['D5',0.5],['C5',0.5],['B4',0.5],['A4',0.5],[null,0.5],
+                // --- サビ (16拍・再) ---
+                ['A5',0.5],['E5',0.5],['C5',0.5],['E5',0.5],['A5',0.5],['E5',0.5],['C5',0.5],['E5',0.5],
+                ['G#5',0.5],['E5',0.5],['C5',0.5],['E5',0.5],['G#5',0.5],['E5',0.5],['C5',0.5],['E5',0.5],
+                ['F5',0.5],['C5',0.5],['A4',0.5],['C5',0.5],['F5',0.5],['C5',0.5],['A4',0.5],['C5',0.5],
+                ['E5',0.5],['C5',0.5],['A4',0.5],['G#4',0.5],['A4',0.5],['B4',0.5],['C5',0.5],[null,0.5],
             ],
             bass: [
-                ['E2',4],['B1',4],
-                ['E2',2],['C2',2],['F2',2],['B1',2],
-                ['E2',2],['B1',2],['C2',2],['E2',2],
+                // --- イントロ (8拍)：主音固定のオクターブ刻み ---
+                ['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['E3',0.5],['E3',0.5],['E3',0.5],['E3',0.5],
+                ['F2',0.5],['F2',0.5],['F2',0.5],['F2',0.5],['D2',0.5],['D2',0.5],['C2',0.5],['C2',0.5],
+                // --- ヴァース (16拍)：ルート-5度のガロップ ---
+                ['A2',0.5],['A2',0.5],['E3',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['E3',0.5],['A2',0.5],
+                ['F2',0.5],['F2',0.5],['C3',0.5],['F2',0.5],['F2',0.5],['F2',0.5],['C3',0.5],['F2',0.5],
+                ['D2',0.5],['D2',0.5],['A2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['A2',0.5],['D2',0.5],
+                ['E2',0.5],['E2',0.5],['B2',0.5],['E2',0.5],['E2',0.5],['E2',0.5],['B2',0.5],[null,0.5],
+                // --- サビ (16拍)：8分刻みで畳みかける ---
+                ['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],
+                ['F2',0.5],['F2',0.5],['F2',0.5],['F2',0.5],['F2',0.5],['F2',0.5],['F2',0.5],['F2',0.5],
+                ['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],
+                ['E2',0.5],['E2',0.5],['E2',0.5],['E2',0.5],['E2',0.5],['E2',0.5],['E2',0.5],[null,0.5],
+                // --- ヴァース (16拍・再) ---
+                ['A2',0.5],['A2',0.5],['E3',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['E3',0.5],['A2',0.5],
+                ['F2',0.5],['F2',0.5],['C3',0.5],['F2',0.5],['F2',0.5],['F2',0.5],['C3',0.5],['F2',0.5],
+                ['D2',0.5],['D2',0.5],['A2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['A2',0.5],['D2',0.5],
+                ['E2',0.5],['E2',0.5],['B2',0.5],['E2',0.5],['E2',0.5],['E2',0.5],['B2',0.5],[null,0.5],
+                // --- サビ (16拍・再) ---
+                ['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],['A2',0.5],
+                ['F2',0.5],['F2',0.5],['F2',0.5],['F2',0.5],['F2',0.5],['F2',0.5],['F2',0.5],['F2',0.5],
+                ['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],['D2',0.5],
+                ['E2',0.5],['E2',0.5],['E2',0.5],['E2',0.5],['E2',0.5],['E2',0.5],['E2',0.5],[null,0.5],
             ],
         },
         victory: {
@@ -429,13 +508,13 @@ const AudioManager = (() => {
     }
 
     // trackName を「現在流すべき曲」として記憶する。
-    // BGM設定がOFFのときは実際には鳴らさないが、次にONにした時に自動再開できるよう記憶だけしておく。
+    // BGM音量が0のときは実際には鳴らさないが、次に音量を上げた時に自動再開できるよう記憶だけしておく。
     function playBGM(trackName) {
         if (!BGM_TRACKS[trackName]) return;
         if (currentTrackName === trackName && bgmTimerId) return; // 既に同じ曲を再生中
         currentTrackName = trackName;
         stopBgmScheduling();
-        if (settings.bgm === 'off') return;
+        if (settings.bgm === 0) return;
         const c = ensureContext();
         if (!c) return;
         resume();
@@ -456,6 +535,9 @@ const AudioManager = (() => {
         'screen-masmon-battle-result': 'title',
         'screen-pvp-ranking': 'title',
         'screen-pvp-rental-select': 'title',
+        'screen-pvp-preset-list': 'title',
+        'screen-pvp-preset-editor': 'title',
+        'screen-pvp-preset-monster-editor': 'title',
         'screen-kinnejiki-title': 'title',
         'screen-kinnejiki-select': 'title',
         'screen-kinnejiki-swap': 'title',
@@ -518,31 +600,33 @@ const AudioManager = (() => {
     function applyGainImmediately() {
         const c = ensureContext();
         if (!c) return;
-        if (masterBgmGain) masterBgmGain.gain.setTargetAtTime(BGM_GAIN[settings.bgm], c.currentTime, 0.05);
-        if (masterSeGain) masterSeGain.gain.setTargetAtTime(SE_GAIN[settings.se], c.currentTime, 0.05);
+        if (masterBgmGain) masterBgmGain.gain.setTargetAtTime(bgmVolumeToGain(settings.bgm), c.currentTime, 0.05);
+        if (masterSeGain) masterSeGain.gain.setTargetAtTime(seVolumeToGain(settings.se), c.currentTime, 0.05);
     }
 
-    function setBgmLevel(level) {
-        if (!LEVELS.includes(level)) return;
-        settings.bgm = level;
+    // volume: 0〜100の数値
+    function setBgmVolume(volume) {
+        const v = clampVolume(volume);
+        const wasOff = settings.bgm === 0;
+        settings.bgm = v;
         saveSettings();
         resume();
         applyGainImmediately();
-        if (level === 'off') {
+        if (v === 0) {
             stopBgmScheduling();
-        } else if (currentTrackName && !bgmTimerId) {
+        } else if (currentTrackName && (wasOff || !bgmTimerId)) {
             stopBgmScheduling();
             scheduleBgmLoop(currentTrackName, bgmToken);
         }
     }
 
-    function setSeLevel(level) {
-        if (!LEVELS.includes(level)) return;
-        settings.se = level;
+    // volume: 0〜100の数値
+    function setSeVolume(volume) {
+        const v = clampVolume(volume);
+        settings.se = v;
         saveSettings();
         resume();
         applyGainImmediately();
-        if (level !== 'off') playSE('toggle');
     }
 
     function getSettings() {
@@ -553,15 +637,15 @@ const AudioManager = (() => {
     installUnlockListener();
 
     return {
-        LEVELS,
-        LEVEL_LABEL,
+        VOLUME_MIN,
+        VOLUME_MAX,
         playBGM,
         playSE,
         onScreenChange,
         handleBattleEffectText,
         handleToastText,
-        setBgmLevel,
-        setSeLevel,
+        setBgmVolume,
+        setSeVolume,
         getSettings,
         resume,
     };
@@ -621,34 +705,42 @@ function closeAudioSettingsModal() {
     document.getElementById('audio-settings-modal').classList.add('hidden');
 }
 
-function setAudioLevel(kind, level) {
+// kind: 'bgm' | 'se'  /  value: 0〜100の数値（スライダーのinput/change両方から呼ばれる）
+function setAudioVolume(kind, value) {
+    const v = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
     if (kind === 'bgm') {
-        AudioManager.setBgmLevel(level);
+        AudioManager.setBgmVolume(v);
     } else if (kind === 'se') {
-        AudioManager.setSeLevel(level);
+        AudioManager.setSeVolume(v);
     }
     updateAudioSettingsUI();
 }
 
+// スライダーを指で離した（change）タイミングでのみ確認用のSEを鳴らす
+// （input中に毎回鳴らすと連打音になってしまうため）
+function confirmAudioVolume(kind, value) {
+    setAudioVolume(kind, value);
+    if (kind === 'se' && AudioManager.getSettings().se > 0) {
+        AudioManager.playSE('toggle');
+    }
+}
+
 function updateAudioSettingsUI() {
     const s = AudioManager.getSettings();
-    ['bgm', 'se'].forEach((kind) => {
-        AudioManager.LEVELS.forEach((level) => {
-            const btn = document.getElementById(`audio-btn-${kind}-${level}`);
-            if (!btn) return;
-            const active = s[kind] === level;
-            btn.classList.toggle('bg-amber-500', active);
-            btn.classList.toggle('text-slate-900', active);
-            btn.classList.toggle('border-amber-400', active);
-            btn.classList.toggle('bg-[#1a120b]', !active);
-            btn.classList.toggle('text-gray-400', !active);
-            btn.classList.toggle('border-amber-900', !active);
-        });
-    });
+
+    const bgmSlider = document.getElementById('audio-slider-bgm');
+    const bgmLabel = document.getElementById('audio-value-bgm');
+    if (bgmSlider && document.activeElement !== bgmSlider) bgmSlider.value = s.bgm;
+    if (bgmLabel) bgmLabel.textContent = s.bgm;
+
+    const seSlider = document.getElementById('audio-slider-se');
+    const seLabel = document.getElementById('audio-value-se');
+    if (seSlider && document.activeElement !== seSlider) seSlider.value = s.se;
+    if (seLabel) seLabel.textContent = s.se;
 
     const iconEl = document.getElementById('audio-settings-icon');
     if (iconEl) {
-        const muted = s.bgm === 'off' && s.se === 'off';
+        const muted = s.bgm === 0 && s.se === 0;
         iconEl.className = muted
             ? 'fa-solid fa-volume-xmark'
             : 'fa-solid fa-volume-high';
