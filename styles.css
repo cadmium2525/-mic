@@ -13,6 +13,10 @@ body {
     height: 100dvh; /* 動的ビューポート高さ：スマホのツールバー分を正しく除外 */
     height: -webkit-fill-available;
     min-height: 0;
+    /* iOSの長押し時に出る「コピー／調べる」等のコールアウトメニューを抑制する。
+       user-selectと違い、-webkit-touch-calloutは下記のPWA向けキーボード不具合の原因では
+       ないため、表示モード（PWA/通常タブ）を問わず常に適用してよい。 */
+    -webkit-touch-callout: none;
 }
 /* body側のuser-select:noneは誤選択防止のためのものだが、iOSでホーム画面に追加した
    PWA（standalone表示）では、ページ内のどこかに -webkit-user-select: none が

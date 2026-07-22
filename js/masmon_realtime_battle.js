@@ -26,7 +26,7 @@
 //     個人戦（units長さ1）・団体戦（units長さ最大3）を同じ構造で扱う
 //   ・行動によって場に出ている側のユニットが戦闘不能になった場合、
 //     解決役のtransaction内で次の生存ユニットへ自動的に交代する
-//     （CPU団体戦のcheckFaintAndProceedと同等の考え方をtransaction内に内包）
+//     （CPU戦のhandleFaintAndSwitchと同等の考え方をtransaction内に内包）
 //   ・両チームとも全滅していない限りバトルは継続し、1回の行動の後は
 //     必ず相手チームの「場に出ているユニット」のターンへ移る
 // =====================================================
@@ -842,11 +842,18 @@ function renderRealtimeBattleSkills(state) {
 
         const btn = document.createElement('button');
         btn.className = `text-left p-2 rounded border transition-all active:scale-95 flex flex-col justify-between ${enhBgClass} ${enhBorderClass} ${style.textClass} ${canUse ? '' : 'opacity-40 pointer-events-none'}`;
+        btn.style.touchAction = 'manipulation';
+        btn.style.webkitUserSelect = 'none';
+        btn.style.userSelect = 'none';
         btn.onclick = () => executeRealtimeSkill(skKey);
 
         // 技の長押し／右クリックで詳細モーダルを表示（育成中のバトルと同じ操作）
+        // ・長押し時にiOS/Androidの「テキスト範囲選択（コピー用）」メニューが出てしまうと煩わしいため、
+        //   ontouchstartでpreventDefaultして、その挙動が起動しないようにする
+        //   （タップ操作自体・onclickの発火には影響しない）。
         let longPressTimer;
-        btn.ontouchstart = () => {
+        btn.ontouchstart = (ev) => {
+            ev.preventDefault();
             longPressTimer = setTimeout(() => {
                 openRealtimeSkillModal(skKey, state);
             }, 500);

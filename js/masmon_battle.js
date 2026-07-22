@@ -241,9 +241,9 @@ function startMasmonBattleCommon(floorText) {
     applyAuraMonClassLifeBonus(e, p);
     const enemyOwner = MASMON_BATTLE_STATE.enemyMeta[MASMON_BATTLE_STATE.enemyActiveIdx].ownerName || '相手ブリーダー';
 
-    document.getElementById('enemy-name').textContent = e.name;
+    document.getElementById('enemy-name').textContent = e.shortName || e.name;
     renderMonsterVisual(document.getElementById('battle-enemy-icon'), e.visualName || e.monsterBaseName, e.emoji, e.isAwakened, false, e.aura);
-    document.getElementById('battle-enemy-type').textContent = e.name;
+    document.getElementById('battle-enemy-type').textContent = e.shortName || e.name;
     renderAuraBadge('enemy-aura-badge', e.aura, e.monsterBaseName);
     renderStatusAilmentBadge('enemy-status-badge', e);
 
@@ -338,45 +338,7 @@ function renderTeamIcons() {
 }
 
 // -----------------------------------------------------
-// 戦闘不能判定＆チーム交代処理（旧仕様：自動で最初の生存マスモンに交代する）
-// side: 'player' | 'enemy'
-// 戻り値: true の場合はバトル終了（呼び出し元は以降の処理を中断すること）
-//
-// ※ 現在は「対戦アイテムの反動による自滅」「混乱の継続ダメージによる自滅」など、
-//   プレイヤーの選択を挟む必要のない特殊ケースでのみ使用する。
-//   通常の戦闘（技を当てて倒す・倒される）の交代処理は、下の handleFaintAndSwitch() を使うこと。
-// -----------------------------------------------------
-function checkFaintAndProceed(side) {
-    const team = side === 'player' ? MASMON_BATTLE_STATE.playerTeam : MASMON_BATTLE_STATE.enemyTeam;
-    const idx = side === 'player' ? MASMON_BATTLE_STATE.playerActiveIdx : MASMON_BATTLE_STATE.enemyActiveIdx;
-    const unit = team[idx];
-
-    if (unit.stats.life > 0) return false;
-
-    addLog(`💥 ${unit.name} は戦闘不能になった！`);
-
-    const nextIdx = team.findIndex(u => u.stats.life > 0);
-
-    if (nextIdx === -1) {
-        // チーム全滅 → バトル終了
-        if (side === 'player') {
-            handleMasmonBattleLose();
-        } else {
-            handleMasmonBattleWin();
-        }
-        return true;
-    }
-
-    if (side === 'player') {
-        applyPlayerSwitch(nextIdx);
-    } else {
-        applyEnemySwitch(nextIdx);
-    }
-    return false;
-}
-
-// -----------------------------------------------------
-// 戦闘不能判定＆交代処理（新仕様：通常の戦闘で使用する）
+// 戦闘不能判定＆交代処理（プレイヤー・CPUを問わず、あらゆる戦闘不能はすべてこの関数を通す）
 // side: 'player' | 'enemy'（今回チェックする側）
 // onResolved({ battleEnded, turnShouldEnd }) を呼び出して結果を通知する（モーダル表示のため非同期になる場合がある）
 //   - battleEnded: true → 勝敗が決した。呼び出し元は以降の処理を中断すること。
@@ -387,6 +349,11 @@ function checkFaintAndProceed(side) {
 // ① 自分（player側）のマスモンが戦闘不能になった場合 → 控えの中からどれを出すか選択させる（キャンセル不可）
 // ② 相手（enemy側）のマスモンが戦闘不能になった場合 → CPUが自動で次のマスモンを繰り出した後、
 //    「こちらも交代するか」を確認する。いずれの場合もターンは仕切り直しになる。
+//
+// ※ 出血・アイテムの反動・ステルスロック等、原因が何であれ「ライフが0になった」場合は
+//    プレイヤー側・CPU側とも必ずこの関数を通す（＝同じルールで扱う）こと。
+//    交代先がステルスロック等でさらに戦闘不能になった場合は、この関数が再帰的に自分自身を
+//    呼び出して連鎖的に処理する（applyPlayerSwitch/applyEnemySwitch内で行われる）。
 // -----------------------------------------------------
 function handleFaintAndSwitch(side, onResolved) {
     const team = side === 'player' ? MASMON_BATTLE_STATE.playerTeam : MASMON_BATTLE_STATE.enemyTeam;
@@ -418,30 +385,44 @@ function handleFaintAndSwitch(side, onResolved) {
     if (side === 'player') {
         // ① 控えの中からどれを出すか選ばせる（キャンセル不可）
         openForceSwitchModal(candidates, (chosenIdx) => {
-            applyPlayerSwitch(chosenIdx);
-            onResolved({ battleEnded: false, turnShouldEnd: true });
+            // 交代先がステルスロック等でさらに戦闘不能になった場合、applyPlayerSwitch内で
+            // この関数が再帰的に呼ばれ、そちらの結果（battleEnded/turnShouldEnd）がそのまま返ってくる。
+            applyPlayerSwitch(chosenIdx, (chainResult) => {
+                if (chainResult && (chainResult.battleEnded || chainResult.turnShouldEnd)) {
+                    onResolved(chainResult);
+                    return;
+                }
+                onResolved({ battleEnded: false, turnShouldEnd: true });
+            });
         });
     } else {
         // 相手側は自動で次のマスモンを繰り出す（既存仕様通り）
-        applyEnemySwitch(candidates[0].idx);
+        applyEnemySwitch(candidates[0].idx, (chainResult) => {
+            if (chainResult && (chainResult.battleEnded || chainResult.turnShouldEnd)) {
+                onResolved(chainResult);
+                return;
+            }
 
-        // ② こちらも交代するか確認する。ターンは必ず仕切り直しになる。
-        const playerSwitchCandidates = getMasmonSwitchCandidates();
-        if (playerSwitchCandidates.length === 0) {
-            onResolved({ battleEnded: false, turnShouldEnd: true });
-            return;
-        }
-        openPostVictorySwitchModal(playerSwitchCandidates, () => {
-            onResolved({ battleEnded: false, turnShouldEnd: true });
+            // ② こちらも交代するか確認する。ターンは必ず仕切り直しになる。
+            const playerSwitchCandidates = getMasmonSwitchCandidates();
+            if (playerSwitchCandidates.length === 0) {
+                onResolved({ battleEnded: false, turnShouldEnd: true });
+                return;
+            }
+            openPostVictorySwitchModal(playerSwitchCandidates, () => {
+                onResolved({ battleEnded: false, turnShouldEnd: true });
+            });
         });
     }
 }
 
 // --- 自分側のマスモンを交代する（UI更新込み。実際の入れ替えのみを担当） ---
-function applyPlayerSwitch(targetIdx) {
+// onDone({ battleEnded, turnShouldEnd }): ステルスロック等で交代直後にさらに戦闘不能になった場合、
+// その連鎖処理（handleFaintAndSwitch）が解決してから呼ばれる。何も起きなければ即座に false/false で呼ばれる。
+function applyPlayerSwitch(targetIdx, onDone) {
     const team = MASMON_BATTLE_STATE.playerTeam;
     const target = team[targetIdx];
-    if (!target) return;
+    if (!target) { if (onDone) onDone({ battleEnded: false, turnShouldEnd: false }); return; }
 
     // 控えに戻る側にかかっていたステータスバフ・デバフ（桜の舞の累積等）はここで解除する。
     // ※戦闘不能による強制交代の場合はそのユニットのライフが0のため実質無害、
@@ -454,9 +435,6 @@ function applyPlayerSwitch(targetIdx) {
 
     // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
     applyAuraMonClassLifeBonus(target, getEnemyActive());
-    // 自分が交代したことで相手から見た有利不利も変わるため、相手側の最大ライフボーナスも再計算する
-    // （ライフ割合を保ったまま増減するため、被ダメージ中でも不自然な回復/減少にはならない）
-    applyAuraMonClassLifeBonus(getEnemyActive(), target);
 
     addLog(`あなたは【${target.name}】を繰り出した！`);
     renderMonsterVisual(document.getElementById('battle-player-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened, true, target.aura);
@@ -469,17 +447,22 @@ function applyPlayerSwitch(targetIdx) {
     updateMasmonBattleStatsUI();
 
     // ステルスロックが設置されている場合、場に出た瞬間にダメージを受ける。
-    // これによって戦闘不能になった場合は、続けて交代処理を行う（team全滅ならバトル終了）。
+    // これによって戦闘不能になった場合も、通常の戦闘不能と全く同じ流れ（handleFaintAndSwitch）で処理する。
     if (applyStealthRockDamageOnSwitchIn('player', target)) {
-        checkFaintAndProceed('player');
+        handleFaintAndSwitch('player', (result) => {
+            if (onDone) onDone(result);
+        });
+        return;
     }
+    if (onDone) onDone({ battleEnded: false, turnShouldEnd: false });
 }
 
 // --- 相手側のマスモンを交代する（UI更新込み） ---
-function applyEnemySwitch(targetIdx) {
+// onDone({ battleEnded, turnShouldEnd }): applyPlayerSwitchと同様（相手側の連鎖戦闘不能用）。
+function applyEnemySwitch(targetIdx, onDone) {
     const team = MASMON_BATTLE_STATE.enemyTeam;
     const target = team[targetIdx];
-    if (!target) return;
+    if (!target) { if (onDone) onDone({ battleEnded: false, turnShouldEnd: false }); return; }
 
     // 控えに戻る側にかかっていたステータスバフ・デバフはここで解除する（呼び出し元で解除済みでも二重実行で無害）。
     const prev = team[MASMON_BATTLE_STATE.enemyActiveIdx];
@@ -489,15 +472,12 @@ function applyEnemySwitch(targetIdx) {
 
     // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
     applyAuraMonClassLifeBonus(target, getPlayerActive());
-    // 相手（敵）が交代したことでこちらから見た有利不利も変わるため、プレイヤー側の最大ライフボーナスも再計算する
-    // （ライフ割合を保ったまま増減するため、被ダメージ中でも不自然な回復/減少にはならない）
-    applyAuraMonClassLifeBonus(getPlayerActive(), target);
 
     const sideLabel = MASMON_BATTLE_STATE.opponentOwnerName || '相手';
     addLog(`${sideLabel}は【${target.name}】を繰り出した！`);
-    document.getElementById('enemy-name').textContent = target.name;
+    document.getElementById('enemy-name').textContent = target.shortName || target.name;
     renderMonsterVisual(document.getElementById('battle-enemy-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened, false, target.aura);
-    document.getElementById('battle-enemy-type').textContent = target.name;
+    document.getElementById('battle-enemy-type').textContent = target.shortName || target.name;
     renderAuraBadge('enemy-aura-badge', target.aura, target.monsterBaseName);
     renderStatusAilmentBadge('enemy-status-badge', target);
 
@@ -505,9 +485,14 @@ function applyEnemySwitch(targetIdx) {
     updateMasmonBattleStatsUI();
 
     // ステルスロックが設置されている場合、場に出た瞬間にダメージを受ける。
+    // これによって戦闘不能になった場合も、通常の戦闘不能と全く同じ流れ（handleFaintAndSwitch）で処理する。
     if (applyStealthRockDamageOnSwitchIn('enemy', target)) {
-        checkFaintAndProceed('enemy');
+        handleFaintAndSwitch('enemy', (result) => {
+            if (onDone) onDone(result);
+        });
+        return;
     }
+    if (onDone) onDone({ battleEnded: false, turnShouldEnd: false });
 }
 
 // --- 交代候補ボタン用：オーラ・モン類バッジのHTMLを生成する ---
@@ -555,6 +540,7 @@ function openForceSwitchModal(candidates, onSelect) {
                 <span class="text-[9px] font-bold">HP ${unit.stats.life}/${unit.stats.maxLife} (${lifePct}%)</span>
             </div>
             <div class="flex gap-1">${buildSwitchCandidateBadgesHtml(unit)}</div>
+            <div class="text-[8px] text-gray-400 truncate w-full">技: ${buildSkillListWithAuraText(unit.skills)}</div>
         `;
         btn.onclick = () => {
             modal.classList.add('hidden');
@@ -593,10 +579,12 @@ function openPostVictorySwitchModal(candidates, onDone) {
                     <span class="text-[9px] font-bold">HP ${unit.stats.life}/${unit.stats.maxLife} (${lifePct}%)</span>
                 </div>
                 <div class="flex gap-1">${buildSwitchCandidateBadgesHtml(unit)}</div>
+                <div class="text-[8px] text-gray-400 truncate w-full">技: ${buildSkillListWithAuraText(unit.skills)}</div>
             `;
             btn.onclick = () => {
-                applyPlayerSwitch(idx);
-                closeAndFinish();
+                applyPlayerSwitch(idx, () => {
+                    closeAndFinish();
+                });
             };
             list.appendChild(btn);
         });
@@ -946,11 +934,18 @@ function renderMasmonBattleSkills() {
         const enhBgClass = isEnhanced ? 'bg-[#1e0f3a] hover:bg-[#2a1558]' : style.bgClass;
 
         btn.className = `text-left p-2 rounded border transition-all active:scale-95 flex flex-col justify-between ${enhBgClass} ${enhBorderClass} ${style.textClass}`;
+        btn.style.touchAction = 'manipulation';
+        btn.style.webkitUserSelect = 'none';
+        btn.style.userSelect = 'none';
         btn.onclick = () => executeMasmonPlayerSkill(skKey);
 
         // 技の長押し／右クリックで詳細モーダルを表示（育成中のバトルと同じ操作）
+        // ・長押し時にiOS/Androidの「テキスト範囲選択（コピー用）」メニューが出てしまうと煩わしいため、
+        //   ontouchstartでpreventDefaultして、その挙動が起動しないようにする
+        //   （タップ操作自体・onclickの発火には影響しない）。
         let longPressTimer;
-        btn.ontouchstart = () => {
+        btn.ontouchstart = (ev) => {
+            ev.preventDefault();
             longPressTimer = setTimeout(() => {
                 openMasmonSkillModal(skKey);
             }, 500);
@@ -1083,6 +1078,7 @@ function openMasmonSwitchMenu() {
                 <span class="text-[9px] font-bold">HP ${unit.stats.life}/${unit.stats.maxLife} (${lifePct}%)</span>
             </div>
             <div class="flex gap-1 mt-1">${buildSwitchCandidateBadgesHtml(unit)}</div>
+            <div class="text-[8px] text-gray-400 truncate w-full mt-0.5">技: ${buildSkillListWithAuraText(unit.skills)}</div>
         `;
         container.appendChild(btn);
     });
@@ -1110,9 +1106,6 @@ function executeMasmonSwitch(targetIdx) {
 
     // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
     applyAuraMonClassLifeBonus(target, getEnemyActive());
-    // 自分が交代したことで相手から見た有利不利も変わるため、相手側の最大ライフボーナスも再計算する
-    // （ライフ割合を保ったまま増減するため、被ダメージ中でも不自然な回復/減少にはならない）
-    applyAuraMonClassLifeBonus(getEnemyActive(), target);
 
     addLog(`${prev.name} を引っ込め、【${target.name}】を繰り出した！`);
     showEffect('🔄 交代！ 🔄');
@@ -1126,11 +1119,20 @@ function executeMasmonSwitch(targetIdx) {
     renderMasmonBattleSkills();
 
     // ステルスロックが設置されている場合、場に出た瞬間にダメージを受ける。
-    // これで戦闘不能になった場合は交代処理を行い、バトルが終わっていればここで打ち切る。
+    // これによって戦闘不能になった場合も、通常の戦闘不能と全く同じ流れ（handleFaintAndSwitch）で処理する。
+    // その場合、この交代を含めてこのターンはここで打ち切り、次のターンを最初からやり直す
+    // （相手はこのターン攻撃してこない＝通常の戦闘不能と同じ扱い）。
     if (applyStealthRockDamageOnSwitchIn('player', target)) {
-        const battleEnded = checkFaintAndProceed('player');
-        if (battleEnded || MASMON_BATTLE_STATE.isBattleEnd) return;
-        renderMasmonBattleSkills();
+        handleFaintAndSwitch('player', (result) => {
+            if (result.battleEnded || MASMON_BATTLE_STATE.isBattleEnd) return;
+            if (result.turnShouldEnd) {
+                setTimeout(() => finishMasmonTurn(), BATTLE_STEP_DELAY.beforeNextTurn);
+                return;
+            }
+            renderMasmonBattleSkills();
+            submitMasmonPlayerAction({ actionType: 'switch', alreadyResolved: true });
+        });
+        return;
     }
 
     // 交代は行動順に関わらず必ず先に処理される（既存仕様のまま）。
@@ -1294,7 +1296,7 @@ const SIDE_UI = {
         oppSpriteAnim: 'shake',
         dmgPopup: 'player-dmg-popup',
         hitEffect: '⚡ 被弾!! ⚡',
-        critEffect: '⚡ 会心の一撃!! ⚡',
+        critEffect: '💥 CRITICAL!! 💥',
         missEffect: '💨 回避!! 💨',
         buffEffect: '💪 相手の攻撃UP! 💪',
         substituteEffect: '🌸 相手がみがわりを設置! 🌸',
@@ -1406,68 +1408,82 @@ function buildTurnActionDescriptor(unit, action) {
 // --- CPU（対戦相手）の「今ターンの行動」を決定する ---
 // プレイヤーが何を選んだかは一切参照しない（ターン開始時点の状況だけで決める）ため、
 // 結果として「両者が同時に行動を選択した」場合と全く同じ挙動になる。
-function decideMasmonEnemyAction() {
-    // 「ガッツファクトリー」AIレベル3以上：状況が不利な場合、行動前に控えのモンスターへ自動交代する
+// 非同期（onDecidedコールバック）：自滅・出血等による戦闘不能はhandleFaintAndSwitchを介した
+// モーダル表示（プレイヤーへの交代確認）を伴うため、同期関数のままでは扱えないための対応。
+function decideMasmonEnemyAction(onDecided) {
+    // 「ガッツファクトリー」AIレベル3以上：状況が不利な場合、行動前に控えのモンスターへ自動交代する。
+    // ※この交代はプレイヤーの任意交代と同じ扱いとする＝交代した場合、そのターンは交代のみで終わり、
+    //   同じターン中に技を繰り出すことはしない（交代自体が1ターンを消費する）。
     if (MASMON_BATTLE_STATE.kinNejiki && (MASMON_BATTLE_STATE.kinNejiki.aiLevel || 1) >= 3 && typeof maybeExecuteKinNejikiEnemySwitch === 'function') {
         const switched = maybeExecuteKinNejikiEnemySwitch();
         if (switched) {
             renderTeamIcons();
             updateMasmonBattleStatsUI();
+            onDecided({ actionType: 'switch' });
+            return;
         }
     }
 
     let e = getEnemyActive();
-    if (!e || e.stats.life <= 0) return { actionType: 'none' };
+    if (!e || e.stats.life <= 0) { onDecided({ actionType: 'none' }); return; }
 
     runEnemyItemAI();
     updateMasmonBattleStatsUI();
 
-    // アイテムの反動（トロカチン）で自滅した場合
-    if (checkFaintAndProceed('enemy')) {
-        return { actionType: 'none', battleEnded: true };
-    }
-    e = getEnemyActive();
-    if (!e || e.stats.life <= 0) return { actionType: 'none' };
+    // アイテムの反動（トロカチン）で自滅した場合も、通常の戦闘不能と同じ流れ
+    // （CPUが自動で次を繰り出した後、プレイヤーにも交代するか確認・ターンは仕切り直し）で処理する。
+    handleFaintAndSwitch('enemy', (r1) => {
+        if (r1.battleEnded) { onDecided({ actionType: 'none', battleEnded: true }); return; }
+        if (r1.turnShouldEnd) { onDecided({ actionType: 'none', turnShouldEnd: true }); return; }
 
-    // マヒ／混乱（意味不明）／出血の残ターン消化と行動失敗判定（敵側）
-    const enemyConfusionResult = tickStatusTurnsAndCheckConfusion(e);
-    if (enemyConfusionResult.dotDamage > 0) {
-        const dotLogs = applyDotDamageAndBuildLogs(e.name, enemyConfusionResult, () => e.stats.life, (v) => { e.stats.life = v; });
-        dotLogs.forEach(addLog);
-        const playerActiveForMichizure = getPlayerActive();
-        if (playerActiveForMichizure) {
-            const michizureLog = checkMichizureTrigger(e, playerActiveForMichizure, () => e.stats.life, () => playerActiveForMichizure.stats.life, (v) => { playerActiveForMichizure.stats.life = v; });
-            if (michizureLog) addLog(michizureLog);
+        e = getEnemyActive();
+        if (!e || e.stats.life <= 0) { onDecided({ actionType: 'none' }); return; }
+
+        // マヒ／混乱（意味不明）／出血の残ターン消化と行動失敗判定（敵側）
+        const enemyConfusionResult = tickStatusTurnsAndCheckConfusion(e);
+        if (enemyConfusionResult.dotDamage > 0) {
+            const dotLogs = applyDotDamageAndBuildLogs(e.name, enemyConfusionResult, () => e.stats.life, (v) => { e.stats.life = v; });
+            dotLogs.forEach(addLog);
+            const playerActiveForMichizure = getPlayerActive();
+            if (playerActiveForMichizure) {
+                const michizureLog = checkMichizureTrigger(e, playerActiveForMichizure, () => e.stats.life, () => playerActiveForMichizure.stats.life, (v) => { playerActiveForMichizure.stats.life = v; });
+                if (michizureLog) addLog(michizureLog);
+            }
+            updateMasmonBattleStatsUI();
         }
-        updateMasmonBattleStatsUI();
-        if (checkFaintAndProceed('enemy')) {
-            return { actionType: 'none', battleEnded: true };
-        }
-    }
-    e = getEnemyActive();
-    if (!e || e.stats.life <= 0) return { actionType: 'none' };
-    if (enemyConfusionResult.confused) {
-        return { actionType: 'none', reason: enemyConfusionResult.failReason };
-    }
 
-    const p = getPlayerActive();
-    const affordableSkills = e.skills
-        .map(skKey => ({ key: skKey, info: getMasmonEffectiveSkill(e, skKey) }))
-        .filter(skObj => skObj.info && e.guts >= skObj.info.cost && !isSkillUseLimitReached(e, skObj.key));
+        // 出血等で戦闘不能になった場合も、通常の戦闘不能と全く同じ流れで処理する
+        // （このターンは仕切り直しになり、敵はこのターン攻撃してこない）。
+        handleFaintAndSwitch('enemy', (r2) => {
+            if (r2.battleEnded) { onDecided({ actionType: 'none', battleEnded: true }); return; }
+            if (r2.turnShouldEnd) { onDecided({ actionType: 'none', turnShouldEnd: true }); return; }
 
-    if (affordableSkills.length === 0) {
-        return { actionType: 'none', reason: 'noguts' };
-    }
+            e = getEnemyActive();
+            if (!e || e.stats.life <= 0) { onDecided({ actionType: 'none' }); return; }
+            if (enemyConfusionResult.confused) {
+                onDecided({ actionType: 'none', reason: enemyConfusionResult.failReason });
+                return;
+            }
 
-    // 「ガッツファクトリー」レンタルバトル中はAIレベルに応じた判断ロジックを使用し、
-    // それ以外（従来のマスモンCPU戦）は従来通り「最もガッツ消費が大きい技」を選ぶ簡易AIのままとする。
-    // ※ AIはここで「自分が先攻になるか後攻になるか」を考慮したい場合、
-    //    chooseKinNejikiEnemySkill 側で MASMON_BATTLE_STATE の速度比較結果を参照する形で拡張できる。
-    const skKey = (MASMON_BATTLE_STATE.kinNejiki && typeof chooseKinNejikiEnemySkill === 'function')
-        ? chooseKinNejikiEnemySkill(e, p, affordableSkills, MASMON_BATTLE_STATE.kinNejiki.aiLevel || 1, MASMON_BATTLE_STATE.kinNejiki.aiPersonality)
-        : affordableSkills.slice().sort((a, b) => b.info.cost - a.info.cost)[0].key;
+            const p = getPlayerActive();
+            const affordableSkills = e.skills
+                .map(skKey => ({ key: skKey, info: getMasmonEffectiveSkill(e, skKey) }))
+                .filter(skObj => skObj.info && e.guts >= skObj.info.cost && !isSkillUseLimitReached(e, skObj.key));
 
-    return { actionType: 'skill', skKey: skKey };
+            if (affordableSkills.length === 0) {
+                onDecided({ actionType: 'none', reason: 'noguts' });
+                return;
+            }
+
+            // 「ガッツファクトリー」レンタルバトル中はAIレベルに応じた判断ロジックを使用し、
+            // それ以外（従来のマスモンCPU戦）は従来通り「最もガッツ消費が大きい技」を選ぶ簡易AIのままとする。
+            const skKey = (MASMON_BATTLE_STATE.kinNejiki && typeof chooseKinNejikiEnemySkill === 'function')
+                ? chooseKinNejikiEnemySkill(e, p, affordableSkills, MASMON_BATTLE_STATE.kinNejiki.aiLevel || 1, MASMON_BATTLE_STATE.kinNejiki.aiPersonality)
+                : affordableSkills.slice().sort((a, b) => b.info.cost - a.info.cost)[0].key;
+
+            onDecided({ actionType: 'skill', skKey: skKey });
+        });
+    });
 }
 
 // --- プレイヤーの行動が確定した際に呼ばれる共通の入り口 ---
@@ -1479,10 +1495,19 @@ function submitMasmonPlayerAction(action) {
     toggleMasmonSkillButtons(false);
     MASMON_BATTLE_STATE.pendingPlayerAction = action;
 
-    MASMON_BATTLE_STATE.pendingEnemyAction = decideMasmonEnemyAction();
-    if (MASMON_BATTLE_STATE.isBattleEnd) return; // CPU側の処理中にバトルが終了した場合（自滅等）
+    decideMasmonEnemyAction((enemyAction) => {
+        if (MASMON_BATTLE_STATE.isBattleEnd) return; // CPU側の処理中にバトルが終了した場合（自滅等）
 
-    setTimeout(() => resolveMasmonTurn(), 500);
+        if (enemyAction && enemyAction.turnShouldEnd) {
+            // 出血・自滅等で相手が戦闘不能になり交代が発生した場合、このターンはここで打ち切り、
+            // 次のターンを最初からやり直す（プレイヤーが選んだ行動はこのターンでは実行されない）。
+            setTimeout(() => finishMasmonTurn(), BATTLE_STEP_DELAY.beforeNextTurn);
+            return;
+        }
+
+        MASMON_BATTLE_STATE.pendingEnemyAction = enemyAction;
+        setTimeout(() => resolveMasmonTurn(), 500);
+    });
 }
 
 // --- 双方の行動が確定した後、行動順を決定して実行を開始する ---
@@ -2066,7 +2091,7 @@ function buildHazardSteps(steps, side, unit, sk) {
 // --- ステルスロックによる交代ダメージ：モンスターが場に出た瞬間に呼ぶ ---
 // side: 今回「場に出た」側（'player' | 'enemy'）／unit: 場に出たユニット
 // 戻り値: true の場合、このダメージによってユニットが戦闘不能になったことを示す
-//        （呼び出し元は必要に応じて checkFaintAndProceed 等で交代処理を続けること）
+//        （呼び出し元はhandleFaintAndSwitch等で交代処理を続けること）
 function applyStealthRockDamageOnSwitchIn(side, unit) {
     if (!unit || unit.stats.life <= 0) return false;
     const fieldKey = side === 'player' ? 'playerFieldStealthRock' : 'enemyFieldStealthRock';

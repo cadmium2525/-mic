@@ -110,7 +110,7 @@ function renderPvpMonsterOfferCard(m, opts) {
     const isSelected = !!opts.selected;
     const clickable = !!opts.clickable;
 
-    const skillNames = m.skills.map(sk => (SKILLS_DB[sk] ? SKILLS_DB[sk].name : sk)).join('、');
+    const skillNames = buildSkillListWithAuraText(m.skills);
     const equipText = m.equip ? getEquipmentDisplayName(m.equip) : '未装備';
     const aura = AURA_TYPES[m.aura];
     const monClassKey = getMonClassKeyForName(m.monsterBaseName);

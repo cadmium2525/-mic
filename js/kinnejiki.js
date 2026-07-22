@@ -234,10 +234,11 @@ function kinNejikiAiLevelForSet(setNumber) {
 // セット1〜2：ノーマル産ステータス装備中心 / セット3〜5：ハード産＋一部特殊効果 / セット6〜7：特殊効果中心
 // excludeEquipIds: この配列に含まれる装備IDは抽選対象から除外する
 //                  （除外しすぎて候補が0件になった場合は保険として除外を無視する）
-// ※敵モンスターが未装備だと「交換したい」という動機が薄れてしまうため、
-//   レンタルモンスターには必ず何かしらの装備を持たせる（未装備を返すことはない）。
 function kinNejikiRollEquipmentForSet(setNumber, excludeEquipIds) {
     const excluded = excludeEquipIds || [];
+
+    // 装備なし（未装備）の余地も一定確率で残す
+    if (Math.random() < 0.15) return null;
 
     let pool;
     if (setNumber <= 2) {
@@ -277,12 +278,6 @@ function generateKinNejikiRentalMonster(speciesId, setNumber, excludeEquipIds) {
     if (mold) {
         chosenSkills = mold.skills;
         equipInstance = mold.equip;
-        // 型本来の装備が「同じ道具を持ったモンスター同士が対面しない」除外ルールに引っかかって
-        // nullになった場合、そのまま未装備にはせず、代わりの装備を必ず抽選して持たせる
-        // （敵が丸腰だと交換する動機が薄れてしまうため）。
-        if (!equipInstance) {
-            equipInstance = kinNejikiRollEquipmentForSet(setNumber, excludeEquipIds);
-        }
     } else {
         // 型データが無い（未定義の）種族向けフォールバック：従来通りのランダム抽選
         const skillPool = KIN_NEJIKI_SKILL_POOL[speciesId] || [];
@@ -357,6 +352,7 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, e
             : bossDef.skills;
         const bossUnit = {
             name: bossDef.name,
+            shortName: bossDef.shortName || null,
             monsterBaseName: bossDef.templateId ? (MONSTER_TEMPLATES[bossDef.templateId] || {}).name || bossDef.name : bossDef.name,
             // 専用イラストが用意されているボスは、モン類判定用のmonsterBaseNameとは別に
             // 表示イラスト名を上書きする（例：set3ボスはゴーレム種だが「ゴビ.png」、
@@ -622,18 +618,14 @@ function maybeExecuteKinNejikiEnemySwitch() {
     MASMON_BATTLE_STATE.enemyActiveIdx = chosen.i;
     // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
     applyAuraMonClassLifeBonus(chosen.unit, opponent);
-    // 相手（敵）が交代したことでこちらから見た有利不利も変わるため、プレイヤー側の最大ライフボーナスも再計算する
-    // （ライフ割合を保ったまま増減するため、被ダメージ中でも不自然な回復/減少にはならない）
-    applyAuraMonClassLifeBonus(opponent, chosen.unit);
     const ownerLabel = MASMON_BATTLE_STATE.opponentOwnerName || '相手';
     addLog(`💦 ${active.name} は苦しい状況と判断し、${ownerLabel}は【${chosen.unit.name}】に交代した！`);
     showEffect('🔄 相手交代！ 🔄');
 
     const newUnit = chosen.unit;
-    const enemyMetaOwner = (MASMON_BATTLE_STATE.enemyMeta[chosen.i] || {}).ownerName || '相手ブリーダー';
-    document.getElementById('enemy-name').textContent = `${newUnit.name}（${enemyMetaOwner}）`;
+    document.getElementById('enemy-name').textContent = newUnit.shortName || newUnit.name;
     renderMonsterVisual(document.getElementById('battle-enemy-icon'), newUnit.visualName || newUnit.monsterBaseName, newUnit.emoji, newUnit.isAwakened, false, newUnit.aura);
-    document.getElementById('battle-enemy-type').textContent = newUnit.name;
+    document.getElementById('battle-enemy-type').textContent = newUnit.shortName || newUnit.name;
     renderAuraBadge('enemy-aura-badge', newUnit.aura, newUnit.monsterBaseName);
 
     // ステルスロックが設置されている場合、場に出た瞬間にダメージを受ける
@@ -685,7 +677,7 @@ function renderKinNejikiSelectScreen() {
         card.className = `bg-[#2a1b15] border rounded-xl p-2.5 cursor-pointer active:scale-[0.98] transition-all ${isSelected ? 'border-amber-400 shadow-[0_0_6px_2px_rgba(251,191,36,0.4)]' : 'border-amber-900/50'}`;
         card.onclick = () => toggleKinNejikiSelect(idx);
 
-        const skillNames = m.skills.map(sk => (SKILLS_DB[sk] ? SKILLS_DB[sk].name : sk)).join('、');
+        const skillNames = buildSkillListWithAuraText(m.skills);
         const equipText = m.equip ? getEquipmentDisplayName(m.equip) : '未装備';
         const aura = AURA_TYPES[m.aura];
         const monClassKey = getMonClassKeyForName(m.monsterBaseName);
@@ -974,8 +966,10 @@ function renderKinNejikiSwapScreen() {
     kinNejikiSwapMineIdx = null;
     kinNejikiSwapTheirsIdx = null;
     const selectStep = document.getElementById('kinnejiki-swap-step-select');
+    const orderStep = document.getElementById('kinnejiki-swap-step-order');
     const nextStep = document.getElementById('kinnejiki-swap-step-next');
     if (selectStep) { selectStep.classList.remove('hidden'); selectStep.style.display = 'flex'; }
+    if (orderStep) { orderStep.classList.add('hidden'); orderStep.style.display = 'none'; }
     if (nextStep) { nextStep.classList.add('hidden'); nextStep.style.display = 'none'; }
     renderKinNejikiSwapLists();
 }
@@ -1038,10 +1032,111 @@ function confirmKinNejikiSwap() {
     cloned.ownerName = 'あなた';
     KIN_NEJIKI_STATE.playerParty[kinNejikiSwapMineIdx] = cloned;
     showToast(`【${cloned.name}】を仲間に迎え入れた！`);
-    showKinNejikiSwapNextStep();
+    showKinNejikiOrderStep();
 }
 
 function skipKinNejikiSwap() {
+    showKinNejikiOrderStep();
+}
+
+// =====================================================
+// 交換の可否を決めた後：次の相手のヒントを見ながら、出す順番（先頭に出すモンスター）を選ぶ
+// =====================================================
+
+// --- 交換ステップ→出す順番ステップへ切り替える ---
+function showKinNejikiOrderStep() {
+    const selectStep = document.getElementById('kinnejiki-swap-step-select');
+    const orderStep = document.getElementById('kinnejiki-swap-step-order');
+    if (selectStep) { selectStep.classList.add('hidden'); selectStep.style.display = 'none'; }
+    if (orderStep) { orderStep.classList.remove('hidden'); orderStep.style.display = 'flex'; }
+    renderKinNejikiOrderStep();
+}
+
+// --- 次の相手の1体目のヒント表示＋自パーティの出す順番（先頭）選択UIを描画する ---
+// 次のバトルの対戦相手（nextBattlePrepared.opponentTeam）は、この交換画面が開く前に
+// 既に確定しているため、その1体目をそのままヒントとして見せることができる。
+function renderKinNejikiOrderStep() {
+    const hintContainer = document.getElementById('kinnejiki-next-opponent-hint');
+    const orderContainer = document.getElementById('kinnejiki-order-container');
+    if (!hintContainer || !orderContainer) return;
+
+    // --- 次の相手の1体目のヒント（技・装備までは見せず、姿・ステータス・オーラ／モン類のみ） ---
+    hintContainer.innerHTML = '';
+    const nextLead = (KIN_NEJIKI_STATE.nextBattlePrepared && KIN_NEJIKI_STATE.nextBattlePrepared.opponentTeam)
+        ? KIN_NEJIKI_STATE.nextBattlePrepared.opponentTeam[0]
+        : null;
+    if (nextLead) {
+        const auraInfo = nextLead.aura ? AURA_TYPES[nextLead.aura] : null;
+        const monClassKey = getMonClassKeyForName(nextLead.monsterBaseName);
+        const monClassInfo = monClassKey ? MON_CLASS_TYPES[monClassKey] : null;
+        const auraBadge = auraInfo ? `<span class="px-1 py-0.5 rounded text-[8px] font-bold text-slate-900 ${auraInfo.colorClass}">${auraInfo.emoji}${auraInfo.name}</span>` : '';
+        const monClassBadge = monClassInfo ? `<span class="px-1 py-0.5 rounded text-[8px] font-bold bg-slate-700 text-slate-200">${monClassInfo.emoji}${monClassInfo.name}</span>` : '';
+
+        const card = document.createElement('div');
+        card.className = 'bg-[#2a1b15] border border-red-900/50 rounded-xl p-2 flex items-center space-x-2';
+        const visualId = 'kinnejiki-next-opponent-hint-visual';
+        card.innerHTML = `
+            <div id="${visualId}" class="flex-shrink-0 w-12 h-12 flex items-center justify-center text-2xl"></div>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                    <div class="text-xs font-bold text-red-200">${nextLead.name}</div>
+                    <div class="flex gap-1 flex-shrink-0 ml-1">${auraBadge}${monClassBadge}</div>
+                </div>
+                <div class="text-[9px] text-gray-400 mt-0.5">HP${nextLead.stats.maxLife} / ちから${nextLead.stats.pow} / かしこさ${nextLead.stats.int} / 命中${nextLead.stats.hit} / 回避${nextLead.stats.spd} / 丈夫さ${nextLead.stats.def}</div>
+            </div>
+        `;
+        hintContainer.appendChild(card);
+        const visualEl = card.querySelector(`#${CSS.escape(visualId)}`);
+        renderMonsterVisual(visualEl, nextLead.visualName || nextLead.monsterBaseName || nextLead.name, nextLead.emoji, false, false, nextLead.aura);
+    } else {
+        hintContainer.innerHTML = `<p class="text-[10px] text-gray-500 p-2">（次の相手の情報を取得できませんでした）</p>`;
+    }
+
+    // --- 自パーティの出す順番選択（タップで先頭＝インデックス0と入れ替える） ---
+    orderContainer.innerHTML = '';
+    KIN_NEJIKI_STATE.playerParty.forEach((m, idx) => {
+        if (!m) return;
+        const isLeader = idx === 0;
+        const card = document.createElement('div');
+        card.className = `bg-[#2a1b15] border rounded-xl p-2 cursor-pointer active:scale-[0.98] transition-all flex items-center space-x-2 ${isLeader ? 'border-sky-400 shadow-[0_0_6px_2px_rgba(56,189,248,0.4)]' : 'border-amber-900/50'}`;
+        card.onclick = () => swapKinNejikiPartyToLead(idx);
+        const visualId = `kinnejiki-order-visual-${idx}`;
+        const auraInfo = m.aura ? AURA_TYPES[m.aura] : null;
+        const monClassKey = getMonClassKeyForName(m.monsterBaseName);
+        const monClassInfo = monClassKey ? MON_CLASS_TYPES[monClassKey] : null;
+        const auraText = (auraInfo ? auraInfo.emoji : '') + (monClassInfo ? monClassInfo.emoji : '');
+
+        card.innerHTML = `
+            <div id="${visualId}" class="flex-shrink-0 w-12 h-12 flex items-center justify-center text-2xl"></div>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between">
+                    <div class="text-xs font-bold text-amber-200">${isLeader ? '👑 ' : ''}${m.name}</div>
+                    <div class="text-[8px] text-purple-300 font-bold flex-shrink-0 ml-1">${auraText}</div>
+                </div>
+                <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def}</div>
+                <div class="text-[9px] ${isLeader ? 'text-sky-300' : 'text-gray-600'} mt-0.5">${isLeader ? '→ このモンスターが先頭に出ます' : 'タップして先頭に出す'}</div>
+            </div>
+        `;
+        orderContainer.appendChild(card);
+        const visualEl = card.querySelector(`#${CSS.escape(visualId)}`);
+        renderMonsterVisual(visualEl, m.visualName || m.monsterBaseName || m.name, m.emoji, !!m.isAwakened, true, m.aura);
+    });
+}
+
+// --- タップされたモンスターを先頭（インデックス0＝次のバトルで最初に繰り出す位置）に入れ替える ---
+function swapKinNejikiPartyToLead(idx) {
+    if (idx === 0) return;
+    const party = KIN_NEJIKI_STATE.playerParty;
+    const tmp = party[0];
+    party[0] = party[idx];
+    party[idx] = tmp;
+    renderKinNejikiOrderStep();
+}
+
+// --- 出す順番を決めたら、次のバトルへ進むか／セーブして終了するかの選択ステップへ ---
+function proceedFromKinNejikiOrderStep() {
+    const orderStep = document.getElementById('kinnejiki-swap-step-order');
+    if (orderStep) { orderStep.classList.add('hidden'); orderStep.style.display = 'none'; }
     showKinNejikiSwapNextStep();
 }
 

@@ -37,7 +37,7 @@ const SKILL_EFFECT_TYPE = {
     koma_attack:'drill', kuchibashi:'punch_melee', kurohizacombo:'kick', kushizashi:'punch_melee', kuu:'claw', kuuchu_kaiten_attack:'drill',
     laser_blade:'holy_light', laser_cutter:'holy_light', liger_hikkaki:'claw', liger_kamitsuki:'claw', liger_raijinken:'electric', mach_punch:'punch_melee',
     machinegun_punch:'punch_melee', mana_drain:'drain_effect', mappufutatsu:'slash', meido_no_miyage:'punch_melee', meiso:'buff', meta_beam:'holy_light', michizure:'buff',
-    midaretsuki:'slash', migawarimochi:'substitute', mirage_claw:'fire_large', monotaore:'punch_melee', morning_star:'punch_melee', mossama:'punch_melee',
+    midaretsuki:'slash', migawarimochi:'substitute', mirage_claw:'fire_large', monotaore:'punch_melee', morning_star:'punch_melee', mossama:'punch_melee', zan_migawari_no_jutsu:'substitute',
     muchi:'punch_melee', nagekiss_nendoro:'scream_confuse', nagetobashi:'punch_melee', nameru:'claw', napalm_cannon:'fire_large', needle_turn:'drill', nen_eki:'poison',
     nendo_gatame:'buff', nobiru_punch:'punch_melee', odokasu:'dark_curse', ohki_otoshimono:'rock_earth', ohpunch:'punch_melee', onara:'poison',
     one_two:'punch_melee', one_two_punch:'punch_melee', onikokushou:'dark_curse', onite:'punch_melee', onitsume:'claw', otakebi:'sound',

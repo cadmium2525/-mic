@@ -14,6 +14,20 @@ const AURA_TYPES = {
     white:  { key: 'white',  name: '白',  emoji: '⚪', colorClass: 'bg-gray-200',   textClass: 'text-gray-200',   beats: null,     hex: '#e5e7eb', exclusive: true }
 };
 
+// --- 技名の一覧を、各技のオーラ色が一目でわかる形式（オーラ絵文字＋技名）の文字列で返す共通ヘルパー ---
+// レンタルモンスターの選出画面・交代候補一覧など、技のオーラを一目で確認したい場面で使う。
+// オーラ無しの技には▫️（無地の四角）を付け、「オーラが無いこと」自体も分かるようにする。
+function buildSkillListWithAuraText(skillKeys) {
+    if (!skillKeys || skillKeys.length === 0) return '';
+    return skillKeys.map(skKey => {
+        const sk = SKILLS_DB[skKey];
+        const name = sk ? sk.name : skKey;
+        const aura = sk ? AURA_TYPES[sk.aura] : null;
+        const auraMark = aura ? aura.emoji : '▫️';
+        return `${auraMark}${name}`;
+    }).join('、');
+}
+
 // --- 攻撃側オーラが防御側オーラに対して有利かどうかを判定する ---
 function isAuraAdvantageous(attackerAuraKey, defenderAuraKey) {
     if (!attackerAuraKey || !defenderAuraKey) return false;
@@ -473,6 +487,7 @@ function clearBattleStatModifiersOnSwitch(unit) {
     unit.sakuraBuffStacks = 0;
     unit.meisoStacks = 0;
     unit.kenbuStacks = 0;
+    unit.arsMagnaBuffActive = false;
     unit.mysticGuardStacks = 0;
     unit.youkoInoriStacks = 0;
     unit.gutsRecoveryDownNext = 0;
@@ -762,7 +777,7 @@ const SKILLS_DB = {
     arcana_flare: { name: 'アルカナフレア', aura: 'red', cost: 29, type: 'int', hitRate: 60, force: 1.4, gutsDown: 30, critBonus: 0.06, effect: 'blind_2', desc: '神秘の紋章から閃光を放つ唯一の魔法技。相手GUTS-30。さらに命中した場合、まばゆい光で2ターンの間相手の目を眩ませ命中率を下げる' },
     assault_arrow: { name: 'アサルトアロー', aura: 'yellow', cost: 33, type: 'pow', hitRate: 75, force: 1.75, gutsDown: 7, critBonus: 0.16, effect: 'hitdown_stack_3', desc: '矢の連射で相手を蜂の巣にする。相手GUTS-7。さらに命中した場合、視界を乱され相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
     buster_sword: { name: 'バスターソード', aura: 'green', cost: 41, type: 'pow', hitRate: 80, force: 1.15, gutsDown: 16, critBonus: 0.22, effect: 'next_force_up', desc: '巨大な剣を振りかぶり力を溜めて叩きつける。相手GUTS-16。さらに命中した場合、自身が次に繰り出す技の威力が50%アップする' },
-    ars_magna: { name: 'アルスマグナ', aura: 'red', cost: 35, type: 'pow', hitRate: 92, force: 1.7, gutsDown: 3, critBonus: 0.06, effect: 'weaken_pow_int', desc: '大いなる業を体現する高命中の一撃。相手GUTS-3。さらに命中した場合、力を封じられ相手の「ちから」「かしこさ」が10%低下する（3回まで重複可・交代するまで持続）' },
+    ars_magna: { name: 'アルスマグナ', aura: 'red', cost: 35, type: 'pow', hitRate: 92, force: 1.7, gutsDown: 3, critBonus: 0.06, effect: 'ars_magna_self_up', desc: '大いなる業を体現する高命中の一撃。相手GUTS-3。さらに命中した場合、大いなる業が己を満たし、自身のライフ以外の全ステータス（ちから・かしこさ・命中・丈夫さ・回避）が20%上昇する（1回のみ・交代するまで持続）' },
     blade_dance: { name: 'ブレードダンス', aura: null, cost: 38, type: 'pow', hitRate: 92, force: 1.35, gutsDown: 30, critBonus: 0.13, effect: 'selfcrit_up_3', desc: '舞うように剣を振るう高命中の連続攻撃。相手GUTS-30。さらに命中した場合、研ぎ澄まされた集中力で自身のクリティカル率が25%アップする（3回まで重複可・交代するまで持続）' },
     requiem_end: { name: 'レクイエムエンド', aura: null, cost: 46, type: 'pow', hitRate: 75, force: 2.6, gutsDown: 20, critBonus: 0.19, effect: 'perma_dmg_up_20', desc: '全てを終わらせる鎮魂の一撃、この上ない最大の切り札。相手GUTS-20。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
     mirage_claw: { name: 'ミラージュクロウ', aura: 'blue', cost: 45, type: 'pow', hitRate: 97, force: 1.85, gutsDown: 30, critBonus: 0.16, effect: 'guaranteed_dodge_next', desc: '陽炎の如き残像を纏った高命中の爪撃。相手GUTS-30。さらに命中した場合、残像に紛れ次に受ける敵の攻撃を確実に回避する' },
@@ -809,7 +824,8 @@ const SKILLS_DB = {
     zan_rising_rave: { name: 'ライジングレイヴ', aura: 'yellow', cost: 42, type: 'pow', hitRate: 82, force: 2.7, gutsDown: 40, critBonus: 0.24, effect: 'dot_mine_aura_bonus', desc: '闘気を纏いながら斬り上げる渾身の一撃。相手GUTS-40。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与える。オーラ相性が有利な場合、継続ダメージがさらに8%上乗せされる' },
     zan_axis_bullet: { name: 'アクシズバレット', aura: 'red', cost: 50, type: 'pow', hitRate: 66, force: 2.3, gutsDown: 9, critBonus: 0.28, effect: 'dot_mine_def_down10', desc: '回転を加えて撃ち込む貫通力の高い斬撃。相手GUTS-9。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与え、さらに3ターンの間相手の丈夫さを10%低下させる' },
     zan_dark_haunt: { name: 'ダークホウスト', aura: null, cost: 48, type: 'pow', hitRate: 95, force: 2.7, gutsDown: 5, critBonus: 0.22, effect: 'dot_mine', dotPct: 0.14, desc: '闇の力を宿した渾身の一刀両断。相手GUTS-5。さらに命中した場合、3ターンの間相手の最大ライフ14%の継続ダメージを与える' },
-    zan_makibishi: { name: 'まきびし', aura: null, cost: 20, type: 'hazard', hitRate: 100, force: 0, gutsDown: 0, noDamage: true, effect: 'stealth_rock', desc: '相手フィールド上に鋭いまきびしをばら撒く。相手はモンスターを交代して繰り出すたびに、最大ライフの1/8のダメージを受けるようになる（一度設置すると、バトルが終わるまでずっと効果が持続する）。' }
+    zan_makibishi: { name: 'まきびし', aura: null, cost: 20, type: 'hazard', hitRate: 100, force: 0, gutsDown: 0, noDamage: true, effect: 'stealth_rock', desc: '相手フィールド上に鋭いまきびしをばら撒く。相手はモンスターを交代して繰り出すたびに、最大ライフの1/8のダメージを受けるようになる（一度設置すると、バトルが終わるまでずっと効果が持続する）。' },
+    zan_migawari_no_jutsu: { name: 'みがわりの術', aura: null, cost: 40, type: 'substitute', hitRate: 100, force: 0, gutsDown: 0, selfDamagePct: 0.2, desc: '自身の身代わりとなる分身を作り出し、自身への攻撃を2回防ぐ。発動時、自身も最大ライフの20%のダメージを受ける。モンスターを交換しても身代わりの分身は場に残り続ける。' }
 };
 
 // --- ステータス獲得逓減システム (Diminishing Returns) ---
@@ -963,7 +979,16 @@ function applySkillOnHitEffect(caster, target, sk) {
     const logs = [];
     if (!sk || !sk.effect) return logs;
 
-    if (sk.effect === 'weaken_pow_int') {
+    if (sk.effect === 'ars_magna_self_up') {
+        // アルスマグナ専用：命中時、自身のライフ以外の全ステータス（ちから・かしこさ・命中・丈夫さ・回避）を
+        // 20%上昇させる（1回のみ・重複せず・交代するまで持続）
+        if (caster.arsMagnaBuffActive) {
+            logs.push(`（${caster.name} はすでにアルスマグナの効果を得ているため、追加の効果は発生しなかった）`);
+        } else {
+            caster.arsMagnaBuffActive = true;
+            logs.push(`✨ ${caster.name} は大いなる業に満たされた！（ライフ以外の全ステータスが20%上昇・交代するまで持続）`);
+        }
+    } else if (sk.effect === 'weaken_pow_int') {
         // 衰弱：命中時に「ちから」「かしこさ」を10%低下させる。1体につき3回まで重複可（交代するまで持続）。
         target.isWeakened = true;
         if ((target.weakenStacks || 0) >= 3) {
@@ -1435,6 +1460,10 @@ function getEvasionStat(unit, spdVal, opponent) {
     if (unit.spdDownStacks > 0) {
         val = val * (1 - unit.spdDownStacks * 0.1);
     }
+    // アルスマグナ：命中時、自身のライフ以外の全ステータスが20%上昇（1回のみ・交代するまで持続）
+    if (unit.arsMagnaBuffActive) {
+        val = val * 1.2;
+    }
     if (opponent) {
         val = val * getAuraMonClassStatMultiplier(unit, opponent);
     }
@@ -1464,6 +1493,7 @@ function getBuffedAttackStat(unit, statVal, statKind, opponent) {
     if (statKind === 'pow' && unit.kenbuStacks > 0) mult += unit.kenbuStacks * 0.25;
     if (statKind === 'int' && unit.meisoStacks > 0) mult += unit.meisoStacks * 0.3;
     if (statKind === 'int' && unit.youkoInoriStacks > 0) mult += unit.youkoInoriStacks * 0.5;
+    if (unit.arsMagnaBuffActive) mult += 0.2;
     if (opponent) mult *= getAuraMonClassStatMultiplier(unit, opponent);
     if (mult === 1) return statVal;
     return Math.floor(statVal * mult);
@@ -1476,6 +1506,7 @@ function getBuffedHitStat(unit, statVal, opponent) {
     let mult = 1;
     if (unit.meisoStacks > 0) mult += unit.meisoStacks * 0.3;
     if (unit.kenbuStacks > 0) mult += unit.kenbuStacks * 0.25;
+    if (unit.arsMagnaBuffActive) mult += 0.2;
     if (opponent) mult *= getAuraMonClassStatMultiplier(unit, opponent);
     if (mult === 1) return statVal;
     return Math.floor(statVal * mult);
@@ -1489,6 +1520,7 @@ function getBuffedDefenseStat(unit, statVal, opponent) {
     if (unit.defUpStacks > 0) mult += unit.defUpStacks * 0.15;
     if (unit.nendoGatameStacks > 0) mult += unit.nendoGatameStacks * 0.8;
     if (unit.mysticGuardStacks > 0) mult += unit.mysticGuardStacks * 0.5;
+    if (unit.arsMagnaBuffActive) mult += 0.2;
     if (opponent) mult *= getAuraMonClassStatMultiplier(unit, opponent);
     if (mult === 1) return statVal;
     return Math.floor(statVal * mult);
@@ -1825,7 +1857,7 @@ const KIN_NEJIKI_SKILL_POOL = {
     illumine:  ['plasma', 'shield_bash', 'straight_punch', 'venom_edge', 'assassin_claw', 'morning_star', 'arcana_flare', 'assault_arrow', 'buster_sword', 'ars_magna', 'blade_dance', 'requiem_end', 'mirage_claw', 'crimson_nova'],
     liger:     ['liger_hikkaki', 'liger_kamitsuki', 'body_slam', 'raigeki', 'one_two', 'reikidan', 'kagegeki', 'cho_raigeki', 'kuuchu_kaiten_attack', 'combination_liger', 'liger_raijinken', 'rakurai_kyoumei'],
     pixie:     ['pixie_harite', 'pixie_thunder', 'pixie_ray', 'pixie_lightning', 'pixie_megaray', 'pixie_nagekiss', 'pixie_highkick', 'pixie_van', 'pixie_gigaray', 'pixie_healraid', 'pixie_bigbang', 'pixie_astralray'],
-    zan:       ['zan_mirage_shift', 'zan_single_shot', 'zan_leg_arc', 'zan_stunner_blitz', 'zan_ohzantou', 'zan_double_summer', 'zan_meteor_drive', 'zan_assault_dance', 'zan_assault_raid', 'zan_rising_rave', 'zan_axis_bullet', 'zan_dark_haunt', 'zan_makibishi']
+    zan:       ['zan_mirage_shift', 'zan_single_shot', 'zan_leg_arc', 'zan_stunner_blitz', 'zan_ohzantou', 'zan_double_summer', 'zan_meteor_drive', 'zan_assault_dance', 'zan_assault_raid', 'zan_rising_rave', 'zan_axis_bullet', 'zan_dark_haunt', 'zan_makibishi', 'kenbu', 'zan_migawari_no_jutsu']
 };
 
 // =====================================================
@@ -2161,8 +2193,8 @@ const MONSTER_MOLDS = {
     ],
     'ザン': [
         { skills: ['ミラージュシフト', 'シングルショット', 'レッグアーク', 'まきびし'], equipment: '荒縄のガントレット' },
-        { skills: ['レッグアーク', 'スタナーブリッツ', 'ダブルサマー', 'アサルトダンス'], equipment: '鉄爪の欠片' },
-        { skills: ['メテオドライブ', 'アサルトダンス', 'スタナーブリッツ', 'アサルトレイド'], equipment: '死闘の重錘' },
+        { skills: ['レッグアーク', 'スタナーブリッツ', 'ダブルサマー', '剣舞'], equipment: '鉄爪の欠片' },
+        { skills: ['メテオドライブ', 'アサルトダンス', 'みがわりの術', 'アサルトレイド'], equipment: '死闘の重錘' },
         { skills: ['ライジングレイヴ', 'アクシズバレット', 'ダークホウスト', 'アサルトレイド'], equipment: '牙獣のお守り' },
         // --- 型5 ---
         { skills: ['ダークホウスト', 'アサルトレイド', 'アクシズバレット', 'ダブルサマー'], equipment: '守護のペンダント' },
@@ -2252,21 +2284,23 @@ function pickMonsterMold(speciesId, unlockedCount, excludeEquipIds, minIndex) {
 const KIN_NEJIKI_BOSSES = {
     set3: {
         name: 'コルトのゴビ',
+        shortName: 'コルト',
         title: 'レジェンドブリーダー・コルト',
         templateId: 'golem',
         emoji: '🗿',
         desc: 'ちからと丈夫さに全振りした岩石の怪物。ガッツが溜まると「ぐるぐるアタック」や「竜巻アタック」で大ダメージを与えてくる。さらに「ゴビステップ」で自身の回避を大きく高めてくるため、回避特化での対策も過信は禁物。',
-        statsBase: { maxLife: 260, pow: 128, int: 18, hit: 34, spd: 16, def: 62, gutsSpeed: 12 },
+        statsBase: { maxLife: 260, pow: 78, int: 18, hit: 34, spd: 16, def: 62, gutsSpeed: 12 },
         skills: ['dekopin', 'claw_nage', 'guruguru_attack', 'boss_roll', 'tornado_attack', 'gobi_step']
     },
     set7: {
         name: 'コルトのモスト',
+        shortName: 'コルト',
         title: 'レジェンドブリーダー・コルト（最終決戦）',
         templateId: null, // 特定種族に属さないオリジナルの最終ボス
         emoji: '👿',
         aura: 'white', // モスト専用の特別なオーラ（三竦みに参加しない中立オーラ）
         desc: '伝説の邪神。戦闘のたびに異なる型で現れ、毒と吸収でじわじわ追い詰める型と、「サイコブラスト」「メテオバースト」の大技で一気に畳みかける型を使い分ける。ガッツダウン性能の高い技で常にガッツを抑え込むのが攻略の鍵。',
-        statsBase: { maxLife: 480, pow: 128, int: 128, hit: 62, spd: 46, def: 58, gutsSpeed: 14 },
+        statsBase: { maxLife: 480, pow: 58, int: 58, hit: 62, spd: 46, def: 58, gutsSpeed: 14 },
         // 型①：毒＋ドレインでじわじわ追い詰めるタイプ　型②：サイコブラスト/メテオバーストで一気に畳みかけるタイプ
         // バトルのたびにいずれか1つの型がランダムで選ばれる。
         molds: [

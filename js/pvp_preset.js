@@ -302,7 +302,7 @@ function renderPvpPresetEditorScreen() {
             if (complete) {
                 const tmpl = MONSTER_TEMPLATES[m.speciesId];
                 renderMonsterVisual(iconWrap, tmpl.name, tmpl.emoji, false, true, m.aura);
-                const skillNames = m.skills.map(sk => (SKILLS_DB[sk] ? SKILLS_DB[sk].name : sk)).join('、');
+                const skillNames = buildSkillListWithAuraText(m.skills);
                 const equipText = (m.equipId && EQUIPMENT_DB[m.equipId]) ? EQUIPMENT_DB[m.equipId].name : '未装備';
                 const auraInfo = m.aura ? AURA_TYPES[m.aura] : null;
                 const typeBadge = tmpl.dualStatType

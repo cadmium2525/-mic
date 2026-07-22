@@ -93,8 +93,7 @@ function renderMonsterVisual(containerEl, name, emoji, isAwakened = false, isPar
         containerEl.insertBefore(imgEl, containerEl.firstChild);
 
         // オーラ着色オーバーレイ（同じ画像をマスクにして、絵柄部分だけに色を重ねる）
-        // ※「白」はモスト専用の特別なオーラのため、着色エフェクトは付けずそのままの画像を使う。
-        const aura = (auraKey && auraKey !== 'white') ? AURA_TYPES[auraKey] : null;
+        const aura = auraKey ? AURA_TYPES[auraKey] : null;
         if (aura && aura.hex && MONSTER_VISUAL_AURA_TINT_STRENGTH > 0) {
             const tintEl = document.createElement('div');
             tintEl.className = `monster-visual-aura-tint w-full h-full max-h-24 max-w-24 mx-auto${flipClass}`;
