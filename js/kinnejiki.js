@@ -234,11 +234,10 @@ function kinNejikiAiLevelForSet(setNumber) {
 // セット1〜2：ノーマル産ステータス装備中心 / セット3〜5：ハード産＋一部特殊効果 / セット6〜7：特殊効果中心
 // excludeEquipIds: この配列に含まれる装備IDは抽選対象から除外する
 //                  （除外しすぎて候補が0件になった場合は保険として除外を無視する）
+// ※敵モンスターが未装備だと「交換したい」という動機が薄れてしまうため、
+//   レンタルモンスターには必ず何かしらの装備を持たせる（未装備を返すことはない）。
 function kinNejikiRollEquipmentForSet(setNumber, excludeEquipIds) {
     const excluded = excludeEquipIds || [];
-
-    // 装備なし（未装備）の余地も一定確率で残す
-    if (Math.random() < 0.15) return null;
 
     let pool;
     if (setNumber <= 2) {
@@ -278,6 +277,12 @@ function generateKinNejikiRentalMonster(speciesId, setNumber, excludeEquipIds) {
     if (mold) {
         chosenSkills = mold.skills;
         equipInstance = mold.equip;
+        // 型本来の装備が「同じ道具を持ったモンスター同士が対面しない」除外ルールに引っかかって
+        // nullになった場合、そのまま未装備にはせず、代わりの装備を必ず抽選して持たせる
+        // （敵が丸腰だと交換する動機が薄れてしまうため）。
+        if (!equipInstance) {
+            equipInstance = kinNejikiRollEquipmentForSet(setNumber, excludeEquipIds);
+        }
     } else {
         // 型データが無い（未定義の）種族向けフォールバック：従来通りのランダム抽選
         const skillPool = KIN_NEJIKI_SKILL_POOL[speciesId] || [];
