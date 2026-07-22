@@ -39,15 +39,26 @@ const GAME_STATE = {
     playerName: loadStoredPlayerName() // プレイヤー名（LocalStorageから復元。無ければ既定値）
 };
 
+// --- モンスター画像のオーラ着色設定（調整しやすいようにここで定数化） ---
+// MONSTER_VISUAL_AURA_TINT_STRENGTH: 色の重ねる強さ（0〜1）。0にすると着色オフになる。
+// MONSTER_VISUAL_AURA_TINT_BLEND_MODE: CSSのmix-blend-mode。'hue'（色相のみ変更・陰影を保持）を採用。
+//   他の候補: 'color'（hueよりくっきり）/ 'multiply'（濃く暗めに色付け）/ 'soft-light'（淡く色付け）
+const MONSTER_VISUAL_AURA_TINT_STRENGTH = 0.6;
+const MONSTER_VISUAL_AURA_TINT_BLEND_MODE = 'hue';
+
 // --- モンスター画像読み込みヘルパー関数 ---
 // isPartner: プレイヤー側（自分のパーティ）のモンスターを描画する場合はtrue。
 //   画像素材は基本的に右向きで用意されているため、敵側（isPartner=false）表示時のみ
 //   CSSで左右反転して、プレイヤーと向き合っているように見せる。
-function renderMonsterVisual(containerEl, name, emoji, isAwakened = false, isPartner = false) {
+// auraKey: 指定された場合（'red'/'green'/'yellow'/'blue'）、AURA_TYPESの色を画像に重ねて着色する。
+//   透明な背景部分には色が乗らないよう、同じ画像をCSSマスクとして使い、モンスターの絵柄部分にのみ重ねる。
+function renderMonsterVisual(containerEl, name, emoji, isAwakened = false, isPartner = false, auraKey = null) {
     if (!containerEl) return;
 
     const oldImg = containerEl.querySelector('img.monster-visual-img');
     if (oldImg) oldImg.remove();
+    const oldTint = containerEl.querySelector('.monster-visual-aura-tint');
+    if (oldTint) oldTint.remove();
 
     Array.from(containerEl.childNodes).forEach(node => {
         if (node.nodeType === Node.TEXT_NODE) node.remove();
@@ -60,6 +71,8 @@ function renderMonsterVisual(containerEl, name, emoji, isAwakened = false, isPar
     const imagePath = `images/${prefix}${cleanName}.png`;
 
     containerEl.dataset.visualSrc = imagePath;
+    // 絶対配置のオーラ着色オーバーレイを正しい位置に重ねるための基準にする
+    if (!containerEl.style.position) containerEl.style.position = 'relative';
 
     const img = new Image();
     img.src = imagePath;
@@ -67,12 +80,42 @@ function renderMonsterVisual(containerEl, name, emoji, isAwakened = false, isPar
         if (containerEl.dataset.visualSrc !== imagePath) return;
         const oldImgNow = containerEl.querySelector('img.monster-visual-img');
         if (oldImgNow) oldImgNow.remove();
+        const oldTintNow = containerEl.querySelector('.monster-visual-aura-tint');
+        if (oldTintNow) oldTintNow.remove();
+
+        const flipClass = isPartner ? '' : ' -scale-x-100';
+
         const imgEl = document.createElement('img');
         imgEl.src = imagePath;
         imgEl.alt = name;
         // 画像は右向きが基本のため、敵側（isPartner=false）のみ左右反転して表示する
-        imgEl.className = `monster-visual-img w-full h-full object-contain max-h-24 max-w-24 mx-auto drop-shadow-lg${isPartner ? '' : ' -scale-x-100'}`;
+        imgEl.className = `monster-visual-img w-full h-full object-contain max-h-24 max-w-24 mx-auto drop-shadow-lg${flipClass}`;
         containerEl.insertBefore(imgEl, containerEl.firstChild);
+
+        // オーラ着色オーバーレイ（同じ画像をマスクにして、絵柄部分だけに色を重ねる）
+        const aura = auraKey ? AURA_TYPES[auraKey] : null;
+        if (aura && aura.hex && MONSTER_VISUAL_AURA_TINT_STRENGTH > 0) {
+            const tintEl = document.createElement('div');
+            tintEl.className = `monster-visual-aura-tint w-full h-full max-h-24 max-w-24 mx-auto${flipClass}`;
+            tintEl.style.position = 'absolute';
+            tintEl.style.inset = '0';
+            tintEl.style.margin = 'auto';
+            tintEl.style.pointerEvents = 'none';
+            tintEl.style.backgroundColor = aura.hex;
+            tintEl.style.opacity = String(MONSTER_VISUAL_AURA_TINT_STRENGTH);
+            tintEl.style.mixBlendMode = MONSTER_VISUAL_AURA_TINT_BLEND_MODE;
+            tintEl.style.webkitMaskImage = `url(${imagePath})`;
+            tintEl.style.maskImage = `url(${imagePath})`;
+            tintEl.style.webkitMaskMode = 'alpha';
+            tintEl.style.maskMode = 'alpha';
+            tintEl.style.webkitMaskSize = 'contain';
+            tintEl.style.maskSize = 'contain';
+            tintEl.style.webkitMaskRepeat = 'no-repeat';
+            tintEl.style.maskRepeat = 'no-repeat';
+            tintEl.style.webkitMaskPosition = 'center';
+            tintEl.style.maskPosition = 'center';
+            containerEl.insertBefore(tintEl, imgEl.nextSibling);
+        }
     };
     img.onerror = () => {
         console.warn(`[renderMonsterVisual] 画像が見つかりません: ${imagePath}`);

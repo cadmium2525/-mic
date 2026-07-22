@@ -370,7 +370,7 @@ function renderRealtimeBattleUI(state) {
     document.getElementById('battle-turn-counter').textContent = state.turnNumber || 1;
 
     document.getElementById('enemy-name').textContent = `${opp.name}（${oppOwnerName}）`;
-    renderMonsterVisual(document.getElementById('battle-enemy-icon'), opp.monsterBaseName, opp.emoji, opp.isAwakened);
+    renderMonsterVisual(document.getElementById('battle-enemy-icon'), opp.monsterBaseName, opp.emoji, opp.isAwakened, false, opp.aura);
     document.getElementById('battle-enemy-type').textContent = opp.name;
     renderAuraBadge('enemy-aura-badge', opp.aura, opp.monsterBaseName);
     renderStatusAilmentBadge('enemy-status-badge', opp);
@@ -379,7 +379,7 @@ function renderRealtimeBattleUI(state) {
     document.getElementById('enemy-guts-text').textContent = Math.floor(opp.guts);
     document.getElementById('enemy-guts-bar').style.width = `${opp.guts}%`;
 
-    renderMonsterVisual(document.getElementById('battle-player-icon'), me.monsterBaseName, me.emoji, me.isAwakened, true);
+    renderMonsterVisual(document.getElementById('battle-player-icon'), me.monsterBaseName, me.emoji, me.isAwakened, true, me.aura);
     document.getElementById('battle-player-name').textContent = me.name;
     renderAuraBadge('player-aura-badge', me.aura, me.monsterBaseName);
     renderStatusAilmentBadge('player-status-badge', me);
@@ -765,7 +765,7 @@ function renderRealtimeTeamIcons(state) {
             if (isFainted) {
                 icon.textContent = '💀';
             } else {
-                renderMonsterVisual(icon, unit.monsterBaseName, unit.emoji, unit.isAwakened, isPartnerSide);
+                renderMonsterVisual(icon, unit.monsterBaseName, unit.emoji, unit.isAwakened, isPartnerSide, unit.aura);
                 const statusText = getStatusAilmentBadgeText(unit);
                 if (statusText) {
                     const badge = document.createElement('div');
@@ -856,7 +856,7 @@ function renderRealtimeBattleSkills(state) {
         } else if (sk.hitRate === 100) {
             hitRateDisplay = `<span class="${style.textIntensity} text-[9px] font-bold font-mono">命中:必中</span>`;
         } else if (opp) {
-            let actualHitForIcon = Math.max(10, Math.min(99, (sk.hitRate + gutsModsForHit.hitMod) + (me.hit - getEvasionStat(opp, opp.spd)) * 0.5 - getBlindHitPenalty(me)));
+            let actualHitForIcon = Math.max(10, Math.min(99, (sk.hitRate + gutsModsForHit.hitMod) + (getBuffedHitStat(me, me.hit, opp) - getEvasionStat(opp, opp.spd, me)) * 0.5 - getBlindHitPenalty(me)));
             if (me.isShuchuActive) actualHitForIcon = Math.min(99, actualHitForIcon * 1.5);
             hitRateDisplay = `<span class="${style.textIntensity} text-[9px] font-bold font-mono">命中:${Math.round(actualHitForIcon)}%</span>`;
         } else {
@@ -990,7 +990,7 @@ function openRealtimeSkillModal(skKey, state) {
         if (sk.hitRate === 100) {
             document.getElementById('modal-guts-hit-rate').textContent = "必中 🎯";
         } else if (opp) {
-            let actualHit = Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (me.hit - getEvasionStat(opp, opp.spd)) * 0.5 - getBlindHitPenalty(me)));
+            let actualHit = Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (getBuffedHitStat(me, me.hit, opp) - getEvasionStat(opp, opp.spd, me)) * 0.5 - getBlindHitPenalty(me)));
             if (me.isShuchuActive) actualHit = Math.min(99, actualHit * 1.5);
             document.getElementById('modal-guts-hit-rate').textContent = Math.round(actualHit) + "%";
         } else {
@@ -1201,7 +1201,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             }
 
             const isCertain = sk.hitRate === 100;
-            let hitChance = isCertain ? 100 : Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (getBuffedHitStat(me, me.hit) - getEvasionStat(opp, opp.spd)) * 0.5 - getBlindHitPenalty(me)));
+            let hitChance = isCertain ? 100 : Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (getBuffedHitStat(me, me.hit, opp) - getEvasionStat(opp, opp.spd, me)) * 0.5 - getBlindHitPenalty(me)));
             if (me.isShuchuActive && !isCertain) {
                 hitChance = Math.min(99, hitChance * 1.5);
             }
@@ -1265,11 +1265,11 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                 const isPow = sk.type === 'pow';
                 // useDefAsAtk：自身の丈夫さの値を攻撃の値として扱う技（例：ボディプレス）
                 const attackerStat = (sk.useDefAsAtk
-                    ? getBuffedDefenseStat(me, getDefDownStat(me, me.def))
-                    : getBuffedAttackStat(me, getWeakenedStat(me, isPow ? me.pow : me.int), isPow ? 'pow' : 'int')
+                    ? getBuffedDefenseStat(me, getDefDownStat(me, me.def), opp)
+                    : getBuffedAttackStat(me, getWeakenedStat(me, isPow ? me.pow : me.int), isPow ? 'pow' : 'int', opp)
                 ) * getEquipmentLowLifeAtkMultiplier(me);
                 // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（防御崩し状態を反映）
-                const defenderStat = getDefDownStat(opp, getBuffedDefenseStat(opp, opp.def)) * 1.5;
+                const defenderStat = getDefDownStat(opp, getBuffedDefenseStat(opp, opp.def, me)) * 1.5;
                 const defenderGutsDefenseMod = getGutsDefenseModifier(opp.guts);
                 const rawDmg = (attackerStat * usedForce * mods.dmgMod) - (defenderStat * 0.35);
                 let damage = Math.floor(Math.max(10, (rawDmg * (0.9 + Math.random() * 0.2)) * defenderGutsDefenseMod));
@@ -1287,17 +1287,13 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                     damage = Math.floor(damage * 1.2);
                     meExtraDmgMsg += " (天河天翔×1.2)";
                 }
-                if (isAuraAdvantageous(me.aura, opp.aura)) {
-                    damage = Math.floor(damage * 2);
-                    meExtraDmgMsg += ` (オーラ相性${AURA_TYPES[me.aura].emoji}→${AURA_TYPES[opp.aura].emoji}×2)`;
-                } else if (isAuraAdvantageous(opp.aura, me.aura)) {
-                    damage = Math.floor(damage * 0.5);
-                    meExtraDmgMsg += ` (オーラ相性${AURA_TYPES[opp.aura].emoji}→${AURA_TYPES[me.aura].emoji}被ダメージ半減)`;
-                }
-                const monClassMod = getMonClassDamageMultiplier(me.monsterBaseName, opp.monsterBaseName);
-                if (monClassMod !== 1.0) {
-                    damage = Math.floor(damage * monClassMod);
-                    meExtraDmgMsg += monClassMod > 1.0 ? ` (モン類相性有利×${monClassMod})` : ` (モン類相性不利×${monClassMod})`;
+                // 技オーラ相性による与ダメージ補正（自身のオーラと技オーラが一致／相手オーラに対して有利・不利）
+                // ※モンスター本体同士のオーラ／モン類相性は、ここではなく各種ステータス計算側
+                //   （getBuffedAttackStat等にoppを渡す形）で「自身の全ステータス倍率」として反映済み。
+                const skillAuraBonus = getSkillAuraDamageBonus(me, opp, sk);
+                if (skillAuraBonus.multiplier !== 1) {
+                    damage = Math.floor(damage * skillAuraBonus.multiplier);
+                    meExtraDmgMsg += skillAuraBonus.messages.join('');
                 }
 
                 const critChance = 0.10 + (me.critBonusTurns > 0 ? 0.25 : 0) + ((me.critUpStacks || 0) * 0.25) + getEquipmentCritBonus(me) + getSkillCritBonus(sk);

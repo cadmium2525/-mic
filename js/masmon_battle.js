@@ -234,12 +234,12 @@ function startMasmonBattleCommon(floorText) {
     const enemyOwner = MASMON_BATTLE_STATE.enemyMeta[MASMON_BATTLE_STATE.enemyActiveIdx].ownerName || '相手ブリーダー';
 
     document.getElementById('enemy-name').textContent = e.name;
-    renderMonsterVisual(document.getElementById('battle-enemy-icon'), e.visualName || e.monsterBaseName, e.emoji, e.isAwakened);
+    renderMonsterVisual(document.getElementById('battle-enemy-icon'), e.visualName || e.monsterBaseName, e.emoji, e.isAwakened, false, e.aura);
     document.getElementById('battle-enemy-type').textContent = e.name;
     renderAuraBadge('enemy-aura-badge', e.aura, e.monsterBaseName);
     renderStatusAilmentBadge('enemy-status-badge', e);
 
-    renderMonsterVisual(document.getElementById('battle-player-icon'), p.visualName || p.monsterBaseName, p.emoji, p.isAwakened, true);
+    renderMonsterVisual(document.getElementById('battle-player-icon'), p.visualName || p.monsterBaseName, p.emoji, p.isAwakened, true, p.aura);
     document.getElementById('battle-player-name').textContent = p.name;
     renderAuraBadge('player-aura-badge', p.aura, p.monsterBaseName);
     renderStatusAilmentBadge('player-status-badge', p);
@@ -282,7 +282,7 @@ function renderTeamIcons() {
             if (isFainted) {
                 icon.textContent = '💀';
             } else {
-                renderMonsterVisual(icon, unit.visualName || unit.monsterBaseName, unit.emoji, unit.isAwakened, isPartnerSide);
+                renderMonsterVisual(icon, unit.visualName || unit.monsterBaseName, unit.emoji, unit.isAwakened, isPartnerSide, unit.aura);
                 const statusText = getStatusAilmentBadgeText(unit);
                 if (statusText) {
                     const badge = document.createElement('div');
@@ -417,7 +417,7 @@ function applyPlayerSwitch(targetIdx) {
     MASMON_BATTLE_STATE.isDefending = false;
 
     addLog(`あなたは【${target.name}】を繰り出した！`);
-    renderMonsterVisual(document.getElementById('battle-player-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened, true);
+    renderMonsterVisual(document.getElementById('battle-player-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened, true, target.aura);
     document.getElementById('battle-player-name').textContent = target.name;
     renderAuraBadge('player-aura-badge', target.aura, target.monsterBaseName);
     renderStatusAilmentBadge('player-status-badge', target);
@@ -448,7 +448,7 @@ function applyEnemySwitch(targetIdx) {
     const sideLabel = MASMON_BATTLE_STATE.opponentOwnerName || '相手';
     addLog(`${sideLabel}は【${target.name}】を繰り出した！`);
     document.getElementById('enemy-name').textContent = target.name;
-    renderMonsterVisual(document.getElementById('battle-enemy-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened);
+    renderMonsterVisual(document.getElementById('battle-enemy-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened, false, target.aura);
     document.getElementById('battle-enemy-type').textContent = target.name;
     renderAuraBadge('enemy-aura-badge', target.aura, target.monsterBaseName);
     renderStatusAilmentBadge('enemy-status-badge', target);
@@ -851,7 +851,7 @@ function updateMasmonBattleStatsUI() {
                 hitSpan.textContent = `命中:必中`;
             } else {
                 const mods = getGutsModifiers(gutsVal);
-                let actualHit = Math.max(10, Math.min(99, (effSk.hitRate + mods.hitMod) + (getBuffedHitStat(p, p.stats.hit) - getEvasionStat(e, e.stats.spd)) * 0.5 - getBlindHitPenalty(p)));
+                let actualHit = Math.max(10, Math.min(99, (effSk.hitRate + mods.hitMod) + (getBuffedHitStat(p, p.stats.hit, e) - getEvasionStat(e, e.stats.spd, p)) * 0.5 - getBlindHitPenalty(p)));
                 if (p.isShuchuActive) actualHit = Math.min(99, actualHit * 1.5);
                 hitSpan.textContent = `命中:${Math.round(actualHit)}%`;
             }
@@ -937,7 +937,7 @@ function renderMasmonBattleSkills() {
         } else if (sk.hitRate === 100) {
             hitRateDisplay = `<span class="${style.textIntensity} text-[9px] font-bold font-mono hit-rate-text">命中:必中</span>`;
         } else {
-            let actualHitForIcon = Math.max(10, Math.min(99, (sk.hitRate + gutsModsForHit.hitMod) + (getBuffedHitStat(p, p.stats.hit) - getEvasionStat(e, e.stats.spd)) * 0.5 - getBlindHitPenalty(p)));
+            let actualHitForIcon = Math.max(10, Math.min(99, (sk.hitRate + gutsModsForHit.hitMod) + (getBuffedHitStat(p, p.stats.hit, e) - getEvasionStat(e, e.stats.spd, p)) * 0.5 - getBlindHitPenalty(p)));
             if (p.isShuchuActive) actualHitForIcon = Math.min(99, actualHitForIcon * 1.5);
             hitRateDisplay = `<span class="${style.textIntensity} text-[9px] font-bold font-mono hit-rate-text">命中:${Math.round(actualHitForIcon)}%</span>`;
         }
@@ -948,7 +948,7 @@ function renderMasmonBattleSkills() {
         const useCount = getSkillUseCount(p, skKey);
         const useLimitReached = maxUses ? useCount >= maxUses : false;
         const useCountBadge = maxUses
-            ? `<span class="text-[8px] ${useLimitReached ? 'bg-red-900 text-red-200' : 'bg-stone-800 text-stone-300'} px-1 py-0.5 rounded font-bold ml-1">使用:${useCount}/${maxUses}</span>`
+            ? `<span class="text-[8px] ${useLimitReached ? 'bg-red-900 text-red-200' : 'bg-stone-800 text-stone-300'} px-1 py-0.5 rounded font-bold ml-1">残り:${maxUses - useCount}/${maxUses}</span>`
             : '';
 
         if (useLimitReached) {
@@ -1059,7 +1059,7 @@ function executeMasmonSwitch(targetIdx) {
     addLog(`${prev.name} を引っ込め、【${target.name}】を繰り出した！`);
     showEffect('🔄 交代！ 🔄');
 
-    renderMonsterVisual(document.getElementById('battle-player-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened, true);
+    renderMonsterVisual(document.getElementById('battle-player-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened, true, target.aura);
     document.getElementById('battle-player-name').textContent = target.name;
     renderAuraBadge('player-aura-badge', target.aura, target.monsterBaseName);
     renderStatusAilmentBadge('player-status-badge', target);
@@ -1100,7 +1100,7 @@ function openMasmonSkillModal(skKey) {
     document.getElementById('modal-skill-gutsdown').textContent = sk.gutsDown || 0;
     const maxUses = getSkillMaxUses(skKey);
     const useCount = getSkillUseCount(p, skKey);
-    const useLimitNote = maxUses ? `\n（使用回数：${useCount}/${maxUses}回${useCount >= maxUses ? '　※上限に到達済み' : ''}）` : '';
+    const useLimitNote = maxUses ? `\n（残り使用回数：${maxUses - useCount}/${maxUses}回${useCount >= maxUses ? '　※上限に到達済み' : ''}）` : '';
     document.getElementById('modal-skill-desc').textContent = (sk.desc || "説明はありません。") + useLimitNote;
     document.getElementById('modal-current-guts').textContent = currentGuts;
 
@@ -1113,7 +1113,7 @@ function openMasmonSkillModal(skKey) {
         if (sk.hitRate === 100) {
             document.getElementById('modal-guts-hit-rate').textContent = "必中 🎯";
         } else if (e) {
-            let actualHit = Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (getBuffedHitStat(p, p.stats.hit) - getEvasionStat(e, e.stats.spd)) * 0.5 - getBlindHitPenalty(p)));
+            let actualHit = Math.max(10, Math.min(99, (sk.hitRate + mods.hitMod) + (getBuffedHitStat(p, p.stats.hit, e) - getEvasionStat(e, e.stats.spd, p)) * 0.5 - getBlindHitPenalty(p)));
             if (p.isShuchuActive) actualHit = Math.min(99, actualHit * 1.5);
             document.getElementById('modal-guts-hit-rate').textContent = Math.round(actualHit) + "%";
         } else {
@@ -1666,7 +1666,7 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
     const isCertain = sk.hitRate === 100;
     let hitChance = isCertain
         ? 100
-        : Math.max(10, Math.min(99, (sk.hitRate + (useGutsMods ? mods.hitMod : 0)) + (getBuffedHitStat(attacker, attacker.stats.hit) - getEvasionStat(defender, defender.stats.spd)) * 0.5 - getBlindHitPenalty(attacker)));
+        : Math.max(10, Math.min(99, (sk.hitRate + (useGutsMods ? mods.hitMod : 0)) + (getBuffedHitStat(attacker, attacker.stats.hit, defender) - getEvasionStat(defender, defender.stats.spd, attacker)) * 0.5 - getBlindHitPenalty(attacker)));
     if (attacker.isShuchuActive && !isCertain) {
         hitChance = Math.min(99, hitChance * 1.5);
     }
@@ -1764,11 +1764,11 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
         const isPow = sk.type === 'pow';
         // useDefAsAtk：自身の丈夫さの値を攻撃の値として扱う技（例：ボディプレス）
         const attackerStat = (sk.useDefAsAtk
-            ? getBuffedDefenseStat(attacker, getDefDownStat(attacker, attacker.stats.def))
-            : getBuffedAttackStat(attacker, getWeakenedStat(attacker, isPow ? attacker.stats.pow : attacker.stats.int), isPow ? 'pow' : 'int')
+            ? getBuffedDefenseStat(attacker, getDefDownStat(attacker, attacker.stats.def), defender)
+            : getBuffedAttackStat(attacker, getWeakenedStat(attacker, isPow ? attacker.stats.pow : attacker.stats.int), isPow ? 'pow' : 'int', defender)
         ) * getEquipmentLowLifeAtkMultiplier(attacker);
         // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（地震・テイルブレード等の防御崩し状態を反映）
-        const defenderStat = getDefDownStat(defender, getBuffedDefenseStat(defender, defender.stats.def)) * 1.5;
+        const defenderStat = getDefDownStat(defender, getBuffedDefenseStat(defender, defender.stats.def, attacker)) * 1.5;
         const defenderGutsDefenseMod = getGutsDefenseModifier(defender.guts);
         let rawDmg = ((attackerStat * usedForce) * (useGutsMods ? mods.dmgMod : 1)) - (defenderStat * 0.35);
         const floorVal = (side === 'player') ? 10 : 8;
@@ -1787,17 +1787,13 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
             damage = Math.floor(damage * 1.2);
             extraDmgMsg += " (天河天翔×1.2)";
         }
-        if (isAuraAdvantageous(attacker.aura, defender.aura)) {
-            damage = Math.floor(damage * 2);
-            extraDmgMsg += ` (オーラ相性${AURA_TYPES[attacker.aura].emoji}→${AURA_TYPES[defender.aura].emoji}×2)`;
-        } else if (isAuraAdvantageous(defender.aura, attacker.aura)) {
-            damage = Math.floor(damage * 0.5);
-            extraDmgMsg += ` (オーラ相性${AURA_TYPES[defender.aura].emoji}→${AURA_TYPES[attacker.aura].emoji}被ダメージ半減)`;
-        }
-        const monClassMod = getMonClassDamageMultiplier(attacker.monsterBaseName, defender.monsterBaseName);
-        if (monClassMod !== 1.0) {
-            damage = Math.floor(damage * monClassMod);
-            extraDmgMsg += monClassMod > 1.0 ? ` (モン類相性有利×${monClassMod})` : ` (モン類相性不利×${monClassMod})`;
+        // 技オーラ相性による与ダメージ補正（自身のオーラと技オーラが一致／相手オーラに対して有利・不利）
+        // ※モンスター本体同士のオーラ／モン類相性は、ここではなく各種ステータス計算側
+        //   （getBuffedAttackStat等にopponentを渡す形）で「自身の全ステータス倍率」として反映済み。
+        const skillAuraBonus = getSkillAuraDamageBonus(attacker, defender, sk);
+        if (skillAuraBonus.multiplier !== 1) {
+            damage = Math.floor(damage * skillAuraBonus.multiplier);
+            extraDmgMsg += skillAuraBonus.messages.join('');
         }
 
         const critChance = 0.10 + (attacker.critBonusTurns > 0 ? 0.25 : 0) + (((attacker.critUpStacks || 0) * 0.25)) + getEquipmentCritBonus(attacker) + getSkillCritBonus(sk);

@@ -47,6 +47,15 @@ function getDebugBossDefFromSpeciesKey(speciesKey) {
 // ボスの専用イラスト名（renderKinNejikiBreederVisual等と同じ対応関係）
 const DEBUG_BOSS_VISUAL_NAME = { set3: 'ゴビ', set7: 'モスト' };
 
+// ボスの技候補プールを返す（molds（複数の型）を持つボスは、全ての型の技を重複なくまとめて返す）
+function getDebugBossSkillPool(bossDef) {
+    if (!bossDef) return [];
+    if (bossDef.molds && bossDef.molds.length > 0) {
+        return Array.from(new Set(bossDef.molds.flat()));
+    }
+    return bossDef.skills || [];
+}
+
 
 (function setupSecretDebugTrigger() {
     let tapCount = 0;
@@ -126,7 +135,7 @@ function onDebugSpeciesChange(side) {
     if (!speciesId) return;
 
     const pool = isDebugBossSpeciesKey(speciesId)
-        ? (getDebugBossDefFromSpeciesKey(speciesId).bossDef || {}).skills || []
+        ? getDebugBossSkillPool(getDebugBossDefFromSpeciesKey(speciesId).bossDef)
         : (KIN_NEJIKI_SKILL_POOL[speciesId] || []);
     pool.forEach(skKey => {
         const sk = SKILLS_DB[skKey];
@@ -174,9 +183,12 @@ function buildDebugMonster(side) {
         const { bossKey, bossDef } = getDebugBossDefFromSpeciesKey(builder.speciesId);
         if (!bossDef) return null;
 
+        const defaultSkills = (bossDef.molds && bossDef.molds.length > 0)
+            ? bossDef.molds[Math.floor(Math.random() * bossDef.molds.length)]
+            : (bossDef.skills || []);
         const skills = builder.selectedSkills.length > 0
             ? [...builder.selectedSkills]
-            : (bossDef.skills || []).slice(0, 4); // 未選択時は既定4技を自動採用
+            : defaultSkills.slice(0, 4); // 未選択時は既定4技（molds持ちはランダムな型）を自動採用
 
         return {
             name: bossDef.name,

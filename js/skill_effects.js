@@ -28,7 +28,7 @@ const SKILL_EFFECT_TYPE = {
     daisharin:'slash', dekopin:'punch_melee', doku_no_kona:'poison', dokuro_beam:'dark_curse', double_chop:'punch_melee', double_shoda:'punch_melee',
     drain:'drain_effect', drill_rocket:'drill', ebony_nova:'fire_large', face_drill:'drill', fire_bird:'fire_large', fire_wave:'fire_large',
     flame_beam:'fire_large', flame_line:'fire_large', flame_typhoon:'fire_large', flower_beam:'nature_seed', fujinken:'wind', g_cube:'metal_mecha',
-    gaccho:'punch_melee', ganduke:'punch_melee', gappuri_yotsu:'punch_melee', gel_copter:'drill', gel_press:'punch_melee', ghost_flash:'dark_curse',
+    gaccho:'punch_melee', ganduke:'punch_melee', gappuri_yotsu:'punch_melee', gel_copter:'drill', gel_press:'punch_melee', ghost_flash:'dark_curse', gobi_step:'buff',
     god_bless:'holy_light', god_final:'holy_light', guruguru_attack:'drill', hae_tataki:'punch_melee', harite:'punch_melee', hidarite:'punch_melee',
     hikkaki:'claw', hizageri:'kick', holy_earth:'rock_earth', holy_fire:'fire_large', holy_icicle:'ice', honoo_taiatari:'fire_large',
     hurricane:'wind', ima_koso_shin_naru_mezame:'psychic', inore_rinne_no_wa_yo:'holy_light', jiraibari:'electric', jishin:'rock_earth', kaeru_no_shita:'claw',

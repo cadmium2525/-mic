@@ -345,6 +345,11 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, e
     if (isNejiki) {
         const bossKey = (setNumber === 3) ? 'set3' : 'set7';
         const bossDef = KIN_NEJIKI_BOSSES[bossKey];
+        // molds（複数の型）を持つボスは、バトルのたびにいずれか1つの型をランダムで選ぶ。
+        // molds未定義のボスは従来通り固定のskills配列をそのまま使う。
+        const bossSkills = (bossDef.molds && bossDef.molds.length > 0)
+            ? bossDef.molds[Math.floor(Math.random() * bossDef.molds.length)]
+            : bossDef.skills;
         const bossUnit = {
             name: bossDef.name,
             monsterBaseName: bossDef.templateId ? (MONSTER_TEMPLATES[bossDef.templateId] || {}).name || bossDef.name : bossDef.name,
@@ -359,7 +364,7 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, e
             statusEffect: null,
             difficulty: 'kinnejiki',
             stats: { ...bossDef.statsBase, life: bossDef.statsBase.maxLife },
-            skills: [...bossDef.skills],
+            skills: [...bossSkills],
             skillEnhancements: {},
             equip: kinNejikiRollEquipmentForSet(7, excludeEquip),
             ownerName: bossDef.title
@@ -512,7 +517,7 @@ function maybeExecuteKinNejikiEnemySwitch() {
     const newUnit = chosen.unit;
     const enemyMetaOwner = (MASMON_BATTLE_STATE.enemyMeta[chosen.i] || {}).ownerName || '相手ブリーダー';
     document.getElementById('enemy-name').textContent = `${newUnit.name}（${enemyMetaOwner}）`;
-    renderMonsterVisual(document.getElementById('battle-enemy-icon'), newUnit.visualName || newUnit.monsterBaseName, newUnit.emoji, newUnit.isAwakened);
+    renderMonsterVisual(document.getElementById('battle-enemy-icon'), newUnit.visualName || newUnit.monsterBaseName, newUnit.emoji, newUnit.isAwakened, false, newUnit.aura);
     document.getElementById('battle-enemy-type').textContent = newUnit.name;
     renderAuraBadge('enemy-aura-badge', newUnit.aura, newUnit.monsterBaseName);
 
@@ -574,7 +579,7 @@ function renderKinNejikiSelectScreen() {
 
         const iconWrap = document.createElement('div');
         iconWrap.className = 'w-10 h-10 flex items-center justify-center text-2xl flex-shrink-0 bg-[#1a120b] rounded-full border border-amber-900/40 overflow-hidden';
-        renderMonsterVisual(iconWrap, m.visualName || m.monsterBaseName, m.emoji, false, true);
+        renderMonsterVisual(iconWrap, m.visualName || m.monsterBaseName, m.emoji, false, true, m.aura);
 
         card.innerHTML = `
             <div class="flex items-center space-x-2">
@@ -883,7 +888,7 @@ function renderKinNejikiSwapLists() {
             `;
             container.appendChild(card);
             const visualEl = card.querySelector(`#${CSS.escape(visualId)}`);
-            renderMonsterVisual(visualEl, m.visualName || m.monsterBaseName || m.name, m.emoji, !!m.isAwakened, keyPrefix === 'mine');
+            renderMonsterVisual(visualEl, m.visualName || m.monsterBaseName || m.name, m.emoji, !!m.isAwakened, keyPrefix === 'mine', m.aura);
         });
     };
 

@@ -123,7 +123,7 @@ function renderPvpMonsterOfferCard(m, opts) {
 
     const iconWrap = document.createElement('div');
     iconWrap.className = 'w-10 h-10 flex items-center justify-center text-2xl flex-shrink-0 bg-[#0a0f1a] rounded-full border border-sky-900/40 overflow-hidden';
-    renderMonsterVisual(iconWrap, m.monsterBaseName, m.emoji, false, true);
+    renderMonsterVisual(iconWrap, m.monsterBaseName, m.emoji, false, true, m.aura);
 
     card.innerHTML = `
         <div class="flex items-center space-x-2">
