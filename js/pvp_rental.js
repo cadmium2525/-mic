@@ -64,7 +64,7 @@ function generatePvpMonsterFromPresetSlot(slot) {
         monsterBaseName: tmpl.name,
         emoji: tmpl.emoji,
         speciesId: slot.speciesId,
-        aura: getRandomAuraKey(), // 全モンスターに必ずオーラを付与する
+        aura: (slot.aura && AURA_TYPES[slot.aura]) ? slot.aura : getRandomAuraKey(), // プリセットで指定されたオーラを使用（未指定の古いプリセットはランダム）
         isAwakened: false,
         statusEffect: null,
         difficulty: 'pvp',

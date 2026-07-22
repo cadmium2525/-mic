@@ -139,9 +139,12 @@ function showMonsterDexDetail(speciesId) {
 
         const card = document.createElement('div');
         card.className = 'bg-[#2a1b15] border border-amber-900/50 rounded-xl p-2.5';
+        const auraBadge = sk.aura && AURA_TYPES[sk.aura]
+            ? `<span class="text-[10px] ml-1" title="技オーラ: ${AURA_TYPES[sk.aura].name}">${AURA_TYPES[sk.aura].emoji}</span>`
+            : '';
         card.innerHTML = `
             <div class="flex justify-between items-center">
-                <span class="text-xs font-bold text-amber-200">${sk.name}</span>
+                <span class="text-xs font-bold text-amber-200">${sk.name}${auraBadge}</span>
                 <span class="text-[10px] ${rankColor} bg-[#1a120b] px-1.5 py-0.5 rounded">ランク:${rank}</span>
             </div>
             <div class="flex flex-wrap justify-between items-center text-[9px] text-gray-400 mt-1 gap-y-0.5">

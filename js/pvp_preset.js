@@ -54,6 +54,7 @@ function isPvpPresetMonsterComplete(m) {
     if (!tmpl) return false;
     if (!Array.isArray(m.skills) || m.skills.length === 0) return false;
     if (tmpl.dualStatType && m.statType !== 'pow' && m.statType !== 'int') return false;
+    if (!m.aura || !AURA_TYPES[m.aura]) return false;
     return true;
 }
 
@@ -300,14 +301,15 @@ function renderPvpPresetEditorScreen() {
             info.className = 'flex-1 min-w-0';
             if (complete) {
                 const tmpl = MONSTER_TEMPLATES[m.speciesId];
-                renderMonsterVisual(iconWrap, tmpl.name, tmpl.emoji, false, true);
+                renderMonsterVisual(iconWrap, tmpl.name, tmpl.emoji, false, true, m.aura);
                 const skillNames = m.skills.map(sk => (SKILLS_DB[sk] ? SKILLS_DB[sk].name : sk)).join('、');
                 const equipText = (m.equipId && EQUIPMENT_DB[m.equipId]) ? EQUIPMENT_DB[m.equipId].name : '未装備';
+                const auraInfo = m.aura ? AURA_TYPES[m.aura] : null;
                 const typeBadge = tmpl.dualStatType
                     ? `<span class="ml-1 text-[8px] font-bold px-1 py-0.5 rounded bg-rose-900/60 text-rose-200">${m.statType === 'pow' ? 'ちから型' : 'かしこさ型'}</span>`
                     : '';
                 info.innerHTML = `
-                    <div class="text-xs font-bold text-sky-200">${idx + 1}体目：${tmpl.name}${typeBadge}</div>
+                    <div class="text-xs font-bold text-sky-200">${idx + 1}体目：${tmpl.name}${typeBadge}${auraInfo ? ` <span class="text-[10px]" title="オーラ: ${auraInfo.name}">${auraInfo.emoji}</span>` : ''}</div>
                     <div class="text-[9px] text-gray-500 mt-0.5 truncate">技: ${skillNames}</div>
                     <div class="text-[9px] text-purple-300 mt-0.5">装備: ${equipText}</div>
                 `;
@@ -388,7 +390,7 @@ function openPvpPresetMonsterEditor(monsterIndex) {
     const existing = PVP_PRESET_STATE.draftPreset.monsters[monsterIndex];
     PVP_PRESET_STATE.draftMonster = existing
         ? JSON.parse(JSON.stringify(existing))
-        : { speciesId: null, skills: [], equipId: null, statType: null };
+        : { speciesId: null, skills: [], equipId: null, statType: null, aura: null };
     changeScreen('screen-pvp-preset-monster-editor');
     renderPvpPresetMonsterEditorScreen();
 }
@@ -429,18 +431,20 @@ function renderPvpPresetMonsterEditorScreen() {
             btn.appendChild(label);
 
             speciesContainer.appendChild(btn);
-            renderMonsterVisual(iconWrap, tmpl.name, tmpl.emoji, false, true);
+            renderMonsterVisual(iconWrap, tmpl.name, tmpl.emoji, false, true, m.aura);
         });
     }
 
     const statTypeSection = document.getElementById('pvp-preset-monster-stattype-section');
     const skillsSection = document.getElementById('pvp-preset-monster-skills-section');
     const equipSection = document.getElementById('pvp-preset-monster-equip-section');
+    const auraSection = document.getElementById('pvp-preset-monster-aura-section');
 
     if (!m.speciesId) {
         if (statTypeSection) statTypeSection.classList.add('hidden');
         if (skillsSection) skillsSection.classList.add('hidden');
         if (equipSection) equipSection.classList.add('hidden');
+        if (auraSection) auraSection.classList.add('hidden');
         updatePvpPresetMonsterConfirmButton();
         return;
     }
@@ -462,6 +466,7 @@ function renderPvpPresetMonsterEditorScreen() {
 
     if (skillsSection) skillsSection.classList.remove('hidden');
     if (equipSection) equipSection.classList.remove('hidden');
+    if (auraSection) auraSection.classList.remove('hidden');
 
     // ② 技一覧
     const skillLimit = pvpPresetMonsterSkillLimit();
@@ -519,6 +524,23 @@ function renderPvpPresetMonsterEditorScreen() {
         });
     }
 
+    // ⑤ オーラ一覧
+    const auraContainer = document.getElementById('pvp-preset-monster-aura-list');
+    if (auraContainer) {
+        auraContainer.innerHTML = '';
+        Object.values(AURA_TYPES).forEach(aura => {
+            const isSelected = m.aura === aura.key;
+            const btn = document.createElement('div');
+            btn.className = `flex flex-col items-center justify-center p-2 rounded-lg border cursor-pointer active:scale-95 transition-all ${isSelected ? 'bg-amber-900/60 border-amber-400' : 'bg-[#16202b] border-amber-900/30'}`;
+            btn.onclick = () => selectPvpPresetMonsterAura(aura.key);
+            btn.innerHTML = `
+                <span class="text-xl">${aura.emoji}</span>
+                <span class="text-[9px] font-bold text-gray-300 mt-0.5">${aura.name}${isSelected ? ' ✅' : ''}</span>
+            `;
+            auraContainer.appendChild(btn);
+        });
+    }
+
     updatePvpPresetMonsterConfirmButton();
 }
 
@@ -563,6 +585,14 @@ function selectPvpPresetMonsterEquip(equipId) {
     renderPvpPresetMonsterEditorScreen();
 }
 
+// --- PvPプリセット：モンスターのオーラ（赤/緑/黄/青）を選ぶ ---
+function selectPvpPresetMonsterAura(auraKey) {
+    const m = PVP_PRESET_STATE.draftMonster;
+    if (!m) return;
+    m.aura = auraKey;
+    renderPvpPresetMonsterEditorScreen();
+}
+
 function updatePvpPresetMonsterConfirmButton() {
     const btn = document.getElementById('pvp-preset-monster-editor-confirm-btn');
     if (!btn) return;
@@ -580,6 +610,10 @@ function confirmPvpPresetMonsterEditor() {
     const tmpl = MONSTER_TEMPLATES[m.speciesId];
     if (tmpl && tmpl.dualStatType && m.statType !== 'pow' && m.statType !== 'int') {
         showToast('ちから型／かしこさ型のどちらかを選択してください。');
+        return;
+    }
+    if (!m.aura || !AURA_TYPES[m.aura]) {
+        showToast('オーラを1つ選択してください。');
         return;
     }
     const idx = PVP_PRESET_STATE.editingMonsterIndex;

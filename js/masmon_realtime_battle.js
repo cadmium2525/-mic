@@ -753,30 +753,54 @@ function renderRealtimeTeamIcons(state) {
     if (!isTeam) return;
 
     const renderSide = (container, teamObj, isPartnerSide) => {
-        container.innerHTML = '';
+        // チーム人数が変わった場合のみ枠を作り直す。それ以外は既存のスロットを使い回し、
+        // 中身（画像・オーラ着色）は見た目が変わる時だけ更新する（＝行動のたびに全アイコンの
+        // 画像を再読み込みしてチラつく不具合の対策）。
+        const existingSlots = Array.from(container.children).filter(c => c.classList.contains('team-icon-slot'));
+        if (existingSlots.length !== teamObj.units.length) {
+            container.innerHTML = '';
+        }
+
         teamObj.units.forEach((unit, idx) => {
             const isFainted = unit.life <= 0;
             const isActive = idx === teamObj.activeIdx;
-            const icon = document.createElement('div');
-            icon.className = `w-8 h-8 flex items-center justify-center rounded-full text-base border-2 transition-all overflow-hidden ${
+
+            let icon = container.children[idx];
+            if (!icon || !icon.classList.contains('team-icon-slot')) {
+                icon = document.createElement('div');
+                icon.className = 'team-icon-slot';
+                icon.dataset.identityKey = '';
+                container.appendChild(icon);
+            }
+
+            icon.className = `team-icon-slot w-8 h-8 flex items-center justify-center rounded-full text-base border-2 transition-all overflow-hidden relative ${
                 isFainted ? 'grayscale opacity-30 border-gray-700 bg-black/40' :
                 isActive ? 'border-amber-400 bg-amber-950/60 scale-110' : 'border-gray-600 bg-[#1a120b]'
             }`;
-            if (isFainted) {
-                icon.textContent = '💀';
-            } else {
-                renderMonsterVisual(icon, unit.monsterBaseName, unit.emoji, unit.isAwakened, isPartnerSide, unit.aura);
+            icon.title = unit.name;
+
+            const identityKey = isFainted ? 'fainted' : `${unit.monsterBaseName}|${unit.emoji}|${!!unit.isAwakened}|${unit.aura || ''}|${isPartnerSide}`;
+            if (icon.dataset.identityKey !== identityKey) {
+                icon.dataset.identityKey = identityKey;
+                icon.innerHTML = '';
+                if (isFainted) {
+                    icon.textContent = '💀';
+                } else {
+                    renderMonsterVisual(icon, unit.monsterBaseName, unit.emoji, unit.isAwakened, isPartnerSide, unit.aura);
+                }
+            }
+
+            const existingBadge = icon.querySelector('.status-ailment-badge');
+            if (existingBadge) existingBadge.remove();
+            if (!isFainted) {
                 const statusText = getStatusAilmentBadgeText(unit);
                 if (statusText) {
                     const badge = document.createElement('div');
-                    badge.className = 'absolute -top-1 -right-1 text-[8px] leading-none bg-black/70 rounded px-0.5';
+                    badge.className = 'status-ailment-badge absolute -top-1 -right-1 text-[8px] leading-none bg-black/70 rounded px-0.5';
                     badge.textContent = statusText;
-                    icon.style.position = 'relative';
                     icon.appendChild(badge);
                 }
             }
-            icon.title = unit.name;
-            container.appendChild(icon);
         });
     };
 
@@ -849,6 +873,10 @@ function renderRealtimeBattleSkills(state) {
         const enhBadge = isEnhanced
             ? `<span class="text-[8px] bg-purple-900 text-purple-200 px-1 py-0.5 rounded font-bold ml-1">⚔️Lv.${enh.level}</span>`
             : '';
+        // 技オーラ（技自体が持つ属性）を絵文字バッジで表示する
+        const auraBadge = sk.aura && AURA_TYPES[sk.aura]
+            ? `<span class="text-[10px] ml-0.5" title="技オーラ: ${AURA_TYPES[sk.aura].name}">${AURA_TYPES[sk.aura].emoji}</span>`
+            : '';
 
         let hitRateDisplay;
         if (sk.type === 'heal' || sk.type.startsWith('buff') || sk.type === 'substitute') {
@@ -866,7 +894,7 @@ function renderRealtimeBattleSkills(state) {
 
         btn.innerHTML = `
             <div class="flex justify-between items-center w-full">
-                <span class="font-bold text-xs">${sk.name} ${typeIcon}${enhBadge} <span class="ml-1 text-[10px] ${rankColor} bg-[#1a120b]/10 px-1 py-0.2 rounded">ランク:${rank}</span></span>
+                <span class="font-bold text-xs">${sk.name} ${typeIcon}${auraBadge}${enhBadge} <span class="ml-1 text-[10px] ${rankColor} bg-[#1a120b]/10 px-1 py-0.2 rounded">ランク:${rank}</span></span>
                 <span class="text-[9px] font-bold">G:${sk.cost}</span>
             </div>
             <div class="flex justify-between items-center mt-0.5 w-full">
@@ -974,7 +1002,7 @@ function openRealtimeSkillModal(skKey, state) {
     const currentGuts = Math.floor(me.guts);
     const mods = getGutsModifiers(currentGuts);
 
-    document.getElementById('modal-skill-name').textContent = sk.name;
+    document.getElementById('modal-skill-name').textContent = sk.aura && AURA_TYPES[sk.aura] ? `${sk.name} ${AURA_TYPES[sk.aura].emoji}` : sk.name;
     document.getElementById('modal-skill-cost').textContent = sk.cost;
     document.getElementById('modal-skill-rank').textContent = getDamageRank(sk.force, sk.type);
     document.getElementById('modal-skill-gutsdown').textContent = sk.gutsDown || 0;
