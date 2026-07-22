@@ -690,7 +690,7 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
     const confusionResult = tickStatusTurnsAndCheckConfusion(p);
     if (confusionResult.dotDamage > 0) {
         const dotLogs = applyDotDamageAndBuildLogs(p.name, confusionResult, () => p.stats.life, (v) => { p.stats.life = v; });
-        dotLogs.forEach(addLog);
+        dotLogs.forEach(m => addLog(m.short, m.detail));
         if (e) {
             const michizureLog = checkMichizureTrigger(p, e, () => p.stats.life, () => e.stats.life, (v) => { e.stats.life = v; });
             if (michizureLog) addLog(michizureLog);
@@ -940,12 +940,12 @@ function renderMasmonBattleSkills() {
         btn.onclick = () => executeMasmonPlayerSkill(skKey);
 
         // 技の長押し／右クリックで詳細モーダルを表示（育成中のバトルと同じ操作）
-        // ・長押し時にiOS/Androidの「テキスト範囲選択（コピー用）」メニューが出てしまうと煩わしいため、
-        //   ontouchstartでpreventDefaultして、その挙動が起動しないようにする
-        //   （タップ操作自体・onclickの発火には影響しない）。
+        // ・長押し時のテキスト範囲選択メニュー対策はCSS側（touch-action/user-select/
+        //   -webkit-touch-callout）のみで行う。ontouchstartでpreventDefaultすると、
+        //   タッチ操作から合成されるクリックイベントごと発火しなくなり、技が打てなくなってしまうため
+        //   （実際に発生した不具合のため、ここでは絶対に呼ばないこと）。
         let longPressTimer;
-        btn.ontouchstart = (ev) => {
-            ev.preventDefault();
+        btn.ontouchstart = () => {
             longPressTimer = setTimeout(() => {
                 openMasmonSkillModal(skKey);
             }, 500);
@@ -1443,7 +1443,7 @@ function decideMasmonEnemyAction(onDecided) {
         const enemyConfusionResult = tickStatusTurnsAndCheckConfusion(e);
         if (enemyConfusionResult.dotDamage > 0) {
             const dotLogs = applyDotDamageAndBuildLogs(e.name, enemyConfusionResult, () => e.stats.life, (v) => { e.stats.life = v; });
-            dotLogs.forEach(addLog);
+            dotLogs.forEach(m => addLog(m.short, m.detail));
             const playerActiveForMichizure = getPlayerActive();
             if (playerActiveForMichizure) {
                 const michizureLog = checkMichizureTrigger(e, playerActiveForMichizure, () => e.stats.life, () => playerActiveForMichizure.stats.life, (v) => { playerActiveForMichizure.stats.life = v; });
@@ -1714,7 +1714,7 @@ function buildSkillNameStep(steps, side, unit, sk, skKey) {
             addLog(`${unit.name} の 【${sk.name}】！`);
             animateSprite(cfg.spriteContainer, cfg.spriteAnim);
             if (skKey && typeof playSkillVisualEffect === 'function') playSkillVisualEffect(skKey, side);
-            applySkillOnUseEffect(unit, sk).forEach(msg => addLog(msg));
+            applySkillOnUseEffect(unit, sk).forEach(m => addLog(m.short, m.detail));
         },
         wait: BATTLE_STEP_DELAY.afterSkillName
     });
@@ -1833,7 +1833,7 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
 
             const onHitMsgs = applySkillOnHitEffect(attacker, defender, sk);
             onHitMsgs.forEach(msg => {
-                steps.push({ run: () => addLog(msg), wait: BATTLE_STEP_DELAY.perExtraLog });
+                steps.push({ run: () => addLog(msg.short, msg.detail), wait: BATTLE_STEP_DELAY.perExtraLog });
             });
         }
 
@@ -1869,7 +1869,7 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
         }
         if (attacker.permaForceBoostActive) {
             damage = Math.floor(damage * 1.2);
-            extraDmgMsg += " (天河天翔×1.2)";
+            extraDmgMsg += " (永続ダメージ上昇×1.2)";
         }
         // 技オーラ相性による与ダメージ補正（自身のオーラと技オーラが一致／相手オーラに対して有利・不利）
         // ※モンスター本体同士のオーラ／モン類相性は、ここではなく各種ステータス計算側
@@ -1907,20 +1907,26 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
 
         steps.push({
             run: () => {
-                if (isCrit) {
-                    addLog(side === 'player'
+                const shortEffectTag = skillAuraBonus.advantage ? ' こうかは抜群だ！'
+                    : skillAuraBonus.disadvantage ? ' こうかはいまひとつのようだ…'
+                    : '';
+                const shortCritTag = isCrit ? '会心の一撃！ ' : '';
+                const shortLine = side === 'player'
+                    ? `${shortCritTag}${defender.name} に ${damage} ダメージ！${hitTag}${shortEffectTag}`
+                    : `${shortCritTag}${defender.name} は ${damage} ダメージを受けた！${hitTag}${shortEffectTag}`;
+                const detailLine = isCrit
+                    ? (side === 'player'
                         ? `★クリティカルヒット！ ${defender.name} に ${damage} ダメージ！${extraDmgMsg}${hitTag}`
-                        : `★相手のクリティカル！ ${defender.name} は ${damage} ダメージを受けた！${extraDmgMsg}${hitTag}`);
-                } else {
-                    addLog(side === 'player'
+                        : `★相手のクリティカル！ ${defender.name} は ${damage} ダメージを受けた！${extraDmgMsg}${hitTag}`)
+                    : (side === 'player'
                         ? `${defender.name} に ${damage} ダメージ！${extraDmgMsg}${hitTag}`
                         : `${defender.name} は ${damage} ダメージを受けた！${extraDmgMsg}${hitTag}`);
-                }
+                addLog(shortLine, detailLine);
                 if (side === 'enemy' && MASMON_BATTLE_STATE.isDefending) {
-                    addLog(`【防御効果】攻撃を盾で受け流し、ダメージを半減した！`);
+                    addLog(`【防御効果】ダメージを半減した！`, `【防御効果】攻撃を盾で受け流し、ダメージを半減した！`);
                 }
                 if (shieldResult.absorbed > 0) {
-                    addLog(`🛡️ ${defender.name} のシールドが ${shieldResult.absorbed} のダメージを吸収した！(シールド残量: ${defender.shieldValue})`);
+                    addLog(`🛡️ シールドが ${shieldResult.absorbed} のダメージを吸収した！`, `🛡️ ${defender.name} のシールドが ${shieldResult.absorbed} のダメージを吸収した！(シールド残量: ${defender.shieldValue})`);
                 }
                 defender.stats.life = Math.max(0, defender.stats.life - damage);
                 updateMasmonBattleStatsUI();
@@ -1971,7 +1977,7 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
         // 命中確定時点の状態を使って計算しておき、表示だけを1件ずつ後で行う
         const onHitMsgs = applySkillOnHitEffect(attacker, defender, sk);
         onHitMsgs.forEach(msg => {
-            steps.push({ run: () => addLog(msg), wait: BATTLE_STEP_DELAY.perExtraLog });
+            steps.push({ run: () => addLog(msg.short, msg.detail), wait: BATTLE_STEP_DELAY.perExtraLog });
         });
 
         // プラントの「ドレイン」等：与えたダメージの一部を自身のライフに変換
@@ -2071,16 +2077,21 @@ function buildHealSteps(steps, side, unit) {
 // 一度設置すると、相手がモンスターを交代して場に出すたびに最大ライフの1/8のダメージを与え続ける（永続）。
 function buildHazardSteps(steps, side, unit, sk) {
     const cfg = SIDE_UI[side];
-    // 技を出した側から見て「相手側」のフィールドに岩を設置する
+    // 技を出した側から見て「相手側」のフィールドに設置する
     const targetFieldKey = side === 'player' ? 'enemyFieldStealthRock' : 'playerFieldStealthRock';
     const targetLabel = side === 'player' ? '相手' : 'あなた';
+    // logVerb: 技ごとの設置フレーズ（例：ステルスロック→「尖った岩をまきちらした」、まきびし→「まきびしを設置した」）。
+    // 万一未設定の技が追加された場合の保険として、技名から汎用的なフレーズを組み立てる。
+    const verb = sk.logVerb || `${sk.name}を設置した`;
     steps.push({
         run: () => {
             const already = !!MASMON_BATTLE_STATE[targetFieldKey];
-            MASMON_BATTLE_STATE[targetFieldKey] = true;
-            addLog(already
-                ? `🪨 ${targetLabel}のフィールドにはすでに鋭い岩が広がっている！`
-                : `🪨 ${unit.name} は${targetLabel}のフィールド上に鋭い岩をばら撒いた！（相手はこれ以降、モンスターを交代して繰り出すたびにダメージを受ける）`);
+            MASMON_BATTLE_STATE[targetFieldKey] = sk.name;
+            if (already) {
+                addLog(`🪨 ${targetLabel}の場にはすでに効果がある！`, `🪨 ${targetLabel}のフィールドにはすでに${sk.name}の効果が広がっている！`);
+            } else {
+                addLog(`🪨 ${targetLabel}の場に${verb}！`, `🪨 ${unit.name} は${targetLabel}のフィールド上に${verb}！（相手はこれ以降、モンスターを交代して繰り出すたびにダメージを受ける）`);
+            }
             showEffect(cfg.hazardEffect);
             updateMasmonBattleStatsUI();
         },
@@ -2097,10 +2108,13 @@ function applyStealthRockDamageOnSwitchIn(side, unit) {
     const fieldKey = side === 'player' ? 'playerFieldStealthRock' : 'enemyFieldStealthRock';
     if (!MASMON_BATTLE_STATE[fieldKey]) return false;
 
+    // フィールドには設置した技の名前（例：「ステルスロック」「まきびし」）を保存してあるので、
+    // どちらが設置されていても正しい技名でメッセージを表示できる。
+    const hazardName = (typeof MASMON_BATTLE_STATE[fieldKey] === 'string') ? MASMON_BATTLE_STATE[fieldKey] : 'ステルスロック';
     const dmg = Math.max(1, Math.floor(unit.stats.maxLife / 8));
     unit.stats.life = Math.max(0, unit.stats.life - dmg);
-    addLog(`🪨 ${unit.name} はフィールドに広がる鋭い岩でダメージを受けた！（${dmg}ダメージ、現在: ${Math.floor(unit.stats.life)}）`);
-    showEffect('🪨 ステルスロック！ 🪨');
+    addLog(`🪨 ${unit.name} は${hazardName}でダメージを受けた！`, `🪨 ${unit.name} はフィールドに広がる${hazardName}でダメージを受けた！（${dmg}ダメージ、現在: ${Math.floor(unit.stats.life)}）`);
+    showEffect(`🪨 ${hazardName}！ 🪨`);
     updateMasmonBattleStatsUI();
     return unit.stats.life <= 0;
 }

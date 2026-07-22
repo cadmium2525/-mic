@@ -131,7 +131,7 @@ function getAuraMonClassStatMultiplier(self, opponent) {
 //     attacker: 技を使うユニット / defender: 受けるユニット / sk: SKILLS_DB のエフェクティブ技オブジェクト（auraフィールドを参照）
 //     戻り値: { multiplier: 倍率(該当なしなら1), messages: ['(...)' 形式のログ断片の配列] }
 function getSkillAuraDamageBonus(attacker, defender, sk) {
-    const result = { multiplier: 1, messages: [] };
+    const result = { multiplier: 1, messages: [], selfMatch: false, advantage: false, disadvantage: false };
     const skillAura = sk && sk.aura;
     if (!skillAura) return result; // 技が無属性（aura未設定）の場合は補正なし
 
@@ -139,6 +139,7 @@ function getSkillAuraDamageBonus(attacker, defender, sk) {
     if (attacker.aura === skillAura) {
         result.multiplier *= SKILL_AURA_SELF_MATCH_DAMAGE_MULTIPLIER;
         result.messages.push(` (技オーラ一致${AURA_TYPES[skillAura].emoji}×${SKILL_AURA_SELF_MATCH_DAMAGE_MULTIPLIER})`);
+        result.selfMatch = true;
     }
 
     // ④⑤技オーラ vs 相手オーラの相性（相手が無属性技なら判定しない相手側モンスターのオーラとは別物なので注意）
@@ -146,9 +147,11 @@ function getSkillAuraDamageBonus(attacker, defender, sk) {
         if (isAuraAdvantageous(skillAura, defender.aura)) {
             result.multiplier *= SKILL_AURA_ADVANTAGE_DAMAGE_MULTIPLIER;
             result.messages.push(` (技オーラ相性${AURA_TYPES[skillAura].emoji}→${AURA_TYPES[defender.aura].emoji}×${SKILL_AURA_ADVANTAGE_DAMAGE_MULTIPLIER})`);
+            result.advantage = true;
         } else if (isAuraAdvantageous(defender.aura, skillAura)) {
             result.multiplier *= SKILL_AURA_DISADVANTAGE_DAMAGE_MULTIPLIER;
             result.messages.push(` (技オーラ相性${AURA_TYPES[defender.aura].emoji}→${AURA_TYPES[skillAura].emoji}被ダメージ${SKILL_AURA_DISADVANTAGE_DAMAGE_MULTIPLIER}倍)`);
+            result.disadvantage = true;
         }
     }
 
@@ -563,7 +566,7 @@ const SKILLS_DB = {
     honoo_taiatari: { name: '炎のたいあたり', aura: 'red', cost: 40, type: 'pow', hitRate: 65, force: 2.4, gutsDown: 15, effect: 'burn_30', desc: '燃え盛る炎を纏って突進する。相手GUTS-15。さらに技命中時30%の確率でやけど状態にする（バトル終了まで治らず、毎ターン終了時に最大ライフの1/16のダメージを受ける）' },
     hizageri: { name: 'ひざげり', aura: 'green', cost: 25, type: 'pow', hitRate: 80, force: 1.5, gutsDown: 10, effect: 'selfcrit_up_3', desc: '鋭い跳び膝蹴りを叩き込む。相手GUTS-10。さらに命中した場合、自身のクリティカル率が25%アップする（3回まで重複可・交代するまで持続）' },
     kurohizacombo: { name: '黒ひざコンボ', aura: null, cost: 50, type: 'pow', hitRate: 75, force: 2.8, gutsDown: 15, effect: 'flinch_50_1t', desc: '連続で膝蹴りを叩き込む破壊技。相手GUTS-15。さらに命中した場合、強烈な衝撃で次のターン相手は50%の確率で怯んで行動に失敗する' },
-    stealth_rock: { name: 'ステルスロック', aura: null, cost: 20, type: 'hazard', hitRate: 100, force: 0, gutsDown: 0, noDamage: true, effect: 'stealth_rock', desc: '相手フィールド上に鋭い岩をばら撒く。相手はモンスターを交代して繰り出すたびに、最大ライフの1/8のダメージを受けるようになる（一度設置すると、バトルが終わるまでずっと効果が持続する）。' },
+    stealth_rock: { name: 'ステルスロック', aura: null, cost: 20, type: 'hazard', hitRate: 100, force: 0, gutsDown: 0, noDamage: true, effect: 'stealth_rock', logVerb: '尖った岩をまきちらした', desc: '相手フィールド上に鋭い岩をばら撒く。相手はモンスターを交代して繰り出すたびに、最大ライフの1/8のダメージを受けるようになる（一度設置すると、バトルが終わるまでずっと効果が持続する）。' },
 
     // --- モノリス系統 ---
     monotaore: { name: 'たおれこみ', aura: 'blue', cost: 15, type: 'pow', hitRate: 85, force: 0.8, gutsDown: 10, effect: null, desc: '巨体を活かした体当たり基本技。相手GUTS-10' },
@@ -824,7 +827,7 @@ const SKILLS_DB = {
     zan_rising_rave: { name: 'ライジングレイヴ', aura: 'yellow', cost: 42, type: 'pow', hitRate: 82, force: 2.7, gutsDown: 40, critBonus: 0.24, effect: 'dot_mine_aura_bonus', desc: '闘気を纏いながら斬り上げる渾身の一撃。相手GUTS-40。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与える。オーラ相性が有利な場合、継続ダメージがさらに8%上乗せされる' },
     zan_axis_bullet: { name: 'アクシズバレット', aura: 'red', cost: 50, type: 'pow', hitRate: 66, force: 2.3, gutsDown: 9, critBonus: 0.28, effect: 'dot_mine_def_down10', desc: '回転を加えて撃ち込む貫通力の高い斬撃。相手GUTS-9。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与え、さらに3ターンの間相手の丈夫さを10%低下させる' },
     zan_dark_haunt: { name: 'ダークホウスト', aura: null, cost: 48, type: 'pow', hitRate: 95, force: 2.7, gutsDown: 5, critBonus: 0.22, effect: 'dot_mine', dotPct: 0.14, desc: '闇の力を宿した渾身の一刀両断。相手GUTS-5。さらに命中した場合、3ターンの間相手の最大ライフ14%の継続ダメージを与える' },
-    zan_makibishi: { name: 'まきびし', aura: null, cost: 20, type: 'hazard', hitRate: 100, force: 0, gutsDown: 0, noDamage: true, effect: 'stealth_rock', desc: '相手フィールド上に鋭いまきびしをばら撒く。相手はモンスターを交代して繰り出すたびに、最大ライフの1/8のダメージを受けるようになる（一度設置すると、バトルが終わるまでずっと効果が持続する）。' },
+    zan_makibishi: { name: 'まきびし', aura: null, cost: 20, type: 'hazard', hitRate: 100, force: 0, gutsDown: 0, noDamage: true, effect: 'stealth_rock', logVerb: 'まきびしを設置した', desc: '相手フィールド上に鋭いまきびしをばら撒く。相手はモンスターを交代して繰り出すたびに、最大ライフの1/8のダメージを受けるようになる（一度設置すると、バトルが終わるまでずっと効果が持続する）。' },
     zan_migawari_no_jutsu: { name: 'みがわりの術', aura: null, cost: 40, type: 'substitute', hitRate: 100, force: 0, gutsDown: 0, selfDamagePct: 0.2, desc: '自身の身代わりとなる分身を作り出し、自身への攻撃を2回防ぐ。発動時、自身も最大ライフの20%のダメージを受ける。モンスターを交換しても身代わりの分身は場に残り続ける。' }
 };
 
@@ -983,193 +986,193 @@ function applySkillOnHitEffect(caster, target, sk) {
         // アルスマグナ専用：命中時、自身のライフ以外の全ステータス（ちから・かしこさ・命中・丈夫さ・回避）を
         // 20%上昇させる（1回のみ・重複せず・交代するまで持続）
         if (caster.arsMagnaBuffActive) {
-            logs.push(`（${caster.name} はすでにアルスマグナの効果を得ているため、追加の効果は発生しなかった）`);
+            logs.push({ short: `（${caster.name} には追加効果なし）`, detail: `（${caster.name} はすでにアルスマグナの効果を得ているため、追加の効果は発生しなかった）` });
         } else {
             caster.arsMagnaBuffActive = true;
-            logs.push(`✨ ${caster.name} は大いなる業に満たされた！（ライフ以外の全ステータスが20%上昇・交代するまで持続）`);
+            logs.push({ short: `✨ ${caster.name} の全ステータスが上昇した！`, detail: `✨ ${caster.name} は大いなる業に満たされた！（ライフ以外の全ステータスが20%上昇・交代するまで持続）` });
         }
     } else if (sk.effect === 'weaken_pow_int') {
         // 衰弱：命中時に「ちから」「かしこさ」を10%低下させる。1体につき3回まで重複可（交代するまで持続）。
         target.isWeakened = true;
         if ((target.weakenStacks || 0) >= 3) {
-            logs.push(`（${target.name} はすでに衰弱の効果が上限（3重複）に達しているため、追加の効果は発生しなかった）`);
+            logs.push({ short: `（${target.name} には追加効果なし）`, detail: `（${target.name} はすでに衰弱の効果が上限（3重複）に達しているため、追加の効果は発生しなかった）` });
         } else {
             target.weakenStacks = Math.min(3, (target.weakenStacks || 0) + 1);
-            logs.push(`💢 ${target.name} の「ちから」「かしこさ」が10%低下した！（累積${target.weakenStacks}/3・交代するまで持続）`);
+            logs.push({ short: `💢 ${target.name} のちから・かしこさが低下した！`, detail: `💢 ${target.name} の「ちから」「かしこさ」が10%低下した！（累積${target.weakenStacks}/3・交代するまで持続）` });
         }
     } else if (sk.effect === 'confuse_30') {
         // 命中しても必ず混乱するわけではなく、30%の確率でのみ混乱状態になる。
         // 混乱状態は固定ターン数ではなく、毎ターン30%の確率で解除されるまで持続する。
         if (Math.random() < 0.3) {
             target.isConfused = true;
-            logs.push(`❓ ${target.name} は混乱状態になった！（毎ターン40%の確率で意味不明になり行動できなくなる。30%の確率で混乱が解除される）`);
+            logs.push({ short: `❓ ${target.name} は混乱状態になった！`, detail: `❓ ${target.name} は混乱状態になった！（毎ターン40%の確率で意味不明になり行動できなくなる。30%の確率で混乱が解除される）` });
         }
     } else if (sk.effect === 'next_force_up') {
         caster.forceBoost = 0.5;
-        logs.push(`✨ ${caster.name} の次の技の威力が50%アップした！`);
+        logs.push({ short: `✨ ${caster.name} の次の技の威力が上昇した！`, detail: `✨ ${caster.name} の次の技の威力が50%アップした！` });
     } else if (sk.effect === 'perma_dmg_up_20') {
         if (caster.permaForceBoostActive) {
-            logs.push(`（${caster.name} はすでに天河天翔の効果を得ているため、追加のダメージアップは発生しなかった）`);
+            logs.push({ short: `（${caster.name} には追加効果なし）`, detail: `（${caster.name} はすでに永続ダメージアップの効果を得ているため、追加のダメージアップは発生しなかった）` });
         } else {
             caster.permaForceBoostActive = true;
-            logs.push(`✨ ${caster.name} の全身に霊力が満ち、今後与えるダメージが1.2倍になった！（交代するまで持続）`);
+            logs.push({ short: `✨ ${caster.name} の与えるダメージが上昇した！`, detail: `✨ ${caster.name} の全身に霊力が満ち、今後与えるダメージが1.2倍になった！（交代するまで持続）` });
         }
     } else if (sk.effect === 'grant_double_hit_next') {
         caster.doubleHitNext = true;
-        logs.push(`⚡ ${caster.name} の体内に電光が満ち、次に繰り出す技が2回攻撃扱いになった！`);
+        logs.push({ short: `⚡ ${caster.name} は次の技が2回攻撃になる！`, detail: `⚡ ${caster.name} の体内に電光が満ち、次に繰り出す技が2回攻撃扱いになった！` });
     } else if (sk.effect === 'guaranteed_dodge_next') {
         caster.dodgeNextGuaranteed = true;
-        logs.push(`🌫️ ${caster.name} は陽炎に包まれ、次の敵の攻撃を確実に回避する構えを取った！`);
+        logs.push({ short: `🌫️ ${caster.name} は次の攻撃を確実に回避する！`, detail: `🌫️ ${caster.name} は陽炎に包まれ、次の敵の攻撃を確実に回避する構えを取った！` });
     } else if (sk.effect === 'shield_self_20pct') {
         if (caster.shieldUsedThisBattle) {
-            logs.push(`（${caster.name} の九重神眼はすでに使用済みのため、シールドは展開されなかった）`);
+            logs.push({ short: `（${caster.name} には追加効果なし）`, detail: `（${caster.name} の九重神眼はすでに使用済みのため、シールドは展開されなかった）` });
         } else {
             // ライフ構造の違い（stats.maxLife か maxLife か）を吸収して両対応させる
             const maxLifeVal = caster.stats ? caster.stats.maxLife : caster.maxLife;
             caster.shieldValue = Math.floor(maxLifeVal * 0.2);
             caster.shieldUsedThisBattle = true;
-            logs.push(`🛡️ ${caster.name} は自身の最大ライフの20%（${caster.shieldValue}）に相当するシールドを展開した！（交代するまで再展開不可）`);
+            logs.push({ short: `🛡️ ${caster.name} はシールドを展開した！`, detail: `🛡️ ${caster.name} は自身の最大ライフの20%（${caster.shieldValue}）に相当するシールドを展開した！（交代するまで再展開不可）` });
         }
     // ---------- 「ガッツファクトリー」新規種族技用の追加効果 ----------
     } else if (sk.effect === 'blind_2') {
         target.blindTurns = 2;
-        logs.push(`💨 ${target.name} は強烈な臭気で目が眩んだ！（2ターンの間、命中率が低下する）`);
+        logs.push({ short: `💨 ${target.name} の命中率が下がった！`, detail: `💨 ${target.name} は強烈な臭気で目が眩んだ！（2ターンの間、命中率が低下する）` });
     } else if (sk.effect === 'def_down_15') {
         // 以前は「命中すれば必ず3ターンの間-15%」だったが、
         // 「命中時30%の確率で発動・発動すれば交代するまで持続」という仕様に変更。
         // さらに、1体につき3回まで重複可能（1回につき丈夫さ-15%、最大45%まで累積）。
         if (Math.random() < 0.3) {
             if ((target.defDown15Stacks || 0) >= 3) {
-                logs.push(`（${target.name} はすでに防御崩しの効果が上限（3重複）に達しているため、追加の効果は発生しなかった）`);
+                logs.push({ short: `（${target.name} には追加効果なし）`, detail: `（${target.name} はすでに防御崩しの効果が上限（3重複）に達しているため、追加の効果は発生しなかった）` });
             } else {
                 target.defDown15Stacks = Math.min(3, (target.defDown15Stacks || 0) + 1);
-                logs.push(`💥 ${target.name} の防御が崩れた！（累積${target.defDown15Stacks}/3・1回につき丈夫さ15%低下、相手が交代するまでの間持続）`);
+                logs.push({ short: `💥 ${target.name} の丈夫さが低下した！`, detail: `💥 ${target.name} の防御が崩れた！（累積${target.defDown15Stacks}/3・1回につき丈夫さ15%低下、相手が交代するまでの間持続）` });
             }
         } else {
-            logs.push(`（${target.name} は堪えて防御崩しを免れた）`);
+            logs.push({ short: `（${target.name} は堪えた！）`, detail: `（${target.name} は堪えて防御崩しを免れた）` });
         }
     } else if (sk.effect === 'def_down_15_perma') {
         // 超ローリンモッチ専用：def_down_15とは異なり、ターン経過で解除されず交代するまで持続する
         target.permaDefDownPct = Math.max(target.permaDefDownPct || 0, 15);
-        logs.push(`💥 ${target.name} の防御が崩れた！（相手が交代するまでの間、丈夫さが15%低下する）`);
+        logs.push({ short: `💥 ${target.name} の丈夫さが低下した！`, detail: `💥 ${target.name} の防御が崩れた！（相手が交代するまでの間、丈夫さが15%低下する）` });
     } else if (sk.effect === 'evasion_def_down_20') {
         // がん飛ばし専用：命中すれば必ず発動し、相手の回避と丈夫さを1回につき20%低下させる（3回まで重複可・交代するまで持続）
         if ((target.evasionDefDownStacks || 0) >= 3) {
-            logs.push(`（${target.name} はすでに回避・丈夫さ低下の効果が上限（3重複）に達しているため、追加の効果は発生しなかった）`);
+            logs.push({ short: `（${target.name} には追加効果なし）`, detail: `（${target.name} はすでに回避・丈夫さ低下の効果が上限（3重複）に達しているため、追加の効果は発生しなかった）` });
         } else {
             target.evasionDefDownStacks = Math.min(3, (target.evasionDefDownStacks || 0) + 1);
-            logs.push(`💥 ${target.name} の回避と丈夫さが下がった！（累積${target.evasionDefDownStacks}/3・1回につき回避・丈夫さがそれぞれ20%低下、相手が交代するまでの間持続）`);
+            logs.push({ short: `💥 ${target.name} の回避・丈夫さが低下した！`, detail: `💥 ${target.name} の回避と丈夫さが下がった！（累積${target.evasionDefDownStacks}/3・1回につき回避・丈夫さがそれぞれ20%低下、相手が交代するまでの間持続）` });
         }
     } else if (sk.effect === 'spd_down_stage1') {
         // 粘液専用：命中すれば必ず発動し、相手の移動速度（回避）を1段階（1回につき10%）低下させる（3回まで重複可・交代するまで持続）
         if ((target.spdDownStacks || 0) >= 3) {
-            logs.push(`（${target.name} はすでに移動速度低下の効果が上限（3段階）に達しているため、追加の効果は発生しなかった）`);
+            logs.push({ short: `（${target.name} には追加効果なし）`, detail: `（${target.name} はすでに移動速度低下の効果が上限（3段階）に達しているため、追加の効果は発生しなかった）` });
         } else {
             target.spdDownStacks = Math.min(3, (target.spdDownStacks || 0) + 1);
-            logs.push(`🐌 ${target.name} の粘液にまみれ、移動速度が1段階下がった！（累積${target.spdDownStacks}/3段階・相手が交代するまでの間持続）`);
+            logs.push({ short: `🐌 ${target.name} の移動速度が下がった！`, detail: `🐌 ${target.name} の粘液にまみれ、移動速度が1段階下がった！（累積${target.spdDownStacks}/3段階・相手が交代するまでの間持続）` });
         }
     } else if (sk.effect === 'dot_mine') {
         target.dotTurns = (typeof sk.dotTurns === 'number') ? sk.dotTurns : 3;
         target.dotPct = (typeof sk.dotPct === 'number') ? sk.dotPct : 0.08;
-        logs.push(`🩸 ${target.name} は出血状態になった！（${target.dotTurns}ターンの間、毎ターン最大ライフの${Math.round(target.dotPct * 100)}%の継続ダメージを受ける）`);
+        logs.push({ short: `🩸 ${target.name} は出血状態になった！`, detail: `🩸 ${target.name} は出血状態になった！（${target.dotTurns}ターンの間、毎ターン最大ライフの${Math.round(target.dotPct * 100)}%の継続ダメージを受ける）` });
     } else if (sk.effect === 'paralyze_25') {
         // 命中した時、25%の確率で相手をマヒさせる（発動すればバトル終了まで治らず、行動時に25%の確率で行動不能になり、移動速度が3段階低下する）
         if (Math.random() < 0.25) {
             if (target.isParalyzed) {
-                logs.push(`（${target.name} はすでにマヒ状態のため、追加の効果は発生しなかった）`);
+                logs.push({ short: `（${target.name} には追加効果なし）`, detail: `（${target.name} はすでにマヒ状態のため、追加の効果は発生しなかった）` });
             } else {
                 target.isParalyzed = true;
-                logs.push(`⚡ ${target.name} は感電しマヒ状態になった！（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）`);
+                logs.push({ short: `⚡ ${target.name} はマヒ状態になった！`, detail: `⚡ ${target.name} は感電しマヒ状態になった！（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）` });
             }
         } else {
-            logs.push(`（${target.name} は堪えてマヒを免れた）`);
+            logs.push({ short: `（${target.name} は堪えた！）`, detail: `（${target.name} は堪えてマヒを免れた）` });
         }
     } else if (sk.effect === 'burn') {
         // やけど：バトル終了まで治らず、毎ターン終了時に最大ライフの1/16のダメージを受け続ける
         if (target.isBurned) {
-            logs.push(`（${target.name} はすでにやけど状態のため、追加の効果は発生しなかった）`);
+            logs.push({ short: `（${target.name} には追加効果なし）`, detail: `（${target.name} はすでにやけど状態のため、追加の効果は発生しなかった）` });
         } else {
             target.isBurned = true;
-            logs.push(`🔥 ${target.name} はやけど状態になった！（バトル終了まで治らず、毎ターン終了時に最大ライフの1/16のダメージを受ける）`);
+            logs.push({ short: `🔥 ${target.name} はやけど状態になった！`, detail: `🔥 ${target.name} はやけど状態になった！（バトル終了まで治らず、毎ターン終了時に最大ライフの1/16のダメージを受ける）` });
         }
     } else if (sk.effect === 'burn_30') {
         // やけど（命中時30%の確率で発動）：バトル終了まで治らず、毎ターン終了時に最大ライフの1/16のダメージを受け続ける
         if (Math.random() < 0.3) {
             if (target.isBurned) {
-                logs.push(`（${target.name} はすでにやけど状態のため、追加の効果は発生しなかった）`);
+                logs.push({ short: `（${target.name} には追加効果なし）`, detail: `（${target.name} はすでにやけど状態のため、追加の効果は発生しなかった）` });
             } else {
                 target.isBurned = true;
-                logs.push(`🔥 ${target.name} はやけど状態になった！（バトル終了まで治らず、毎ターン終了時に最大ライフの1/16のダメージを受ける）`);
+                logs.push({ short: `🔥 ${target.name} はやけど状態になった！`, detail: `🔥 ${target.name} はやけど状態になった！（バトル終了まで治らず、毎ターン終了時に最大ライフの1/16のダメージを受ける）` });
             }
         } else {
-            logs.push(`（${target.name} は堪えてやけどを免れた）`);
+            logs.push({ short: `（${target.name} は堪えた！）`, detail: `（${target.name} は堪えてやけどを免れた）` });
         }
     } else if (sk.effect === 'sleep_2') {
         // ねむり：2ターンの間、確率判定なしで必ず行動不能になる
         target.sleepTurns = 2;
-        logs.push(`💤 ${target.name} はねむり状態になった！（2ターンの間、眠り続けて行動不能になる）`);
+        logs.push({ short: `💤 ${target.name} はねむり状態になった！`, detail: `💤 ${target.name} はねむり状態になった！（2ターンの間、眠り続けて行動不能になる）` });
     } else if (sk.effect === 'yawn_2') {
         // あくび：命中した時点では何も起こらず、対象が自身の行動ターンを2回消化した後に自動でねむり状態になる
         if (target.sleepTurns > 0 || target.yawnTurns > 0) {
-            logs.push(`（${target.name} はすでに眠気の予兆があるため、追加の効果は発生しなかった）`);
+            logs.push({ short: `（${target.name} には追加効果なし）`, detail: `（${target.name} はすでに眠気の予兆があるため、追加の効果は発生しなかった）` });
         } else {
             target.yawnTurns = 2;
-            logs.push(`🥱 ${target.name} は大きなあくびを見せられ、眠気を誘われた！（2ターン後にねむり状態になる）`);
+            logs.push({ short: `🥱 ${target.name} は眠気を誘われた！`, detail: `🥱 ${target.name} は大きなあくびを見せられ、眠気を誘われた！（2ターン後にねむり状態になる）` });
         }
     } else if (sk.effect === 'poison') {
         // 猛毒：バトル終了まで治らず、ターン経過ごとに受けるダメージが最大ライフの1/16, 2/16…と増えていく（最大15/16）。
         // 交代するとダメージ量は1/16からやり直しになる（clearBattleStatModifiersOnSwitchで処理）。
         if (target.isPoisoned) {
-            logs.push(`（${target.name} はすでに猛毒状態のため、追加の効果は発生しなかった）`);
+            logs.push({ short: `（${target.name} には追加効果なし）`, detail: `（${target.name} はすでに猛毒状態のため、追加の効果は発生しなかった）` });
         } else {
             target.isPoisoned = true;
             target.poisonCounter = 0;
-            logs.push(`☠️ ${target.name} は猛毒状態になった！（バトル終了まで治らず、ターンが経過するごとに受けるダメージが最大ライフの1/16ずつ増えていく。交代すると1/16からやり直しになる）`);
+            logs.push({ short: `☠️ ${target.name} は猛毒状態になった！`, detail: `☠️ ${target.name} は猛毒状態になった！（バトル終了まで治らず、ターンが経過するごとに受けるダメージが最大ライフの1/16ずつ増えていく。交代すると1/16からやり直しになる）` });
         }
     } else if (sk.effect === 'poison_50') {
         // 猛毒（命中時50%の確率で発動）：バトル終了まで治らず、ターン経過ごとに受けるダメージが最大ライフの1/16, 2/16…と増えていく（最大15/16）。
         if (Math.random() < 0.5) {
             if (target.isPoisoned) {
-                logs.push(`（${target.name} はすでに猛毒状態のため、追加の効果は発生しなかった）`);
+                logs.push({ short: `（${target.name} には追加効果なし）`, detail: `（${target.name} はすでに猛毒状態のため、追加の効果は発生しなかった）` });
             } else {
                 target.isPoisoned = true;
                 target.poisonCounter = 0;
-                logs.push(`☠️ ${target.name} は猛毒状態になった！（バトル終了まで治らず、ターンが経過するごとに受けるダメージが最大ライフの1/16ずつ増えていく。交代すると1/16からやり直しになる）`);
+                logs.push({ short: `☠️ ${target.name} は猛毒状態になった！`, detail: `☠️ ${target.name} は猛毒状態になった！（バトル終了まで治らず、ターンが経過するごとに受けるダメージが最大ライフの1/16ずつ増えていく。交代すると1/16からやり直しになる）` });
             }
         } else {
-            logs.push(`（${target.name} は堪えて猛毒を免れた）`);
+            logs.push({ short: `（${target.name} は堪えた！）`, detail: `（${target.name} は堪えて猛毒を免れた）` });
         }
     } else if (sk.effect === 'self_dizzy') {
         caster.blindTurns = Math.max(caster.blindTurns || 0, 1);
-        logs.push(`😵 ${caster.name} は勢い余って目を回してしまった！（1ターンの間、自身の命中率が低下する）`);
+        logs.push({ short: `😵 ${caster.name} は目を回してしまった！`, detail: `😵 ${caster.name} は勢い余って目を回してしまった！（1ターンの間、自身の命中率が低下する）` });
     } else if (sk.effect === 'hitdown_stack_3') {
         target.hitDownStacks = Math.min(3, (target.hitDownStacks || 0) + 1);
-        logs.push(`🏜️ ${target.name} の命中率が低下した！（累積 ${target.hitDownStacks}/3 ・ 1回につき10%低下、交代するまで持続）`);
+        logs.push({ short: `🏜️ ${target.name} の命中率が低下した！`, detail: `🏜️ ${target.name} の命中率が低下した！（累積 ${target.hitDownStacks}/3 ・ 1回につき10%低下、交代するまで持続）` });
     } else if (sk.effect === 'selfcrit_up_3') {
         // 以前は「命中すれば必ず3ターンの間クリティカル率+25%」だったが、
         // ターン数による制限を撤廃し、1体につき3回まで重複可能な永続バフ（交代するまで持続）に変更。
         // （1回につきクリティカル率25%アップ、最大75%まで累積）
         if ((caster.critUpStacks || 0) >= 3) {
-            logs.push(`（${caster.name} はすでにクリティカル率上昇の効果が上限（3重複）に達しているため、追加の効果は発生しなかった）`);
+            logs.push({ short: `（${caster.name} には追加効果なし）`, detail: `（${caster.name} はすでにクリティカル率上昇の効果が上限（3重複）に達しているため、追加の効果は発生しなかった）` });
         } else {
             caster.critUpStacks = Math.min(3, (caster.critUpStacks || 0) + 1);
-            logs.push(`🔥 ${caster.name} は闘志を燃やした！（累積${caster.critUpStacks}/3・1回につきクリティカル率25%アップ、交代するまで持続）`);
+            logs.push({ short: `🔥 ${caster.name} のクリティカル率が上昇した！`, detail: `🔥 ${caster.name} は闘志を燃やした！（累積${caster.critUpStacks}/3・1回につきクリティカル率25%アップ、交代するまで持続）` });
         }
     } else if (sk.effect === 'self_heal_15pct') {
         const maxLifeVal = caster.stats ? caster.stats.maxLife : caster.maxLife;
         const healAmount = Math.floor(maxLifeVal * 0.15);
         caster.stats.life = Math.min(caster.stats.maxLife, caster.stats.life + healAmount);
-        logs.push(`💚 ${caster.name} は自身のライフを ${healAmount} 回復した！(現在: ${Math.floor(caster.stats.life)})`);
+        logs.push({ short: `💚 ${caster.name} のライフが回復した！`, detail: `💚 ${caster.name} は自身のライフを ${healAmount} 回復した！(現在: ${Math.floor(caster.stats.life)})` });
     // ---------- ザン専用の追加効果 ----------
     } else if (sk.effect === 'stun_debuff_once') {
         // スタナーブリッツ：命中率-10%・丈夫さ-15%をバトル終了まで付与する（1回のみ・重複不可）
         if (target.stunnerDebuffApplied) {
-            logs.push(`（${target.name} はすでにスタナーブリッツの効果を受けているため、追加の効果は発生しなかった）`);
+            logs.push({ short: `（${target.name} には追加効果なし）`, detail: `（${target.name} はすでにスタナーブリッツの効果を受けているため、追加の効果は発生しなかった）` });
         } else {
             target.stunnerDebuffApplied = true;
             target.permaHitDownPct = (target.permaHitDownPct || 0) + 10;
             target.permaDefDownPct = (target.permaDefDownPct || 0) + 15;
-            logs.push(`⚡ ${target.name} は体勢を大きく崩された！（交代するまで、命中率が10%・丈夫さが15%低下する）`);
+            logs.push({ short: `⚡ ${target.name} の体勢が崩れた！`, detail: `⚡ ${target.name} は体勢を大きく崩された！（交代するまで、命中率が10%・丈夫さが15%低下する）` });
         }
     } else if (sk.effect === 'dot_mine_hitdown10_3t') {
         // メテオドライブ：継続ダメージ＋3ターンの命中率-10%
@@ -1177,7 +1180,7 @@ function applySkillOnHitEffect(caster, target, sk) {
         target.dotPct = (typeof sk.dotPct === 'number') ? sk.dotPct : 0.08;
         target.hitDownTempTurns = 3;
         target.hitDownTempPct = 10;
-        logs.push(`☄️ ${target.name} は出血状態になった！（${target.dotTurns}ターンの間、毎ターン最大ライフの${Math.round(target.dotPct * 100)}%の継続ダメージを受け、さらに3ターンの間命中率が10%低下する）`);
+        logs.push({ short: `☄️ ${target.name} は出血状態になった！`, detail: `☄️ ${target.name} は出血状態になった！（${target.dotTurns}ターンの間、毎ターン最大ライフの${Math.round(target.dotPct * 100)}%の継続ダメージを受け、さらに3ターンの間命中率が10%低下する）` });
     } else if (sk.effect === 'dot_mine_aura_bonus') {
         // ライジングレイヴ：継続ダメージ。オーラ有利時はさらに+8%上乗せ
         target.dotTurns = (typeof sk.dotTurns === 'number') ? sk.dotTurns : 3;
@@ -1188,22 +1191,22 @@ function applySkillOnHitEffect(caster, target, sk) {
             auraMsg = '（オーラ相性が有利だったため、継続ダメージがさらに8%上乗せされた！）';
         }
         target.dotPct = pct;
-        logs.push(`🔥 ${target.name} は出血状態になった！（${target.dotTurns}ターンの間、毎ターン最大ライフの${Math.round(pct * 100)}%の継続ダメージを受ける）${auraMsg}`);
+        logs.push({ short: `🔥 ${target.name} は出血状態になった！`, detail: `🔥 ${target.name} は出血状態になった！（${target.dotTurns}ターンの間、毎ターン最大ライフの${Math.round(pct * 100)}%の継続ダメージを受ける）${auraMsg}` });
     } else if (sk.effect === 'flinch_50_1t') {
         // 黒ひざコンボ：命中した場合、次のターン相手は50%の確率で怯み行動に失敗する
         target.flinchTurns = Math.max(target.flinchTurns || 0, 1);
-        logs.push(`😨 ${target.name} は強烈な一撃に怯んでしまった！（次のターン、50%の確率で行動に失敗する）`);
+        logs.push({ short: `😨 ${target.name} は怯んでしまった！`, detail: `😨 ${target.name} は強烈な一撃に怯んでしまった！（次のターン、50%の確率で行動に失敗する）` });
     } else if (sk.effect === 'guts_recovery_down_10') {
         // さくら吹雪：命中した場合、相手の次のガッツ回復量を10減らす（次の回復1回分のみ）
         target.gutsRecoveryDownNext = (target.gutsRecoveryDownNext || 0) + 10;
-        logs.push(`🌸 ${target.name} は次のガッツ回復量が10減少する状態になった！`);
+        logs.push({ short: `🌸 ${target.name} の次のガッツ回復量が減少する！`, detail: `🌸 ${target.name} は次のガッツ回復量が10減少する状態になった！` });
     } else if (sk.effect === 'dot_mine_def_down10') {
         // アクシズバレット：継続ダメージ＋3ターンの丈夫さ-10%
         target.dotTurns = (typeof sk.dotTurns === 'number') ? sk.dotTurns : 3;
         target.dotPct = (typeof sk.dotPct === 'number') ? sk.dotPct : 0.08;
         target.defDownTurns = 3;
         target.defDownPct = 10;
-        logs.push(`🎯 ${target.name} は出血状態になった！（${target.dotTurns}ターンの間、毎ターン最大ライフの${Math.round(target.dotPct * 100)}%の継続ダメージを受け、さらに3ターンの間丈夫さが10%低下する）`);
+        logs.push({ short: `🎯 ${target.name} は出血状態になった！`, detail: `🎯 ${target.name} は出血状態になった！（${target.dotTurns}ターンの間、毎ターン最大ライフの${Math.round(target.dotPct * 100)}%の継続ダメージを受け、さらに3ターンの間丈夫さが10%低下する）` });
     }
     return logs;
 }
@@ -1218,52 +1221,52 @@ function applySkillOnUseEffect(caster, sk) {
 
     if (sk.useEffect === 'self_atk_up_stack3') {
         caster.atkUpStacks = Math.min(3, (caster.atkUpStacks || 0) + 1);
-        logs.push(`💪 ${caster.name} の攻撃ステータスが上昇した！（累積 ${caster.atkUpStacks}/3 ・ 1回につき10%アップ）`);
+        logs.push({ short: `💪 ${caster.name} の攻撃ステータスが上昇した！`, detail: `💪 ${caster.name} の攻撃ステータスが上昇した！（累積 ${caster.atkUpStacks}/3 ・ 1回につき10%アップ）` });
     } else if (sk.useEffect === 'self_def_up_stack3') {
         // トリオビームZ：技を繰り出すたびに自身の丈夫さが15%上昇する（3回まで重複可）
         caster.defUpStacks = Math.min(3, (caster.defUpStacks || 0) + 1);
-        logs.push(`🛡️ ${caster.name} の丈夫さが上昇した！（累積 ${caster.defUpStacks}/3 ・ 1回につき15%アップ）`);
+        logs.push({ short: `🛡️ ${caster.name} の丈夫さが上昇した！`, detail: `🛡️ ${caster.name} の丈夫さが上昇した！（累積 ${caster.defUpStacks}/3 ・ 1回につき15%アップ）` });
     } else if (sk.useEffect === 'self_pow_int_up50_stack3') {
         // 桜の舞：技を繰り出すたびに自身のちから・かしこさが50%上昇する（3回まで重複可）
         caster.sakuraBuffStacks = Math.min(3, (caster.sakuraBuffStacks || 0) + 1);
-        logs.push(`🌸 ${caster.name} のちから・かしこさが上昇した！（累積 ${caster.sakuraBuffStacks}/3 ・ 1回につき50%アップ）`);
+        logs.push({ short: `🌸 ${caster.name} のちから・かしこさが上昇した！`, detail: `🌸 ${caster.name} のちから・かしこさが上昇した！（累積 ${caster.sakuraBuffStacks}/3 ・ 1回につき50%アップ）` });
     } else if (sk.useEffect === 'mystic_guard_stack3') {
         // 神秘の守り：技を繰り出すたびに自身の丈夫さが50%上昇し、毎ターンのガッツ回復量が+10される（3回まで重複可）
         caster.mysticGuardStacks = Math.min(3, (caster.mysticGuardStacks || 0) + 1);
-        logs.push(`✨ ${caster.name} は神秘の守りに包まれた！（累積 ${caster.mysticGuardStacks}/3 ・ 1回につき丈夫さ50%アップ・ガッツ回復量+10）`);
+        logs.push({ short: `✨ ${caster.name} は神秘の守りに包まれた！`, detail: `✨ ${caster.name} は神秘の守りに包まれた！（累積 ${caster.mysticGuardStacks}/3 ・ 1回につき丈夫さ50%アップ・ガッツ回復量+10）` });
     } else if (sk.useEffect === 'meiso') {
         // 瞑想：技を繰り出すたびに自身のかしこさ・命中が30%上昇し、丈夫さが10%低下する（3回まで重複可）。
         // さらに25%の確率で集中しすぎて自身がねむり状態になってしまう（2ターンの間行動不能）。
         caster.meisoStacks = Math.min(3, (caster.meisoStacks || 0) + 1);
-        logs.push(`🧘 ${caster.name} は瞑想して集中力を高めた！（累積 ${caster.meisoStacks}/3 ・ 1回につきかしこさ・命中30%アップ、丈夫さ10%ダウン）`);
+        logs.push({ short: `🧘 ${caster.name} のかしこさ・命中が上昇した！`, detail: `🧘 ${caster.name} は瞑想して集中力を高めた！（累積 ${caster.meisoStacks}/3 ・ 1回につきかしこさ・命中30%アップ、丈夫さ10%ダウン）` });
         if (Math.random() < 0.25) {
             caster.sleepTurns = 2;
-            logs.push(`💤 ${caster.name} は集中しすぎて、そのままねむり状態になってしまった！（2ターンの間、行動不能になる）`);
+            logs.push({ short: `💤 ${caster.name} はねむり状態になった！`, detail: `💤 ${caster.name} は集中しすぎて、そのままねむり状態になってしまった！（2ターンの間、行動不能になる）` });
         }
     } else if (sk.useEffect === 'self_int_up50_stack3') {
         // 妖狐の祈り：技を繰り出すたびに自身のかしこさが50%上昇する（3回まで重複可）
         caster.youkoInoriStacks = Math.min(3, (caster.youkoInoriStacks || 0) + 1);
-        logs.push(`🦊 ${caster.name} のかしこさが上昇した！（累積 ${caster.youkoInoriStacks}/3 ・ 1回につき50%アップ）`);
+        logs.push({ short: `🦊 ${caster.name} のかしこさが上昇した！`, detail: `🦊 ${caster.name} のかしこさが上昇した！（累積 ${caster.youkoInoriStacks}/3 ・ 1回につき50%アップ）` });
     } else if (sk.useEffect === 'kenbu') {
         // 剣舞：技を繰り出すたびに自身のちから・命中が25%上昇する（3回まで重複可）
         caster.kenbuStacks = Math.min(3, (caster.kenbuStacks || 0) + 1);
-        logs.push(`💃 ${caster.name} は剣舞を舞い、心身を研ぎ澄ました！（累積 ${caster.kenbuStacks}/3 ・ 1回につきちから・命中25%アップ）`);
+        logs.push({ short: `💃 ${caster.name} のちから・命中が上昇した！`, detail: `💃 ${caster.name} は剣舞を舞い、心身を研ぎ澄ました！（累積 ${caster.kenbuStacks}/3 ・ 1回につきちから・命中25%アップ）` });
     } else if (sk.useEffect === 'nendo_gatame') {
         // ねんどがため：技を繰り出すたびに自身の丈夫さが80%上昇し、回避が10%低下する（3回まで重複可）
         caster.nendoGatameStacks = Math.min(3, (caster.nendoGatameStacks || 0) + 1);
-        logs.push(`🟤 ${caster.name} は体を粘土のように硬化させた！（累積 ${caster.nendoGatameStacks}/3 ・ 1回につき丈夫さ80%アップ、回避10%ダウン）`);
+        logs.push({ short: `🟤 ${caster.name} の丈夫さが上昇した！`, detail: `🟤 ${caster.name} は体を粘土のように硬化させた！（累積 ${caster.nendoGatameStacks}/3 ・ 1回につき丈夫さ80%アップ、回避10%ダウン）` });
     } else if (sk.useEffect === 'gobi_step') {
         // ゴビステップ：自身の回避を150%上昇させる
         caster.gobiStepActive = true;
-        logs.push(`💨 ${caster.name} は軽やかなステップを踏んだ！回避が150%アップした！`);
+        logs.push({ short: `💨 ${caster.name} の回避が上昇した！`, detail: `💨 ${caster.name} は軽やかなステップを踏んだ！回避が150%アップした！` });
     } else if (sk.useEffect === 'meteor_spd_up') {
         // メテオバースト：技を繰り出すたびに自身の回避（移動速度）ステータスが1段階上昇する（3回まで重複可）
         caster.spdUpStacks = Math.min(3, (caster.spdUpStacks || 0) + 1);
-        logs.push(`💫 ${caster.name} の回避ステータスが上昇した！（累積 ${caster.spdUpStacks}/3 ・ 1回につき10%アップ）`);
+        logs.push({ short: `💫 ${caster.name} の回避ステータスが上昇した！`, detail: `💫 ${caster.name} の回避ステータスが上昇した！（累積 ${caster.spdUpStacks}/3 ・ 1回につき10%アップ）` });
     } else if (sk.useEffect === 'michizure_wait') {
         // みちづれ：このターンに相手の攻撃や状態異常で自身のライフが0になった場合、相手のライフも0にする
         caster.michizureActive = true;
-        logs.push(`💀 ${caster.name} はみちづれの構えを取った！（このターン、相手の攻撃や状態異常でライフが0になった場合、相手のライフも0になる）`);
+        logs.push({ short: `💀 ${caster.name} はみちづれの構えを取った！`, detail: `💀 ${caster.name} はみちづれの構えを取った！（このターン、相手の攻撃や状態異常でライフが0になった場合、相手のライフも0になる）` });
     }
     return logs;
 }
@@ -1376,7 +1379,8 @@ function applyDotDamageAndBuildLogs(name, result, getLife, setLife) {
         if (step.amount > 0) {
             const newLife = Math.max(0, getLife() - step.amount);
             setLife(newLife);
-            logs.push(`${step.emoji} ${name} は${step.label}ダメージで ${step.amount} のダメージを受けた！(現在: ${Math.floor(newLife)})`);
+            const msg = `${step.emoji} ${name} は${step.label}ダメージで ${step.amount} のダメージを受けた！(現在: ${Math.floor(newLife)})`;
+            logs.push({ short: msg, detail: msg });
         }
     });
     return logs;

@@ -848,12 +848,12 @@ function renderRealtimeBattleSkills(state) {
         btn.onclick = () => executeRealtimeSkill(skKey);
 
         // 技の長押し／右クリックで詳細モーダルを表示（育成中のバトルと同じ操作）
-        // ・長押し時にiOS/Androidの「テキスト範囲選択（コピー用）」メニューが出てしまうと煩わしいため、
-        //   ontouchstartでpreventDefaultして、その挙動が起動しないようにする
-        //   （タップ操作自体・onclickの発火には影響しない）。
+        // ・長押し時のテキスト範囲選択メニュー対策はCSS側（touch-action/user-select/
+        //   -webkit-touch-callout）のみで行う。ontouchstartでpreventDefaultすると、
+        //   タッチ操作から合成されるクリックイベントごと発火しなくなり、技が打てなくなってしまうため
+        //   （実際に発生した不具合のため、ここでは絶対に呼ばないこと）。
         let longPressTimer;
-        btn.ontouchstart = (ev) => {
-            ev.preventDefault();
+        btn.ontouchstart = () => {
             longPressTimer = setTimeout(() => {
                 openRealtimeSkillModal(skKey, state);
             }, 500);
@@ -1223,7 +1223,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
         me.guts -= sk.cost;
         resultLogs.push(`${me.name} の【${sk.name}】！`);
         // 技発動時（命中判定に関わらず）の自己強化効果（アサルトダンス等）
-        applySkillOnUseEffect(me, sk).forEach(msg => resultLogs.push(msg));
+        applySkillOnUseEffect(me, sk).forEach(msg => resultLogs.push(msg.detail));
 
         if (sk.type === 'pow' || sk.type === 'int') {
             // 装備の「攻撃するたびにライフ消費・技威力アップ」効果：技を繰り出した時点（命中判定に関わらず）で1回だけ適用する
@@ -1290,7 +1290,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                         }
                     }
 
-                    applySkillOnHitEffect(me, opp, sk).forEach(msg => resultLogs.push(msg));
+                    applySkillOnHitEffect(me, opp, sk).forEach(msg => resultLogs.push(msg.detail));
                 }
 
                 me.isSokojikaraActive = false;
@@ -1321,7 +1321,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                 }
                 if (me.permaForceBoostActive) {
                     damage = Math.floor(damage * 1.2);
-                    meExtraDmgMsg += " (天河天翔×1.2)";
+                    meExtraDmgMsg += " (永続ダメージ上昇×1.2)";
                 }
                 // 技オーラ相性による与ダメージ補正（自身のオーラと技オーラが一致／相手オーラに対して有利・不利）
                 // ※モンスター本体同士のオーラ／モン類相性は、ここではなく各種ステータス計算側
@@ -1403,7 +1403,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                 }
 
                 // モノリスの技等が持つ追加効果（衰弱／混乱付与／次技威力アップ）
-                applySkillOnHitEffect(me, opp, sk).forEach(msg => resultLogs.push(msg));
+                applySkillOnHitEffect(me, opp, sk).forEach(msg => resultLogs.push(msg.detail));
 
                 // プラントの「ドレイン」等：与えたダメージの一部を自身のライフに変換
                 const drainHeal = getDrainHealAmount(sk, damage);
@@ -1526,7 +1526,7 @@ function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs) {
     const dotResult = { bleedDamage, burnDamage, poisonDamage };
     if (bleedDamage > 0 || burnDamage > 0 || poisonDamage > 0) {
         const dotLogs = applyDotDamageAndBuildLogs(unit.name, dotResult, () => unit.life, (v) => { unit.life = v; });
-        dotLogs.forEach(line => resultLogs.push(line));
+        dotLogs.forEach(line => resultLogs.push(line.detail));
         if (opponentUnit) {
             const michizureLog = checkMichizureTrigger(unit, opponentUnit, () => unit.life, () => opponentUnit.life, (v) => { opponentUnit.life = v; });
             if (michizureLog) resultLogs.push(michizureLog);

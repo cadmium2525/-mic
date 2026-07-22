@@ -211,21 +211,23 @@ function closeSkillModal() {
 // --- バトルログの記録管理 ---
 // バトル開始からの全ログを BATTLE_LOG_ENTRIES に貯めておき、
 // 表示モード（BATTLE_LOG_VIEW_MODE）に応じて #battle-log に描画する内容を切り替える。
-//   'turn' … 直近の行動（技・防御・アイテム・交代）を選んだ地点からのログのみ表示
-//   'full' … バトル開始からの全ログを表示（「ログ確認」ボタン用）
+//   'turn' … 直近の行動（技・防御・アイテム・交代）を選んだ地点からのログのみ表示（簡略文）
+//   'full' … バトル開始からの全ログを表示（「ログ確認」ボタン用。詳細文）
 let BATTLE_LOG_ENTRIES = [];
 let BATTLE_LOG_TURN_START = 0;
 let BATTLE_LOG_VIEW_MODE = 'turn';
 
-function addLog(text) {
-    BATTLE_LOG_ENTRIES.push({ text, cls: null });
+// short: 通常表示（技を打った直後などに見えるログ）用の簡略な文言
+// detail: 「ログ確認」ボタンで開く全履歴用の詳細な文言（省略時はshortと同じ文言を使う）
+function addLog(short, detail) {
+    BATTLE_LOG_ENTRIES.push({ text: short, detailText: (detail !== undefined ? detail : short), cls: null });
     renderBattleLog();
 }
 
 // バトル開始時にログ履歴をリセットして初期メッセージを表示する。
-// entries: 文字列、または { text, cls } の配列
+// entries: 文字列、または { text, detailText, cls } の配列
 function initBattleLog(entries) {
-    BATTLE_LOG_ENTRIES = (entries || []).map(e => (typeof e === 'string') ? { text: e, cls: null } : e);
+    BATTLE_LOG_ENTRIES = (entries || []).map(e => (typeof e === 'string') ? { text: e, detailText: e, cls: null } : { detailText: e.text, ...e });
     BATTLE_LOG_TURN_START = 0;
     BATTLE_LOG_VIEW_MODE = 'turn';
     renderBattleLog();
@@ -235,13 +237,14 @@ function initBattleLog(entries) {
 function renderBattleLog() {
     const log = document.getElementById('battle-log');
     if (!log) return;
-    const startIdx = (BATTLE_LOG_VIEW_MODE === 'full') ? 0 : BATTLE_LOG_TURN_START;
+    const isFull = (BATTLE_LOG_VIEW_MODE === 'full');
+    const startIdx = isFull ? 0 : BATTLE_LOG_TURN_START;
     log.innerHTML = '';
     for (let i = startIdx; i < BATTLE_LOG_ENTRIES.length; i++) {
         const entry = BATTLE_LOG_ENTRIES[i];
         const div = document.createElement('div');
         if (entry.cls) div.className = entry.cls;
-        div.textContent = entry.text;
+        div.textContent = isFull ? (entry.detailText !== undefined ? entry.detailText : entry.text) : entry.text;
         log.appendChild(div);
     }
     log.scrollTop = log.scrollHeight;
