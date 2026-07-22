@@ -2256,7 +2256,7 @@ const KIN_NEJIKI_BOSSES = {
         templateId: 'golem',
         emoji: '🗿',
         desc: 'ちからと丈夫さに全振りした岩石の怪物。ガッツが溜まると「ぐるぐるアタック」や「竜巻アタック」で大ダメージを与えてくる。さらに「ゴビステップ」で自身の回避を大きく高めてくるため、回避特化での対策も過信は禁物。',
-        statsBase: { maxLife: 260, pow: 78, int: 18, hit: 34, spd: 16, def: 62, gutsSpeed: 12 },
+        statsBase: { maxLife: 260, pow: 128, int: 18, hit: 34, spd: 16, def: 62, gutsSpeed: 12 },
         skills: ['dekopin', 'claw_nage', 'guruguru_attack', 'boss_roll', 'tornado_attack', 'gobi_step']
     },
     set7: {
@@ -2266,7 +2266,7 @@ const KIN_NEJIKI_BOSSES = {
         emoji: '👿',
         aura: 'white', // モスト専用の特別なオーラ（三竦みに参加しない中立オーラ）
         desc: '伝説の邪神。戦闘のたびに異なる型で現れ、毒と吸収でじわじわ追い詰める型と、「サイコブラスト」「メテオバースト」の大技で一気に畳みかける型を使い分ける。ガッツダウン性能の高い技で常にガッツを抑え込むのが攻略の鍵。',
-        statsBase: { maxLife: 480, pow: 58, int: 58, hit: 62, spd: 46, def: 58, gutsSpeed: 14 },
+        statsBase: { maxLife: 480, pow: 128, int: 128, hit: 62, spd: 46, def: 58, gutsSpeed: 14 },
         // 型①：毒＋ドレインでじわじわ追い詰めるタイプ　型②：サイコブラスト/メテオバーストで一気に畳みかけるタイプ
         // バトルのたびにいずれか1つの型がランダムで選ばれる。
         molds: [
