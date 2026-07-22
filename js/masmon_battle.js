@@ -62,7 +62,10 @@ const MASMON_BATTLE_STATE = {
     playerItemsInitial: { mango: 0, kuri: 0, toro: 0 }, // 持ち込み時点の初期所持数（UI表示用）
     // 「ガッツファクトリー」レンタルバトル進行中のみ使用する追加情報（js/kinnejiki.js が読み書きする）
     // { inRun: true, set: 1〜7, battleIndex: 1〜7, isNejiki: bool, aiLevel: 1〜4 }
-    kinNejiki: null
+    kinNejiki: null,
+    // デバッグモード（js/debug_mode.js）から開始したバトルかどうか。trueの間だけ
+    // バトル画面に「バトル終了」ボタンを表示し、いつでも即座にデバッグ画面へ戻れるようにする。
+    isDebugBattle: false
 };
 
 // --- 現在アクティブなユニットの取得 ---
@@ -223,6 +226,8 @@ function startMasmonBattleCommon(floorText) {
 
     document.getElementById('battle-floor-indicator').textContent = floorText;
     document.getElementById('battle-turn-counter').textContent = MASMON_BATTLE_STATE.turn;
+    const debugEndBtn = document.getElementById('debug-end-battle-btn');
+    if (debugEndBtn) debugEndBtn.classList.toggle('hidden', !MASMON_BATTLE_STATE.isDebugBattle);
 
     const isTeam = MASMON_BATTLE_STATE.mode === 'cpu_team';
     document.getElementById('player-team-icons').classList.toggle('hidden', !isTeam);
@@ -1721,7 +1726,8 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
     // 2回分（2撃分）まとめて処理する（外れた場合は当然2回分まとめて外れる）。
     const isDoubleHit = !!attacker.doubleHitNext;
     if (attacker.doubleHitNext) attacker.doubleHitNext = false;
-    let hitCount = isDoubleHit ? 2 : 1;
+    // sk.hitCount: 技自体が固定で複数回攻撃になる場合（例：メテオバーストの4回攻撃）の基本回数
+    let hitCount = (sk.hitCount || 1) * (isDoubleHit ? 2 : 1);
 
     // みがわり餅で設置された身代わりが残っている場合、攻撃はダメージ・ガッツダウン・追加効果一切なしで防がれる。
     // 2回攻撃扱いの場合、身代わりの残り回数を超える分は身代わりを貫通し、実際に相手へ攻撃が届く

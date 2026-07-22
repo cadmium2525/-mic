@@ -8,7 +8,10 @@ const AURA_TYPES = {
     red:    { key: 'red',    name: '赤',  emoji: '🔴', colorClass: 'bg-red-500',    textClass: 'text-red-400',    beats: 'green',  hex: '#ef4444' },
     green:  { key: 'green',  name: '緑',  emoji: '🟢', colorClass: 'bg-green-500',  textClass: 'text-green-400',  beats: 'yellow', hex: '#22c55e' },
     yellow: { key: 'yellow', name: '黄',  emoji: '🟡', colorClass: 'bg-yellow-400', textClass: 'text-yellow-300', beats: 'blue',   hex: '#facc15' },
-    blue:   { key: 'blue',   name: '青',  emoji: '🔵', colorClass: 'bg-blue-500',   textClass: 'text-blue-400',   beats: 'red',    hex: '#3b82f6' }
+    blue:   { key: 'blue',   name: '青',  emoji: '🔵', colorClass: 'bg-blue-500',   textClass: 'text-blue-400',   beats: 'red',    hex: '#3b82f6' },
+    // 「白」はモスト専用の特別なオーラ。赤緑黄青の三竦みには参加しない（有利・不利どちらにもならない）ため beats は null。
+    // getRandomAuraKey() の通常抽選や、PvP編成でのオーラ選択には出てこないよう exclusive:true で除外している。
+    white:  { key: 'white',  name: '白',  emoji: '⚪', colorClass: 'bg-gray-200',   textClass: 'text-gray-200',   beats: null,     hex: '#e5e7eb', exclusive: true }
 };
 
 // --- 攻撃側オーラが防御側オーラに対して有利かどうかを判定する ---
@@ -19,8 +22,9 @@ function isAuraAdvantageous(attackerAuraKey, defenderAuraKey) {
 }
 
 // --- 4色からランダムに1つオーラを選ぶ（敵モンスターへの付与用） ---
+// exclusive指定のオーラ（モスト専用の「白」等）は通常抽選の対象外とする。
 function getRandomAuraKey() {
-    const keys = Object.keys(AURA_TYPES);
+    const keys = Object.keys(AURA_TYPES).filter(k => !AURA_TYPES[k].exclusive);
     return keys[Math.floor(Math.random() * keys.length)];
 }
 
@@ -488,6 +492,7 @@ function clearBattleStatModifiersOnSwitch(unit) {
     unit.shieldUsedThisBattle = false;
     unit.isDefending = false;
     unit.gobiStepActive = false;
+    unit.spdUpStacks = 0;
     // 猛毒（isPoisoned）はバトル終了まで治らないため、ここでは解除しない。
     // ただし交代すると蓄積したダメージ量はリセットされ、次に受けるダメージは1/16からやり直しになる。
     // （やけど isBurned／ねむり sleepTurns も他の状態異常と同様、控えに戻っても引き継がれるためリセットしない）
@@ -580,8 +585,8 @@ const SKILLS_DB = {
     boss_bite: { name: 'かみつき', cost: 20, type: 'pow', hitRate: 75, force: 1.2, gutsDown: 10, effect: null, desc: '鋭い牙でガッツを奪う攻撃' },
     boss_roll: { name: 'ローリング激突', cost: 40, type: 'pow', hitRate: 65, force: 2.4, gutsDown: 20, effect: null, desc: '大回転で激突してガッツを奪う' },
     boss_focus: { name: 'きあい', cost: 10, type: 'buff_pow', hitRate: 100, force: 0, gutsDown: 0, effect: 'pow_up', desc: '攻撃力を上昇させる' },
-    boss_laser: { name: 'サイコブラスト', cost: 45, type: 'int', hitRate: 70, force: 2.6, gutsDown: 30, effect: null, desc: '精神力を収束させた衝撃波' },
-    boss_meteor: { name: 'メテオバースト', cost: 55, type: 'int', hitRate: 70, force: 3.2, gutsDown: 45, effect: null, desc: '巨大な隕石を放つ大技' },
+    boss_laser: { name: 'サイコブラスト', aura: 'white', cost: 45, type: 'int', hitRate: 70, force: 2.6, gutsDown: 30, effect: 'confuse_30', desc: '精神力を収束させた衝撃波。さらに技命中時、30%の確率で相手を混乱状態にする（混乱中は毎ターン40%の確率で意味不明になり行動できなくなり、30%の確率で混乱が解除される）' },
+    boss_meteor: { name: 'メテオバースト', aura: 'white', cost: 55, type: 'int', hitRate: 70, force: 1.0, gutsDown: 12, effect: null, hitCount: 4, useEffect: 'meteor_spd_up', desc: '巨大な隕石を4連続で放つ大技（4回攻撃・1発ごとに相手GUTS-12）。さらに自身の回避ステータスが1段階上昇する（1回につき10%アップ、最大3回まで累積）' },
 
     // --- ハム系統 ---
     one_two_punch: { name: 'ワンツーパンチ', aura: 'green', cost: 15, type: 'pow', hitRate: 90, force: 0.7, gutsDown: 8, effect: null, desc: '素早い連続パンチの基本技。相手GUTS-8' },
@@ -1209,6 +1214,10 @@ function applySkillOnUseEffect(caster, sk) {
         // ゴビステップ：自身の回避を150%上昇させる
         caster.gobiStepActive = true;
         logs.push(`💨 ${caster.name} は軽やかなステップを踏んだ！回避が150%アップした！`);
+    } else if (sk.useEffect === 'meteor_spd_up') {
+        // メテオバースト：技を繰り出すたびに自身の回避（移動速度）ステータスが1段階上昇する（3回まで重複可）
+        caster.spdUpStacks = Math.min(3, (caster.spdUpStacks || 0) + 1);
+        logs.push(`💫 ${caster.name} の回避ステータスが上昇した！（累積 ${caster.spdUpStacks}/3 ・ 1回につき10%アップ）`);
     } else if (sk.useEffect === 'michizure_wait') {
         // みちづれ：このターンに相手の攻撃や状態異常で自身のライフが0になった場合、相手のライフも0にする
         caster.michizureActive = true;
@@ -1400,6 +1409,10 @@ function getEvasionStat(unit, spdVal, opponent) {
     // ゴビステップ：自身の回避を150%上昇させる
     if (unit.gobiStepActive) {
         val = val * 2.5;
+    }
+    // メテオバースト等：自身の回避（移動速度）ステータスが1段階上昇（1回につき10%、最大3回）
+    if (unit.spdUpStacks > 0) {
+        val = val * (1 + unit.spdUpStacks * 0.1);
     }
     if (opponent) {
         val = val * getAuraMonClassStatMultiplier(unit, opponent);
@@ -2211,6 +2224,7 @@ const KIN_NEJIKI_BOSSES = {
         title: 'レジェンドブリーダー・コルト（最終決戦）',
         templateId: null, // 特定種族に属さないオリジナルの最終ボス
         emoji: '👿',
+        aura: 'white', // モスト専用の特別なオーラ（三竦みに参加しない中立オーラ）
         desc: '伝説の邪神。戦闘のたびに異なる型で現れ、毒と吸収でじわじわ追い詰める型と、「サイコブラスト」「メテオバースト」の大技で一気に畳みかける型を使い分ける。ガッツダウン性能の高い技で常にガッツを抑え込むのが攻略の鍵。',
         statsBase: { maxLife: 480, pow: 58, int: 58, hit: 62, spd: 46, def: 58, gutsSpeed: 14 },
         // 型①：毒＋ドレインでじわじわ追い詰めるタイプ　型②：サイコブラスト/メテオバーストで一気に畳みかけるタイプ

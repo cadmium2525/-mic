@@ -104,6 +104,7 @@
                             <span id="realtime-turn-indicator" class="hidden text-white font-bold text-[9px] px-1.5 py-0.5 rounded"></span>
                             <span id="realtime-action-timer" class="hidden bg-amber-900 text-amber-200 font-bold text-[9px] px-1.5 py-0.5 rounded">⏱️ 30</span>
                             <span class="bg-[#1a120b] px-2 py-0.5 rounded text-white text-[10px] whitespace-nowrap">戦闘ターン: <span id="battle-turn-counter" class="text-amber-400 font-bold">0</span></span>
+                            <button id="debug-end-battle-btn" onclick="endDebugBattle()" class="hidden bg-red-800 hover:bg-red-700 text-white text-[9px] font-bold px-2 py-0.5 rounded active:scale-95 transition-all">🛠️ バトル終了</button>
                         </div>
                     </div>
                     <div id="realtime-disconnect-banner" class="hidden bg-red-950/60 border border-red-700 rounded-lg p-2 flex items-center justify-between space-x-2">
@@ -694,8 +695,11 @@
                 <h2 class="text-lg font-black text-white pixel-font leading-relaxed px-2" id="kinnejiki-encounter-message">
                     ○○が勝負を仕掛けてきた！
                 </h2>
-                <button onclick="confirmKinNejikiEncounter()" class="mt-10 w-full py-3.5 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-900 font-black rounded-xl text-md shadow-lg transform active:scale-95 transition-all pixel-font border-b-4 border-amber-800">
+                <button id="kinnejiki-encounter-start-btn" onclick="confirmKinNejikiEncounter()" class="mt-10 w-full py-3.5 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-900 font-black rounded-xl text-md shadow-lg transform active:scale-95 transition-all pixel-font border-b-4 border-amber-800">
                     バトル開始！
+                </button>
+                <button id="debug-breeder-preview-back-btn" onclick="returnFromDebugBreederPreview()" class="hidden mt-10 w-full py-3.5 bg-[#3c2a21] hover:bg-[#4a352a] text-white font-bold rounded-xl text-sm border border-amber-800 transform active:scale-95 transition-all">
+                    🛠️ デバッグ画面に戻る
                 </button>
             </div>
 
@@ -718,6 +722,8 @@
                         <div class="text-xs font-bold text-amber-300">① 自分側テストモンスター（最大3体）</div>
                         <select id="debug-player-species" onchange="onDebugSpeciesChange('player')"
                             class="w-full bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
+                        <select id="debug-player-aura" onchange="onDebugAuraChange('player', this.value)"
+                            class="w-full bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
                         <div class="text-[9px] text-gray-500">技を最大4つまでチェック（未選択のまま追加すると既定4技を自動採用）</div>
                         <div id="debug-player-skills" class="flex flex-wrap gap-1"></div>
                         <button onclick="addDebugMonsterToTeam('player')"
@@ -737,6 +743,8 @@
                         <div class="text-[9px] text-gray-500 pt-1">↑ワンタップで帯同2体込みの本番同様の編成をセット。または↓から自由に相手を指定：</div>
                         <select id="debug-opponent-species" onchange="onDebugSpeciesChange('opponent')"
                             class="w-full bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
+                        <select id="debug-opponent-aura" onchange="onDebugAuraChange('opponent', this.value)"
+                            class="w-full bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
                         <div id="debug-opponent-skills" class="flex flex-wrap gap-1"></div>
                         <button onclick="addDebugMonsterToTeam('opponent')"
                             class="w-full py-1.5 bg-sky-800 hover:bg-sky-700 text-white text-xs font-bold rounded-lg active:scale-95 transition-all">＋ 相手パーティに追加</button>
@@ -746,9 +754,16 @@
                     <button onclick="launchDebugBattle()"
                         class="w-full py-3 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-900 font-black rounded-xl text-sm shadow-lg active:scale-95 transition-all pixel-font border-b-4 border-amber-800">⚔️ このパーティでバトル開始</button>
 
-                    <!-- ③ BGM試聴 -->
+                    <!-- ③ ブリーダーイラスト確認 -->
                     <div class="bg-[#2a1b15] border border-amber-900/50 rounded-xl p-3 space-y-2">
-                        <div class="text-xs font-bold text-amber-300">③ BGM試聴</div>
+                        <div class="text-xs font-bold text-amber-300">③ ブリーダーイラスト確認</div>
+                        <div class="text-[9px] text-gray-500">タップすると「勝負を仕掛けてきた！」演出画面でそのブリーダーのイラストを確認できます（バトルは開始されません）。</div>
+                        <div class="grid grid-cols-3 gap-1.5" id="debug-breeder-preview-list"></div>
+                    </div>
+
+                    <!-- ④ BGM試聴 -->
+                    <div class="bg-[#2a1b15] border border-amber-900/50 rounded-xl p-3 space-y-2">
+                        <div class="text-xs font-bold text-amber-300">④ BGM試聴</div>
                         <div class="text-[9px] text-gray-500">音が出ない場合は右上のサウンド設定アイコンでBGM音量を確認してください。</div>
                         <div class="grid grid-cols-2 gap-1.5">
                             <button onclick="AudioManager.playBGM('title')" class="py-1.5 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[10px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all">🏠 タイトル</button>

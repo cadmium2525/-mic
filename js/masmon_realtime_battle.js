@@ -1251,7 +1251,8 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             // 2回分（2撃分）まとめて処理する（外れた場合は当然2回分まとめて外れる）。
             const isDoubleHit = !!me.doubleHitNext;
             if (me.doubleHitNext) me.doubleHitNext = false;
-            let hitCount = isDoubleHit ? 2 : 1;
+            // sk.hitCount: 技自体が固定で複数回攻撃になる場合（例：メテオバーストの4回攻撃）の基本回数
+            let hitCount = (sk.hitCount || 1) * (isDoubleHit ? 2 : 1);
 
             if (isHit && otherTeam.substituteHits > 0) {
                 // みがわり餅が残っている場合、2回攻撃扱いの分だけ多く消費する。

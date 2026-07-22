@@ -359,7 +359,7 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, e
             visualName: (bossKey === 'set3') ? 'ゴビ' : (bossKey === 'set7') ? 'モスト' : null,
             emoji: bossDef.emoji,
             speciesId: bossDef.templateId,
-            aura: getRandomAuraKey(),
+            aura: bossDef.aura || getRandomAuraKey(),
             isAwakened: false,
             statusEffect: null,
             difficulty: 'kinnejiki',
@@ -712,7 +712,9 @@ const KIN_NEJIKI_BREEDER_VISUAL_NAME = {
     '迷子のトト': 'トト',
     '神速のレオン': 'レオン',
     '冥府の門番ハデス': 'ハデス',
-    '大地の母エレーナ': 'エレーナ'
+    '大地の母エレーナ': 'エレーナ',
+    'レジェンドブリーダー・コルト': 'コルト',
+    'レジェンドブリーダー・コルト（最終決戦）': 'コルト'
 };
 
 // --- ブリーダーの顔グラフィックを描画する ---
@@ -771,6 +773,7 @@ function launchKinNejikiBattleEngine(opponentTeamRaw, floorText, isNejiki, aiLev
     // ここから勝敗が決まるまでの間にアプリが強制終了された場合、タスクキルとして検知する
     markKinNejikiBattleStarted();
     MASMON_BATTLE_STATE.mode = 'cpu_team';
+    MASMON_BATTLE_STATE.isDebugBattle = false;
     MASMON_BATTLE_STATE.playerTeam = KIN_NEJIKI_STATE.playerParty.map(m => convertMasmonToBattleUnit(m, m.equip || null));
     MASMON_BATTLE_STATE.enemyTeam = opponentTeamRaw.map(m => convertMasmonToBattleUnit(m, m.equip || null));
     MASMON_BATTLE_STATE.playerMeta = [...KIN_NEJIKI_STATE.playerParty];

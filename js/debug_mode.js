@@ -29,8 +29,8 @@ const DEBUG_STATE = {
     opponentTeam: [],
     opponentIsBossSet: null, // ボスプリセット選択時は 3 or 7、自由編成時は null
     builder: {
-        player: { speciesId: null, selectedSkills: [] },
-        opponent: { speciesId: null, selectedSkills: [] }
+        player: { speciesId: null, selectedSkills: [], aura: null },
+        opponent: { speciesId: null, selectedSkills: [], aura: null }
     }
 };
 
@@ -86,7 +86,46 @@ function getDebugBossSkillPool(bossDef) {
 function openDebugScreen() {
     renderDebugSpeciesOptionsInto(document.getElementById('debug-player-species'));
     renderDebugSpeciesOptionsInto(document.getElementById('debug-opponent-species'));
+    renderDebugAuraOptionsInto(document.getElementById('debug-player-aura'), 'player');
+    renderDebugAuraOptionsInto(document.getElementById('debug-opponent-aura'), 'opponent');
     renderDebugTeamLists();
+    renderDebugBreederPreviewList();
+    changeScreen('screen-debug');
+}
+
+// -----------------------------------------------------
+// ブリーダーイラスト確認用の一覧を描画する
+// （KIN_NEJIKI_BREEDER_VISUAL_NAME に登録されている全ブリーダー名を並べる）
+// -----------------------------------------------------
+function renderDebugBreederPreviewList() {
+    const container = document.getElementById('debug-breeder-preview-list');
+    if (!container) return;
+    container.innerHTML = '';
+    Object.keys(KIN_NEJIKI_BREEDER_VISUAL_NAME).forEach(breederName => {
+        const btn = document.createElement('button');
+        btn.className = 'py-1.5 px-1 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[9px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all leading-tight';
+        btn.textContent = breederName;
+        btn.onclick = () => previewDebugBreederVisual(breederName);
+        container.appendChild(btn);
+    });
+}
+
+// 「勝負を仕掛けてきた！」演出画面をバトル無しで表示し、イラストだけ確認できるようにする
+function previewDebugBreederVisual(breederName) {
+    const isNejiki = breederName.includes('コルト');
+    showKinNejikiEncounterScreen(breederName, isNejiki);
+    const startBtn = document.getElementById('kinnejiki-encounter-start-btn');
+    const backBtn = document.getElementById('debug-breeder-preview-back-btn');
+    if (startBtn) startBtn.classList.add('hidden');
+    if (backBtn) backBtn.classList.remove('hidden');
+}
+
+// ブリーダーイラスト確認画面からデバッグ画面へ戻る
+function returnFromDebugBreederPreview() {
+    const startBtn = document.getElementById('kinnejiki-encounter-start-btn');
+    const backBtn = document.getElementById('debug-breeder-preview-back-btn');
+    if (startBtn) startBtn.classList.remove('hidden');
+    if (backBtn) backBtn.classList.add('hidden');
     changeScreen('screen-debug');
 }
 
@@ -120,6 +159,27 @@ function renderDebugSpeciesOptionsInto(selectEl) {
         bossGroup.appendChild(opt);
     });
     selectEl.appendChild(bossGroup);
+}
+
+// -----------------------------------------------------
+// オーラセレクトボックスの選択肢を描画（自分側・相手側で共通）
+// デバッグ専用ツールのため、モスト専用の「白」も含めて全オーラを選択可能にする。
+// -----------------------------------------------------
+function renderDebugAuraOptionsInto(selectEl, side) {
+    if (!selectEl) return;
+    selectEl.innerHTML = '<option value="">（オーラなし）</option>';
+    Object.values(AURA_TYPES).forEach(aura => {
+        const opt = document.createElement('option');
+        opt.value = aura.key;
+        opt.textContent = `${aura.emoji} ${aura.name}${aura.exclusive ? '（モスト専用）' : ''}`;
+        selectEl.appendChild(opt);
+    });
+    selectEl.value = DEBUG_STATE.builder[side].aura || '';
+}
+
+// オーラセレクトが変更された時の反映
+function onDebugAuraChange(side, auraKey) {
+    DEBUG_STATE.builder[side].aura = auraKey || null;
 }
 
 // 種族セレクトが変更されたら、その種族の技候補チェックボックス一覧を描画する
@@ -196,11 +256,7 @@ function buildDebugMonster(side) {
             visualName: DEBUG_BOSS_VISUAL_NAME[bossKey] || null,
             emoji: bossDef.emoji,
             speciesId: bossDef.templateId,
-            aura: null,
-            isAwakened: false,
-            statusEffect: null,
-            difficulty: 'debug',
-            stats: { ...bossDef.statsBase, life: bossDef.statsBase.maxLife },
+            aura: builder.aura || bossDef.aura || null,
             skills,
             skillEnhancements: {},
             equip: null,
@@ -221,7 +277,7 @@ function buildDebugMonster(side) {
         monsterBaseName: tmpl.name,
         emoji: tmpl.emoji,
         speciesId: builder.speciesId,
-        aura: null,
+        aura: builder.aura || null,
         isAwakened: false,
         statusEffect: null,
         difficulty: 'debug',
@@ -312,6 +368,7 @@ function launchDebugBattle() {
     const isBoss = !!bossSet;
 
     MASMON_BATTLE_STATE.mode = 'cpu_team';
+    MASMON_BATTLE_STATE.isDebugBattle = true;
     MASMON_BATTLE_STATE.playerTeam = DEBUG_STATE.playerTeam.map(m => convertMasmonToBattleUnit(m, m.equip || null));
     MASMON_BATTLE_STATE.enemyTeam = DEBUG_STATE.opponentTeam.map(m => convertMasmonToBattleUnit(m, m.equip || null));
     MASMON_BATTLE_STATE.playerMeta = [...DEBUG_STATE.playerTeam];
@@ -340,4 +397,35 @@ function launchDebugBattle() {
         : '🛠️ DEBUG BATTLE';
 
     startMasmonBattleCommon(floorText);
+}
+
+// -----------------------------------------------------
+// デバッグバトルを勝敗に関係なく即座に終了し、デバッグ画面へ戻る。
+// 本編の勝敗演出（screen-masmon-battle-result）は経由せず、その場で中断する。
+// -----------------------------------------------------
+function endDebugBattle() {
+    if (!MASMON_BATTLE_STATE.isDebugBattle) return;
+
+    MASMON_BATTLE_STATE.isBattleEnd = true;
+    MASMON_BATTLE_STATE.isPlayerTurnActive = false;
+    MASMON_BATTLE_STATE.isDebugBattle = false;
+    ACTIVE_BATTLE_MODE = 'adventure';
+
+    // マスモン団体戦専用のUI（チームアイコン・持ち込みアイテム欄）を確実に隠し、中身もクリアしておく
+    // （本編の勝敗画面表示時と同様の後始末。次にこの画面を使う時に残留表示されるのを防ぐ）
+    const playerTeamIconsEl = document.getElementById('player-team-icons');
+    const enemyTeamIconsEl = document.getElementById('enemy-team-icons');
+    const battleItemsEl = document.getElementById('battle-items-container');
+    if (playerTeamIconsEl) { playerTeamIconsEl.classList.add('hidden'); playerTeamIconsEl.innerHTML = ''; }
+    if (enemyTeamIconsEl) { enemyTeamIconsEl.classList.add('hidden'); enemyTeamIconsEl.innerHTML = ''; }
+    if (battleItemsEl) { battleItemsEl.classList.add('hidden'); battleItemsEl.innerHTML = ''; }
+    const endturnControlsEl = document.getElementById('battle-endturn-controls');
+    if (endturnControlsEl) endturnControlsEl.classList.remove('hidden');
+    const debugEndBtn = document.getElementById('debug-end-battle-btn');
+    if (debugEndBtn) debugEndBtn.classList.add('hidden');
+
+    if (typeof AudioManager !== 'undefined') AudioManager.playBGM('adventure');
+
+    changeScreen('screen-debug');
+    showToast('デバッグバトルを終了しました。');
 }

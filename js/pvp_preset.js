@@ -529,6 +529,7 @@ function renderPvpPresetMonsterEditorScreen() {
     if (auraContainer) {
         auraContainer.innerHTML = '';
         Object.values(AURA_TYPES).forEach(aura => {
+            if (aura.exclusive) return; // モスト専用オーラ等は通常のPvP編成では選べないようにする
             const isSelected = m.aura === aura.key;
             const btn = document.createElement('div');
             btn.className = `flex flex-col items-center justify-center p-2 rounded-lg border cursor-pointer active:scale-95 transition-all ${isSelected ? 'bg-amber-900/60 border-amber-400' : 'bg-[#16202b] border-amber-900/30'}`;
