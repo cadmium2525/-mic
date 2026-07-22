@@ -454,6 +454,9 @@ function applyPlayerSwitch(targetIdx) {
 
     // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
     applyAuraMonClassLifeBonus(target, getEnemyActive());
+    // 自分が交代したことで相手から見た有利不利も変わるため、相手側の最大ライフボーナスも再計算する
+    // （ライフ割合を保ったまま増減するため、被ダメージ中でも不自然な回復/減少にはならない）
+    applyAuraMonClassLifeBonus(getEnemyActive(), target);
 
     addLog(`あなたは【${target.name}】を繰り出した！`);
     renderMonsterVisual(document.getElementById('battle-player-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened, true, target.aura);
@@ -486,6 +489,9 @@ function applyEnemySwitch(targetIdx) {
 
     // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
     applyAuraMonClassLifeBonus(target, getPlayerActive());
+    // 相手（敵）が交代したことでこちらから見た有利不利も変わるため、プレイヤー側の最大ライフボーナスも再計算する
+    // （ライフ割合を保ったまま増減するため、被ダメージ中でも不自然な回復/減少にはならない）
+    applyAuraMonClassLifeBonus(getPlayerActive(), target);
 
     const sideLabel = MASMON_BATTLE_STATE.opponentOwnerName || '相手';
     addLog(`${sideLabel}は【${target.name}】を繰り出した！`);
@@ -1104,6 +1110,9 @@ function executeMasmonSwitch(targetIdx) {
 
     // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
     applyAuraMonClassLifeBonus(target, getEnemyActive());
+    // 自分が交代したことで相手から見た有利不利も変わるため、相手側の最大ライフボーナスも再計算する
+    // （ライフ割合を保ったまま増減するため、被ダメージ中でも不自然な回復/減少にはならない）
+    applyAuraMonClassLifeBonus(getEnemyActive(), target);
 
     addLog(`${prev.name} を引っ込め、【${target.name}】を繰り出した！`);
     showEffect('🔄 交代！ 🔄');

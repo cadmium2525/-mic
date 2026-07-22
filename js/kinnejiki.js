@@ -622,6 +622,9 @@ function maybeExecuteKinNejikiEnemySwitch() {
     MASMON_BATTLE_STATE.enemyActiveIdx = chosen.i;
     // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
     applyAuraMonClassLifeBonus(chosen.unit, opponent);
+    // 相手（敵）が交代したことでこちらから見た有利不利も変わるため、プレイヤー側の最大ライフボーナスも再計算する
+    // （ライフ割合を保ったまま増減するため、被ダメージ中でも不自然な回復/減少にはならない）
+    applyAuraMonClassLifeBonus(opponent, chosen.unit);
     const ownerLabel = MASMON_BATTLE_STATE.opponentOwnerName || '相手';
     addLog(`💦 ${active.name} は苦しい状況と判断し、${ownerLabel}は【${chosen.unit.name}】に交代した！`);
     showEffect('🔄 相手交代！ 🔄');
