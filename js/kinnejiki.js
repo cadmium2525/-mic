@@ -396,6 +396,55 @@ function pickKinNejikiAiPersonality() {
     return KIN_NEJIKI_AI_PERSONALITIES[Math.floor(Math.random() * KIN_NEJIKI_AI_PERSONALITIES.length)];
 }
 
+// --- 相手を弱体化・状態異常にする「妨害・デバフ技」の判定用（database.js のSKILLS_DBのeffectフィールドを参照） ---
+const KIN_NEJIKI_DEBUFF_EFFECTS = new Set([
+    'weaken_pow_int', 'evasion_def_down_20', 'def_down_15', 'def_down_15_perma',
+    'blind_2', 'paralyze_25', 'confuse_30', 'sleep_2', 'burn', 'poison',
+    'dot_mine', 'dot_mine_aura_bonus', 'guts_drain', 'stun_debuff_once'
+]);
+function kinNejikiIsDebuffSkill(skInfo) {
+    return !!(skInfo && skInfo.effect && KIN_NEJIKI_DEBUFF_EFFECTS.has(skInfo.effect));
+}
+
+// --- 技の「命中率を加味した期待ダメージ」を見積もる（実際のダメージ計算式に準拠。乱数・クリティカル・装備効果等は考慮しない目安値）---
+// 「期待ダメージ＝威力×命中率」で評価することで、当たれば大きいが外れやすい大技をAIが過信しないようにする。
+// getBuffedAttackStat等（database.js）を使うため、自身の攻撃バフ／弱体化や相手の防御バフ・防御崩し、
+// オーラ／モン類の有利不利も実戦と同じ形で反映される。
+function kinNejikiEstimateExpectedDamage(attacker, defender, skInfo) {
+    if (!skInfo || (skInfo.type !== 'pow' && skInfo.type !== 'int')) return 0;
+    const dmgMultiplier = (typeof MASMON_BATTLE_DAMAGE_MULTIPLIER === 'number') ? MASMON_BATTLE_DAMAGE_MULTIPLIER : 0.2;
+
+    const atk = skInfo.useDefAsAtk
+        ? getBuffedDefenseStat(attacker, getDefDownStat(attacker, attacker.stats.def), defender)
+        : getBuffedAttackStat(attacker, getWeakenedStat(attacker, skInfo.type === 'pow' ? attacker.stats.pow : attacker.stats.int), skInfo.type, defender);
+    const def = getDefDownStat(defender, getBuffedDefenseStat(defender, defender.stats.def, attacker)) * 1.5;
+    const rawDmg = Math.max(1, atk * skInfo.force - def * 0.35) * dmgMultiplier;
+
+    const hitStatDiff = (getBuffedHitStat(attacker, attacker.stats.hit, defender) - getEvasionStat(defender, defender.stats.spd, attacker)) * 0.5;
+    const hitChance = Math.max(10, Math.min(99, (skInfo.hitRate || 100) + hitStatDiff - getBlindHitPenalty(attacker)));
+
+    return rawDmg * (hitChance / 100);
+}
+
+// --- 自身の攻撃力が今どれくらい強化／弱体化されているかの簡易指標（1.0が基準） ---
+// atkUpStacks・サクラの舞・瞑想・妖狐の祈り等の自己バフと、わらわら等による弱体化（weakenStacks）を反映する。
+function kinNejikiSelfOffenseModifier(unit) {
+    const base = getWeakenedStat(unit, 100);
+    const powMod = getBuffedAttackStat(unit, base, 'pow', null) / 100;
+    const intMod = getBuffedAttackStat(unit, base, 'int', null) / 100;
+    return Math.max(powMod, intMod);
+}
+
+// --- 相手が能力（攻撃・防御・回避・クリティカル率等）を複数積み重ねているかどうかの簡易判定 ---
+function kinNejikiOpponentIsBuffedUp(opponent) {
+    const buffScore = (opponent.atkUpStacks || 0) + (opponent.sakuraBuffStacks || 0) * 2
+        + (opponent.defUpStacks || 0) + (opponent.nendoGatameStacks || 0)
+        + (opponent.mysticGuardStacks || 0) + (opponent.meisoStacks || 0)
+        + (opponent.youkoInoriStacks || 0) + (opponent.spdUpStacks || 0)
+        + (opponent.critUpStacks || 0);
+    return buffScore >= 2;
+}
+
 function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel, personality) {
     if (!affordableSkills || affordableSkills.length === 0) return null;
 
@@ -403,16 +452,9 @@ function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel, personality)
         return affordableSkills[Math.floor(Math.random() * affordableSkills.length)].key;
     }
 
-    // 簡易ダメージ見積り（乱数・クリティカル・装備効果等は考慮しない目安値）
-    const dmgMultiplier = (typeof MASMON_BATTLE_DAMAGE_MULTIPLIER === 'number') ? MASMON_BATTLE_DAMAGE_MULTIPLIER : 0.2;
-    const estimate = (skInfo) => {
-        if (skInfo.type !== 'pow' && skInfo.type !== 'int') return 0;
-        const atk = skInfo.useDefAsAtk ? e.stats.def : (skInfo.type === 'pow' ? e.stats.pow : e.stats.int);
-        const def = p.stats.def * 1.5;
-        const raw = atk * skInfo.force - def * 0.35;
-        return Math.max(1, raw) * dmgMultiplier;
-    };
-    const withEstimate = affordableSkills.map(s => ({ ...s, estDmg: estimate(s.info) }));
+    // 命中率を加味した期待ダメージ（実際の計算式に準拠）で技を評価する
+    const withEstimate = affordableSkills.map(s => ({ ...s, estDmg: kinNejikiEstimateExpectedDamage(e, p, s.info) }));
+    const lethalNow = withEstimate.filter(s => s.estDmg >= p.stats.life);
 
     // --- 性格によるバイアス（レベル2以上にのみ適用。レベル1は完全ランダムのまま） ---
     if (personality === 'sustain') {
@@ -424,9 +466,19 @@ function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel, personality)
             }
         }
     }
+
+    // 確殺が無く、相手が能力を積んでいるなら妨害・デバフ技を優先する
+    // （速攻型「speedy」は常に最大火力を狙う性格のため、ここでは対象外とする）
+    if (personality !== 'speedy' && lethalNow.length === 0 && kinNejikiOpponentIsBuffedUp(p)) {
+        const debuffOptions = withEstimate.filter(s => kinNejikiIsDebuffSkill(s.info));
+        if (debuffOptions.length > 0) {
+            debuffOptions.sort((a, b) => b.estDmg - a.estDmg);
+            return debuffOptions[0].key;
+        }
+    }
+
     if (personality === 'control') {
-        const lethalCheck = withEstimate.filter(s => s.estDmg >= p.stats.life);
-        if (lethalCheck.length === 0) {
+        if (lethalNow.length === 0) {
             const control = withEstimate.filter(s => (s.info.gutsDown || 0) >= 15);
             if (control.length > 0) {
                 control.sort((a, b) => (b.info.gutsDown || 0) - (a.info.gutsDown || 0));
@@ -435,24 +487,31 @@ function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel, personality)
         }
     }
     if (personality === 'speedy') {
-        const lethal = withEstimate.filter(s => s.estDmg >= p.stats.life);
-        if (lethal.length > 0) {
-            lethal.sort((a, b) => b.estDmg - a.estDmg);
-            return lethal[0].key;
+        if (lethalNow.length > 0) {
+            const sorted = lethalNow.slice().sort((a, b) => b.estDmg - a.estDmg);
+            return sorted[0].key;
         }
-        withEstimate.sort((a, b) => b.estDmg - a.estDmg);
-        return withEstimate[0].key;
+        const sorted = withEstimate.slice().sort((a, b) => b.estDmg - a.estDmg);
+        return sorted[0].key;
+    }
+
+    // 自身の攻撃バフが十分に整っている場合は、迷わず最大期待ダメージの技で押し切る
+    if (lethalNow.length === 0 && kinNejikiSelfOffenseModifier(e) >= 1.3) {
+        const attackOptions = withEstimate.filter(s => s.info.type === 'pow' || s.info.type === 'int');
+        if (attackOptions.length > 0) {
+            const sorted = attackOptions.slice().sort((a, b) => b.estDmg - a.estDmg);
+            return sorted[0].key;
+        }
     }
 
     // ここから下は「バランス型」、および性格による分岐に該当しなかった場合の
-    // 通常ロジック（従来通りのレベル別の判断基準）。
+    // 通常ロジック（従来通りのレベル別の判断基準。estDmgは命中率込みの見積りに更新済み）。
 
     // レベル4（ボス級）：確殺が狙えるなら最大火力、そうでなければ制圧（ガッツダウン／状態異常）を優先
     if (aiLevel >= 4) {
-        const lethal = withEstimate.filter(s => s.estDmg >= p.stats.life);
-        if (lethal.length > 0) {
-            lethal.sort((a, b) => b.estDmg - a.estDmg);
-            return lethal[0].key;
+        if (lethalNow.length > 0) {
+            const sorted = lethalNow.slice().sort((a, b) => b.estDmg - a.estDmg);
+            return sorted[0].key;
         }
         if (p.guts >= 55) {
             const control = withEstimate.filter(s => (s.info.gutsDown || 0) >= 20);
@@ -461,29 +520,50 @@ function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel, personality)
                 return control[0].key;
             }
         }
-        withEstimate.sort((a, b) => b.estDmg - a.estDmg);
-        return withEstimate[0].key;
+        const sorted = withEstimate.slice().sort((a, b) => b.estDmg - a.estDmg);
+        return sorted[0].key;
     }
 
     // レベル3：確殺があれば最大火力、なければ上位技からランダム（読み合いの余地を残す）
     if (aiLevel >= 3) {
-        const lethal = withEstimate.filter(s => s.estDmg >= p.stats.life);
-        if (lethal.length > 0) {
-            lethal.sort((a, b) => b.estDmg - a.estDmg);
-            return lethal[0].key;
+        if (lethalNow.length > 0) {
+            const sorted = lethalNow.slice().sort((a, b) => b.estDmg - a.estDmg);
+            return sorted[0].key;
         }
-        withEstimate.sort((a, b) => b.estDmg - a.estDmg);
-        const top = withEstimate.slice(0, Math.min(2, withEstimate.length));
+        const sorted = withEstimate.slice().sort((a, b) => b.estDmg - a.estDmg);
+        const top = sorted.slice(0, Math.min(2, sorted.length));
         return top[Math.floor(Math.random() * top.length)].key;
     }
 
     // レベル2：ガッツが十分溜まっていれば大技、そうでなければ低コスト技で手数を稼ぐ
     if (e.guts >= 70) {
-        withEstimate.sort((a, b) => b.estDmg - a.estDmg);
-        return withEstimate[0].key;
+        const sorted = withEstimate.slice().sort((a, b) => b.estDmg - a.estDmg);
+        return sorted[0].key;
     }
-    withEstimate.sort((a, b) => a.info.cost - b.info.cost);
-    return withEstimate[0].key;
+    const sorted = withEstimate.slice().sort((a, b) => a.info.cost - b.info.cost);
+    return sorted[0].key;
+}
+
+// --- 交代候補（または現状維持中の自分自身）のオーラ／モン類相性スコアを算出する ---
+// 有利なら加点・不利なら減点し、残りライフ割合分も加点する。
+// 控えにオーラ・モン類で有利な一体がいれば、その分だけ交代の優先度が上がる仕組み。
+function kinNejikiMatchupScore(unit, opponent) {
+    let score = (unit.stats.life / unit.stats.maxLife) * 40;
+    if (isAuraAdvantageous(unit.aura, opponent.aura)) score += 25;
+    if (isAuraAdvantageous(opponent.aura, unit.aura)) score -= 20;
+    if (isMonClassAdvantageous(unit.monsterBaseName, opponent.monsterBaseName)) score += 35;
+    if (isMonClassAdvantageous(opponent.monsterBaseName, unit.monsterBaseName)) score -= 30;
+    return score;
+}
+
+// --- 現在の相手に対して「まともな有効打」があるかどうかを判定する ---
+// 攻撃技が１つも無い、または命中率を加味した期待ダメージがどれも相手の最大ライフのごく一部
+// （目安：4%未満）にしか届かない場合、「今の相手には手詰まり」とみなして交代の検討対象にする。
+function kinNejikiHasViableAttack(unit, opponent, affordableSkills) {
+    const attackOptions = affordableSkills.filter(s => s.info.type === 'pow' || s.info.type === 'int');
+    if (attackOptions.length === 0) return false;
+    const best = Math.max(...attackOptions.map(s => kinNejikiEstimateExpectedDamage(unit, opponent, s.info)));
+    return best >= opponent.stats.maxLife * 0.04;
 }
 
 // --- 敵の自動交代判定（AIレベル3以上のみ、decideMasmonEnemyAction冒頭から呼ばれる） ---
@@ -494,22 +574,49 @@ function maybeExecuteKinNejikiEnemySwitch() {
     const active = team[idx];
     if (!active || active.stats.life <= 0) return false;
 
-    const lifeRatio = active.stats.life / active.stats.maxLife;
-    if (lifeRatio > 0.3) return false; // 3割より多く残っている間は交代を検討しない
+    const opponent = getPlayerActive();
+    if (!opponent || opponent.stats.life <= 0) return false;
 
     const candidates = team
         .map((unit, i) => ({ i, unit }))
         .filter(({ i, unit }) => i !== idx && unit.stats.life > 0);
     if (candidates.length === 0) return false;
 
+    const lifeRatio = active.stats.life / active.stats.maxLife;
+
+    // 現在の相手に有効打があるか（無ければ手詰まりとみなし交代を検討する）
+    const affordableSkills = active.skills
+        .map(skKey => ({ key: skKey, info: getMasmonEffectiveSkill(active, skKey) }))
+        .filter(skObj => skObj.info && active.guts >= skObj.info.cost && !isSkillUseLimitReached(active, skObj.key));
+    const noViableAttack = affordableSkills.length > 0 && !kinNejikiHasViableAttack(active, opponent, affordableSkills);
+
+    // 自身の攻撃力が大きく下がっている場合も交代（＝デバフ解除。交代で状態異常以外のバフ・デバフは解除される）の検討対象にする
+    const isSelfWeakened = kinNejikiSelfOffenseModifier(active) <= 0.8;
+
+    // ライフが3割より多く残っており、有効打もあり、弱体化もしていなければ交代は検討しない
+    if (lifeRatio > 0.3 && !noViableAttack && !isSelfWeakened) return false;
+
     // 温存判断が外れることもある（毎回必ず交代すると読みやすくなりすぎるため）
     if (Math.random() > 0.8) return false;
 
-    candidates.sort((a, b) => b.unit.stats.life - a.unit.stats.life);
-    const chosen = candidates[0];
+    // 控え候補をオーラ／モン類相性＋残りライフでスコアリングし、現状維持のスコアと比較する
+    // （控えにオーラ・モン類有利な一体がいれば、そちらが優先的に選ばれるようになる）
+    const scored = candidates.map(c => ({ ...c, score: kinNejikiMatchupScore(c.unit, opponent) }));
+    scored.sort((a, b) => b.score - a.score);
+    const best = scored[0];
+
+    const stayScore = kinNejikiMatchupScore(active, opponent)
+        - (noViableAttack ? 20 : 0) - (isSelfWeakened ? 15 : 0);
+
+    // 控えのスコアが現状維持を明確に上回らない限り、無理に交代はしない
+    if (best.score <= stayScore + 5) return false;
+
+    const chosen = best;
 
     clearBattleStatModifiersOnSwitch(active);
     MASMON_BATTLE_STATE.enemyActiveIdx = chosen.i;
+    // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
+    applyAuraMonClassLifeBonus(chosen.unit, opponent);
     const ownerLabel = MASMON_BATTLE_STATE.opponentOwnerName || '相手';
     addLog(`💦 ${active.name} は苦しい状況と判断し、${ownerLabel}は【${chosen.unit.name}】に交代した！`);
     showEffect('🔄 相手交代！ 🔄');
@@ -717,18 +824,29 @@ const KIN_NEJIKI_BREEDER_VISUAL_NAME = {
     'レジェンドブリーダー・コルト（最終決戦）': 'コルト'
 };
 
+// --- ブリーダー顔グラフィックのコンテナ見た目（デフォルト：丸型の顔グラフィック） ---
+const KIN_NEJIKI_BREEDER_VISUAL_DEFAULT_CLASS = 'w-32 h-32 rounded-full overflow-hidden border-4 border-amber-600/70 bg-[#1a120b] flex items-center justify-center text-6xl shadow-lg mb-5';
+// --- コルト専用：サイズが大きい全身一枚絵のため、丸型トリミングにはせず、縦長の枠にそのまま表示する ---
+const KIN_NEJIKI_BREEDER_VISUAL_COLT_CLASS = 'w-56 h-72 rounded-2xl overflow-hidden border-4 border-amber-600/70 bg-[#1a120b] flex items-center justify-center text-6xl shadow-lg mb-5';
+
 // --- ブリーダーの顔グラフィックを描画する ---
-// 対応する画像が無い相手（レジェンドブリーダー・コルト等）や、画像の読み込みに失敗した場合は
-// フォールバックの絵文字をそのまま表示する（renderMonsterVisualと同様の考え方）。
+// 対応する画像が無い相手や、画像の読み込みに失敗した場合はフォールバックの絵文字をそのまま表示する
+// （renderMonsterVisualと同様の考え方）。
+// コルトのみ画像が大きい全身一枚絵のため、丸型トリミング（object-cover）ではなく、
+// 専用の縦長の枠に全体をそのまま収める（object-contain）表示にする。
 function renderKinNejikiBreederVisual(containerEl, breederName, fallbackEmoji) {
     if (!containerEl) return;
     containerEl.innerHTML = '';
 
     const visualName = KIN_NEJIKI_BREEDER_VISUAL_NAME[breederName];
     if (!visualName) {
+        containerEl.className = KIN_NEJIKI_BREEDER_VISUAL_DEFAULT_CLASS;
         containerEl.textContent = fallbackEmoji || '🥊';
         return;
     }
+
+    const isColt = visualName === 'コルト';
+    containerEl.className = isColt ? KIN_NEJIKI_BREEDER_VISUAL_COLT_CLASS : KIN_NEJIKI_BREEDER_VISUAL_DEFAULT_CLASS;
 
     const imagePath = `images/${visualName}.png`;
     containerEl.dataset.visualSrc = imagePath;
@@ -742,12 +860,14 @@ function renderKinNejikiBreederVisual(containerEl, breederName, fallbackEmoji) {
         const imgEl = document.createElement('img');
         imgEl.src = imagePath;
         imgEl.alt = breederName;
-        imgEl.className = 'w-full h-full object-cover';
+        // コルトのみ：トリミングせず全身をそのまま収める。他のブリーダーは従来通り顔部分を丸くトリミング表示。
+        imgEl.className = isColt ? 'w-full h-full object-contain drop-shadow-lg' : 'w-full h-full object-cover';
         containerEl.appendChild(imgEl);
     };
     img.onerror = () => {
         console.warn(`[renderKinNejikiBreederVisual] 画像が見つかりません: ${imagePath}`);
         if (containerEl.dataset.visualSrc !== imagePath) return;
+        containerEl.className = KIN_NEJIKI_BREEDER_VISUAL_DEFAULT_CLASS;
         containerEl.textContent = fallbackEmoji || '🥊';
     };
 }

@@ -236,6 +236,9 @@ function startMasmonBattleCommon(floorText) {
 
     const p = getPlayerActive();
     const e = getEnemyActive();
+    // オーラ／モン類有利ボーナスをライフにも反映する（最初に対面する相手との相性で判定）
+    applyAuraMonClassLifeBonus(p, e);
+    applyAuraMonClassLifeBonus(e, p);
     const enemyOwner = MASMON_BATTLE_STATE.enemyMeta[MASMON_BATTLE_STATE.enemyActiveIdx].ownerName || '相手ブリーダー';
 
     document.getElementById('enemy-name').textContent = e.name;
@@ -449,6 +452,9 @@ function applyPlayerSwitch(targetIdx) {
     MASMON_BATTLE_STATE.playerActiveIdx = targetIdx;
     MASMON_BATTLE_STATE.isDefending = false;
 
+    // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
+    applyAuraMonClassLifeBonus(target, getEnemyActive());
+
     addLog(`あなたは【${target.name}】を繰り出した！`);
     renderMonsterVisual(document.getElementById('battle-player-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened, true, target.aura);
     document.getElementById('battle-player-name').textContent = target.name;
@@ -477,6 +483,9 @@ function applyEnemySwitch(targetIdx) {
     clearBattleStatModifiersOnSwitch(prev);
 
     MASMON_BATTLE_STATE.enemyActiveIdx = targetIdx;
+
+    // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
+    applyAuraMonClassLifeBonus(target, getPlayerActive());
 
     const sideLabel = MASMON_BATTLE_STATE.opponentOwnerName || '相手';
     addLog(`${sideLabel}は【${target.name}】を繰り出した！`);
@@ -1092,6 +1101,9 @@ function executeMasmonSwitch(targetIdx) {
     clearBattleStatModifiersOnSwitch(prev);
     MASMON_BATTLE_STATE.playerActiveIdx = targetIdx;
     MASMON_BATTLE_STATE.isDefending = false;
+
+    // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
+    applyAuraMonClassLifeBonus(target, getEnemyActive());
 
     addLog(`${prev.name} を引っ込め、【${target.name}】を繰り出した！`);
     showEffect('🔄 交代！ 🔄');

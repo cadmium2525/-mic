@@ -472,6 +472,7 @@ function clearBattleStatModifiersOnSwitch(unit) {
     unit.nendoGatameStacks = 0;
     unit.sakuraBuffStacks = 0;
     unit.meisoStacks = 0;
+    unit.kenbuStacks = 0;
     unit.mysticGuardStacks = 0;
     unit.youkoInoriStacks = 0;
     unit.gutsRecoveryDownNext = 0;
@@ -493,6 +494,7 @@ function clearBattleStatModifiersOnSwitch(unit) {
     unit.isDefending = false;
     unit.gobiStepActive = false;
     unit.spdUpStacks = 0;
+    unit.spdDownStacks = 0;
     // 猛毒（isPoisoned）はバトル終了まで治らないため、ここでは解除しない。
     // ただし交代すると蓄積したダメージ量はリセットされ、次に受けるダメージは1/16からやり直しになる。
     // （やけど isBurned／ねむり sleepTurns も他の状態異常と同様、控えに戻っても引き継がれるためリセットしない）
@@ -629,7 +631,8 @@ const SKILLS_DB = {
     napalm_cannon: { name: 'ナパームキャノン', aura: 'red', cost: 50, type: 'int', hitRate: 70, force: 2.0, gutsDown: 22, effect: 'burn', desc: '内蔵砲門から放つ火炎の砲撃。相手GUTS-22。さらに技命中時、相手をやけど状態にする（バトル終了まで治らず、毎ターン終了時に最大ライフの1/16のダメージを受ける）' },
 
     // --- デュラハン系統 ---
-    cho_dash_giri: { name: '超ダッシュ斬り', aura: null, cost: 20, type: 'pow', hitRate: 85, force: 1.1, gutsDown: 10, effect: null, desc: '踏み込みながら剣を振るう基本技。相手GUTS-10' },
+    cho_dash_giri: { name: '超ダッシュ斬り', aura: null, cost: 20, type: 'pow', hitRate: 85, force: 1.1, gutsDown: 10, priority: 1, effect: null, desc: '踏み込みながら剣を振るう基本技。相手GUTS-10。素早さに関わらず、必ず先制して行動できる（先制攻撃）' },
+    kenbu: { name: '剣舞', aura: null, cost: 30, type: 'buff_pow', hitRate: 100, force: 0, gutsDown: 0, useEffect: 'kenbu', desc: '剣を舞わせて心身を研ぎ澄ます。ダメージは無く、相手のガッツも減少させない。自身のちからと命中を25%上昇させる。3回まで重複可。' },
     midaretsuki: { name: '乱れ突き', aura: null, cost: 28, type: 'pow', hitRate: 82, force: 1.5, gutsDown: 12, effect: null, desc: '剣による素早い連続突き。相手GUTS-12' },
     mappufutatsu: { name: 'まっぷたつ', aura: 'red', cost: 42, type: 'pow', hitRate: 68, force: 2.3, gutsDown: 18, effect: 'dot_mine', desc: '巨大な剣で真っ二つに斬り裂く大技。相手GUTS-18。さらに命中した場合、深い傷跡が3ターンの間継続ダメージとなる' },
     combo_punch: { name: 'コンボパンチ', aura: null, cost: 48, type: 'pow', hitRate: 70, force: 2.5, gutsDown: 20, effect: 'selfcrit_up_3', desc: '拳と剣を織り交ぜた渾身の連続攻撃。相手GUTS-20。さらに命中した場合、自身のクリティカル率が25%アップする（3回まで重複可・交代するまで持続）' },
@@ -658,6 +661,7 @@ const SKILLS_DB = {
     dai_kaiten_otoshi: { name: '大回転落とし', aura: 'green', cost: 50, type: 'pow', hitRate: 70, force: 2.8, gutsDown: 18, critBonus: 0, effect: 'def_down_15', desc: '巨体で大きく回転し、渾身の力で相手を叩き落とす切り札。相手GUTS-18。さらに命中した場合、衝撃で30%の確率で相手の丈夫さを15%低下させる（最大3回まで累積・交代するまで持続）' },
     kaeru_no_uta: { name: 'かえるのうた', aura: 'green', cost: 40, type: 'int', hitRate: 90, force: 0.2, gutsDown: 42, critBonus: 0.10, effect: 'confuse_30', desc: '独特な鳴き声の合唱で相手の闘志を大きく削ぐ高命中技。相手GUTS-42。さらに命中した場合、30%の確率で相手を混乱状態にする（混乱中は毎ターン40%の確率で意味不明になり行動できなくなり、30%の確率で混乱が解除される）' },
     bakudan_nage: { name: 'ばくだん投げ', aura: 'red', cost: 28, type: 'int', hitRate: 73, force: 2.05, gutsDown: 30, critBonus: 0.03, effect: 'burn_30', desc: '爆弾を模した重い物体を放り投げる大技。相手GUTS-30。さらに技命中時30%の確率でやけど状態にする（バトル終了まで治らず、毎ターン終了時に最大ライフの1/16のダメージを受ける）' },
+    nen_eki: { name: '粘液', aura: 'green', cost: 30, type: 'int', hitRate: 80, force: 1.1, gutsDown: 20, effect: 'spd_down_stage1', desc: '粘り気の強い体液を吹きかける。相手GUTS-20。さらに命中した場合、相手の移動速度を1段階下げる（1回につき10%低下・最大3段階・相手が交代するまでの間持続）' },
 
     // --- ヒノトリ系統 ---
     kuchibashi: { name: 'くちばし', aura: null, cost: 16, type: 'pow', hitRate: 70, force: 0.5, gutsDown: 4, critBonus: 0, effect: null, desc: '鋭いくちばしで相手を鋭くつつく基本技。相手GUTS-4' },
@@ -804,7 +808,8 @@ const SKILLS_DB = {
     zan_assault_raid: { name: 'アサルトレイド', aura: null, cost: 44, type: 'pow', hitRate: 90, force: 2.5, gutsDown: 14, critBonus: 0.16, effect: 'dot_mine', desc: '怒涛の連続斬撃で相手を切り刻む。相手GUTS-14。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与える' },
     zan_rising_rave: { name: 'ライジングレイヴ', aura: 'yellow', cost: 42, type: 'pow', hitRate: 82, force: 2.7, gutsDown: 40, critBonus: 0.24, effect: 'dot_mine_aura_bonus', desc: '闘気を纏いながら斬り上げる渾身の一撃。相手GUTS-40。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与える。オーラ相性が有利な場合、継続ダメージがさらに8%上乗せされる' },
     zan_axis_bullet: { name: 'アクシズバレット', aura: 'red', cost: 50, type: 'pow', hitRate: 66, force: 2.3, gutsDown: 9, critBonus: 0.28, effect: 'dot_mine_def_down10', desc: '回転を加えて撃ち込む貫通力の高い斬撃。相手GUTS-9。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与え、さらに3ターンの間相手の丈夫さを10%低下させる' },
-    zan_dark_haunt: { name: 'ダークホウスト', aura: null, cost: 48, type: 'pow', hitRate: 95, force: 2.7, gutsDown: 5, critBonus: 0.22, effect: 'dot_mine', dotPct: 0.14, desc: '闇の力を宿した渾身の一刀両断。相手GUTS-5。さらに命中した場合、3ターンの間相手の最大ライフ14%の継続ダメージを与える' }
+    zan_dark_haunt: { name: 'ダークホウスト', aura: null, cost: 48, type: 'pow', hitRate: 95, force: 2.7, gutsDown: 5, critBonus: 0.22, effect: 'dot_mine', dotPct: 0.14, desc: '闇の力を宿した渾身の一刀両断。相手GUTS-5。さらに命中した場合、3ターンの間相手の最大ライフ14%の継続ダメージを与える' },
+    zan_makibishi: { name: 'まきびし', aura: null, cost: 20, type: 'hazard', hitRate: 100, force: 0, gutsDown: 0, noDamage: true, effect: 'stealth_rock', desc: '相手フィールド上に鋭いまきびしをばら撒く。相手はモンスターを交代して繰り出すたびに、最大ライフの1/8のダメージを受けるようになる（一度設置すると、バトルが終わるまでずっと効果が持続する）。' }
 };
 
 // --- ステータス獲得逓減システム (Diminishing Returns) ---
@@ -1030,6 +1035,14 @@ function applySkillOnHitEffect(caster, target, sk) {
             target.evasionDefDownStacks = Math.min(3, (target.evasionDefDownStacks || 0) + 1);
             logs.push(`💥 ${target.name} の回避と丈夫さが下がった！（累積${target.evasionDefDownStacks}/3・1回につき回避・丈夫さがそれぞれ20%低下、相手が交代するまでの間持続）`);
         }
+    } else if (sk.effect === 'spd_down_stage1') {
+        // 粘液専用：命中すれば必ず発動し、相手の移動速度（回避）を1段階（1回につき10%）低下させる（3回まで重複可・交代するまで持続）
+        if ((target.spdDownStacks || 0) >= 3) {
+            logs.push(`（${target.name} はすでに移動速度低下の効果が上限（3段階）に達しているため、追加の効果は発生しなかった）`);
+        } else {
+            target.spdDownStacks = Math.min(3, (target.spdDownStacks || 0) + 1);
+            logs.push(`🐌 ${target.name} の粘液にまみれ、移動速度が1段階下がった！（累積${target.spdDownStacks}/3段階・相手が交代するまでの間持続）`);
+        }
     } else if (sk.effect === 'dot_mine') {
         target.dotTurns = (typeof sk.dotTurns === 'number') ? sk.dotTurns : 3;
         target.dotPct = (typeof sk.dotPct === 'number') ? sk.dotPct : 0.08;
@@ -1206,6 +1219,10 @@ function applySkillOnUseEffect(caster, sk) {
         // 妖狐の祈り：技を繰り出すたびに自身のかしこさが50%上昇する（3回まで重複可）
         caster.youkoInoriStacks = Math.min(3, (caster.youkoInoriStacks || 0) + 1);
         logs.push(`🦊 ${caster.name} のかしこさが上昇した！（累積 ${caster.youkoInoriStacks}/3 ・ 1回につき50%アップ）`);
+    } else if (sk.useEffect === 'kenbu') {
+        // 剣舞：技を繰り出すたびに自身のちから・命中が25%上昇する（3回まで重複可）
+        caster.kenbuStacks = Math.min(3, (caster.kenbuStacks || 0) + 1);
+        logs.push(`💃 ${caster.name} は剣舞を舞い、心身を研ぎ澄ました！（累積 ${caster.kenbuStacks}/3 ・ 1回につきちから・命中25%アップ）`);
     } else if (sk.useEffect === 'nendo_gatame') {
         // ねんどがため：技を繰り出すたびに自身の丈夫さが80%上昇し、回避が10%低下する（3回まで重複可）
         caster.nendoGatameStacks = Math.min(3, (caster.nendoGatameStacks || 0) + 1);
@@ -1414,6 +1431,10 @@ function getEvasionStat(unit, spdVal, opponent) {
     if (unit.spdUpStacks > 0) {
         val = val * (1 + unit.spdUpStacks * 0.1);
     }
+    // 粘液等：相手の回避（移動速度）ステータスが1段階低下（1回につき10%、最大3回・交代するまで持続）
+    if (unit.spdDownStacks > 0) {
+        val = val * (1 - unit.spdDownStacks * 0.1);
+    }
     if (opponent) {
         val = val * getAuraMonClassStatMultiplier(unit, opponent);
     }
@@ -1440,6 +1461,7 @@ function getBuffedAttackStat(unit, statVal, statKind, opponent) {
     let mult = 1;
     if (unit.atkUpStacks > 0) mult += unit.atkUpStacks * 0.1;
     if (unit.sakuraBuffStacks > 0) mult += unit.sakuraBuffStacks * 0.5;
+    if (statKind === 'pow' && unit.kenbuStacks > 0) mult += unit.kenbuStacks * 0.25;
     if (statKind === 'int' && unit.meisoStacks > 0) mult += unit.meisoStacks * 0.3;
     if (statKind === 'int' && unit.youkoInoriStacks > 0) mult += unit.youkoInoriStacks * 0.5;
     if (opponent) mult *= getAuraMonClassStatMultiplier(unit, opponent);
@@ -1453,6 +1475,7 @@ function getBuffedHitStat(unit, statVal, opponent) {
     if (!unit) return statVal;
     let mult = 1;
     if (unit.meisoStacks > 0) mult += unit.meisoStacks * 0.3;
+    if (unit.kenbuStacks > 0) mult += unit.kenbuStacks * 0.25;
     if (opponent) mult *= getAuraMonClassStatMultiplier(unit, opponent);
     if (mult === 1) return statVal;
     return Math.floor(statVal * mult);
@@ -1469,6 +1492,23 @@ function getBuffedDefenseStat(unit, statVal, opponent) {
     if (opponent) mult *= getAuraMonClassStatMultiplier(unit, opponent);
     if (mult === 1) return statVal;
     return Math.floor(statVal * mult);
+}
+
+// --- ①②のオーラ／モン類有利ボーナスを「最大ライフ」にも反映する ---
+// pow/int/hit/丈夫さ/回避と違い、ライフは技を出すたびに再計算する値ではなく持続する値のため、
+// 「場に出た瞬間の相手」との相性で1回だけ判定し、以後は自分が交代して入れ替わるまで固定する
+// （バトル開始時・自分/相手の交代時にmasmon_battle.js側から呼び出される）。
+// unit.stats.baseMaxLife: 装備込みの元々の最大ライフ（このボーナスでは変更しない基準値。初回呼び出し時に自動保存される）
+function applyAuraMonClassLifeBonus(unit, opponent) {
+    if (!unit || !unit.stats || !opponent) return;
+    if (unit.stats.baseMaxLife == null) unit.stats.baseMaxLife = unit.stats.maxLife;
+    const mult = getAuraMonClassStatMultiplier(unit, opponent);
+    const newMax = Math.max(1, Math.floor(unit.stats.baseMaxLife * mult));
+    if (newMax === unit.stats.maxLife) return;
+    // 現在のライフ割合を保った状態で最大ライフを増減させる（変化の瞬間に全回復/即死させたりしないため）
+    const ratio = unit.stats.maxLife > 0 ? (unit.stats.life / unit.stats.maxLife) : 1;
+    unit.stats.maxLife = newMax;
+    unit.stats.life = Math.min(newMax, Math.max(1, Math.round(newMax * ratio)));
 }
 
 // --- 「神秘の守り」による毎ターンのガッツ回復量ボーナスを取得（1回につき+10、3回まで重複可） ---
@@ -1772,9 +1812,9 @@ const KIN_NEJIKI_SKILL_POOL = {
     arrowhead: ['tail_attack', 'zoom_punch', 'rocket_punch', 'needle_turn', 'w_needle_turn', 'tornado_attack', 'tail_blade', 'jiraibari'],
     nendoro:   ['zoom_punch_nendoro', 'mach_punch', 'meido_no_miyage', 'ganduke', 'body_press_nendoro', 'nagekiss_nendoro', 'nendo_gatame', 'youkaieki'],
     henger:    ['w_kick', 'laser_blade', 'laser_cutter', 'w_laser_sword', 'drill_rocket', 'w_drill_rocket', 'napalm_cannon'],
-    durahan:   ['cho_dash_giri', 'midaretsuki', 'mappufutatsu', 'combo_punch', 'daisharin', 'fujinken', 'raijinken'],
-    golem:     ['dekopin', 'shoda', 'claw_nage', 'double_chop', 'guruguru_attack', 'nobiru_punch', 'jishin'],
-    kawazumo:  ['harite', 'gappuri_yotsu', 'uwatenage', 'kawazutsuki', 'renzoku_harite', 'tobi_harite', 'kaeru_no_shita', 'dai_kaiten_otoshi', 'kaeru_no_uta', 'bakudan_nage'],
+    durahan:   ['cho_dash_giri', 'midaretsuki', 'mappufutatsu', 'combo_punch', 'daisharin', 'fujinken', 'raijinken', 'kenbu'],
+    golem:     ['dekopin', 'shoda', 'claw_nage', 'double_chop', 'guruguru_attack', 'nobiru_punch', 'jishin', 'stealth_rock'],
+    kawazumo:  ['harite', 'gappuri_yotsu', 'uwatenage', 'kawazutsuki', 'renzoku_harite', 'tobi_harite', 'kaeru_no_shita', 'dai_kaiten_otoshi', 'kaeru_no_uta', 'bakudan_nage', 'nen_eki'],
     hinotori:  ['kuchibashi', 'renzoku_kagizume', 'flame_typhoon', 'otakebi', 'bakuretsu_otoshi', 'flame_line', 'flame_beam', 'fire_bird', 'fire_wave', 'ebony_nova'],
     gari:      ['knuckle', 'holy_fire', 'god_bless', 'press', 'hurricane', 'holy_earth', 'spin_cutter', 'straight', 'holy_icicle', 'big_spin_cutter', 'god_final'],
     metalner:  ['ponken', 'hidarite', 'sunkei', 'senkousho', 'tetsuzankou', 'double_shoda', 'twin_shoda', 'meta_beam', 'sho_henka', 'taikyoku_henka'],
@@ -1785,7 +1825,7 @@ const KIN_NEJIKI_SKILL_POOL = {
     illumine:  ['plasma', 'shield_bash', 'straight_punch', 'venom_edge', 'assassin_claw', 'morning_star', 'arcana_flare', 'assault_arrow', 'buster_sword', 'ars_magna', 'blade_dance', 'requiem_end', 'mirage_claw', 'crimson_nova'],
     liger:     ['liger_hikkaki', 'liger_kamitsuki', 'body_slam', 'raigeki', 'one_two', 'reikidan', 'kagegeki', 'cho_raigeki', 'kuuchu_kaiten_attack', 'combination_liger', 'liger_raijinken', 'rakurai_kyoumei'],
     pixie:     ['pixie_harite', 'pixie_thunder', 'pixie_ray', 'pixie_lightning', 'pixie_megaray', 'pixie_nagekiss', 'pixie_highkick', 'pixie_van', 'pixie_gigaray', 'pixie_healraid', 'pixie_bigbang', 'pixie_astralray'],
-    zan:       ['zan_mirage_shift', 'zan_single_shot', 'zan_leg_arc', 'zan_stunner_blitz', 'zan_ohzantou', 'zan_double_summer', 'zan_meteor_drive', 'zan_assault_dance', 'zan_assault_raid', 'zan_rising_rave', 'zan_axis_bullet', 'zan_dark_haunt']
+    zan:       ['zan_mirage_shift', 'zan_single_shot', 'zan_leg_arc', 'zan_stunner_blitz', 'zan_ohzantou', 'zan_double_summer', 'zan_meteor_drive', 'zan_assault_dance', 'zan_assault_raid', 'zan_rising_rave', 'zan_axis_bullet', 'zan_dark_haunt', 'zan_makibishi']
 };
 
 // =====================================================
@@ -1964,7 +2004,7 @@ const MONSTER_MOLDS = {
         { skills: ['Wドリルロケット', 'ドリルロケット', 'ナパームキャノン', 'レーザーカッター'], equipment: '牙獣のお守り' },
     ],
     'デュラハン': [
-        { skills: ['超ダッシュ斬り', '乱れ突き', '風神剣', 'コンボパンチ'], equipment: '荒縄のガントレット' },
+        { skills: ['超ダッシュ斬り', '剣舞', '風神剣', 'コンボパンチ'], equipment: '荒縄のガントレット' },
         { skills: ['乱れ突き', 'コンボパンチ', '風神剣', '超ダッシュ斬り'], equipment: '鉄爪の欠片' },
         { skills: ['まっぷたつ', '大車輪', '雷神剣', '乱れ突き'], equipment: '護りの霊符' },
         { skills: ['雷神剣', 'まっぷたつ', 'コンボパンチ', '大車輪'], equipment: '癒しの若葉' },
@@ -1976,7 +2016,7 @@ const MONSTER_MOLDS = {
         { skills: ['雷神剣', 'コンボパンチ', 'まっぷたつ', '大車輪'], equipment: '闘魂の紅玉' },
     ],
     'ゴーレム': [
-        { skills: ['でこぴん', '掌打', 'ダブルチョップ', 'クロー投げ'], equipment: '石の腕輪' },
+        { skills: ['でこぴん', '掌打', 'ダブルチョップ', 'ステルスロック'], equipment: '石の腕輪' },
         { skills: ['クロー投げ', 'ダブルチョップ', '地震', '掌打'], equipment: '鉄爪の欠片' },
         { skills: ['のびーるパンチ', 'ぐるぐるアタック', '地震', 'ダブルチョップ'], equipment: '死闘の重錘' },
         { skills: ['ぐるぐるアタック', 'のびーるパンチ', 'クロー投げ', '地震'], equipment: '大亀の甲羅' },
@@ -1988,7 +2028,7 @@ const MONSTER_MOLDS = {
         { skills: ['ぐるぐるアタック', 'のびーるパンチ', 'クロー投げ', 'ダブルチョップ'], equipment: '牙獣のお守り' },
     ],
     'カワズモー': [
-        { skills: ['はり手', 'かわずつき', 'かえるのした', 'がっぷりよつ'], equipment: '荒縄のガントレット' },
+        { skills: ['はり手', 'かわずつき', 'かえるのした', '粘液'], equipment: '荒縄のガントレット' },
         { skills: ['がっぷりよつ', '上手投げ', 'かえるのした', 'はり手'], equipment: '石の腕輪' },
         { skills: ['連続はり手', '飛びはり手', 'ばくだん投げ', 'かわずつき'], equipment: '守護のペンダント' },
         { skills: ['大回転落とし', 'かえるのうた', '上手投げ', 'ばくだん投げ'], equipment: '不死鳥の羽根' },
@@ -2120,7 +2160,7 @@ const MONSTER_MOLDS = {
         { skills: ['アストラルレイ', 'ビッグバン', 'バン', 'ヒールレイド'], equipment: '牙獣のお守り' },
     ],
     'ザン': [
-        { skills: ['ミラージュシフト', 'シングルショット', 'レッグアーク', '王惨刀'], equipment: '荒縄のガントレット' },
+        { skills: ['ミラージュシフト', 'シングルショット', 'レッグアーク', 'まきびし'], equipment: '荒縄のガントレット' },
         { skills: ['レッグアーク', 'スタナーブリッツ', 'ダブルサマー', 'アサルトダンス'], equipment: '鉄爪の欠片' },
         { skills: ['メテオドライブ', 'アサルトダンス', 'スタナーブリッツ', 'アサルトレイド'], equipment: '死闘の重錘' },
         { skills: ['ライジングレイヴ', 'アクシズバレット', 'ダークホウスト', 'アサルトレイド'], equipment: '牙獣のお守り' },

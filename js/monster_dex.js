@@ -98,7 +98,7 @@ function showMonsterDexDetail(speciesId) {
     if (monClassInfo) {
         const beatsInfo = MON_CLASS_TYPES[monClassInfo.beats];
         document.getElementById('monster-dex-detail-desc').textContent =
-            `【モン類：${monClassInfo.emoji}${monClassInfo.name}（${beatsInfo.name}に有利：与ダメージ×2・被ダメージ×0.5）】\n${tmpl.desc}`;
+            `【モン類：${monClassInfo.emoji}${monClassInfo.name}（${beatsInfo.name}に有利：全ステータス×${MONCLASS_ADVANTAGE_STAT_MULTIPLIER}）】\n${tmpl.desc}`;
     } else {
         document.getElementById('monster-dex-detail-desc').textContent = tmpl.desc;
     }
