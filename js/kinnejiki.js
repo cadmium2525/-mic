@@ -464,12 +464,15 @@ function kinNejikiOpponentIsBuffedUp(opponent) {
 const KIN_NEJIKI_MOST_DEFEND_SENTINEL = '__most_defend__';
 
 // --- モスト（最終ボス）専用の思考ルーチン ---
-// 通常の性格別ロジック（speedy/control/sustain/balanced）とは別枠。以下2つを組み合わせたハイブリッド：
+// 通常の性格別ロジック（speedy/control/sustain/balanced）とは別枠。以下3つを組み合わせたハイブリッド：
 //   ① ガッツ温存：今は手が届かない高コスト技（メテオバースト等）が、次ターンの通常回復（+30見込み）で
 //      使えるようになりそうな時、確殺の見込みが無く自身のライフにも大きな不安が無いなら、
 //      「防御」して被ダメを半減しつつガッツを溜め、大技のバリエーションを引き出しやすくする。
 //   ② 技バリエーション：直近2ターンに使った技は避けて選び、同じ技（ドレイン等）の連発を防ぐ。
-// どちらも常に発動すると読みやすくなりすぎるため、①は確率で揺らぎを持たせている。
+//   ③ みがわり対策：プレイヤーがみがわりを設置している間は、4回攻撃のメテオバーストを最優先で使い、
+//      1ターンでみがわりを破壊しつつ実ダメージも通す（単発技の無駄打ちを避ける）。
+// ①は常に発動すると読みやすくなりすぎるため確率で揺らぎを持たせているが、③は対策として明確なため
+// メテオバーストが使える状況ならほぼ確定で優先する。
 function chooseKinNejikiMostAction(e, p, affordableSkills) {
     const withEstimate = affordableSkills.map(s => ({ ...s, estDmg: kinNejikiEstimateExpectedDamage(e, p, s.info) }));
     const lethalNow = withEstimate.filter(s => s.estDmg >= p.stats.life);
@@ -477,6 +480,29 @@ function chooseKinNejikiMostAction(e, p, affordableSkills) {
     // 確殺のチャンスがあるなら、温存もバリエーションも無視して最優先で撃ち抜く
     if (lethalNow.length > 0) {
         return lethalNow.slice().sort((a, b) => b.estDmg - a.estDmg)[0].key;
+    }
+
+    // --- ③ みがわり対策 ---
+    // プレイヤーがみがわりを設置している間（残り2回まで攻撃を無効化）、単発技を撃っても
+    // みがわりの残り回数を1つ減らすだけで実質何もダメージを与えられない。
+    // メテオバースト（4回攻撃）なら、みがわりの残り2回分を1ターンで消費しきった上で
+    // 残り2発が本体に直撃するため、みがわり対策として最優先で使う。
+    const playerHasSubstitute = (MASMON_BATTLE_STATE.playerSubstituteHits || 0) > 0;
+    if (playerHasSubstitute && (e.skills || []).includes('boss_meteor')) {
+        const meteorNow = affordableSkills.find(s => s.key === 'boss_meteor');
+        if (meteorNow) {
+            return 'boss_meteor';
+        }
+        // メテオバーストがまだ使えない場合、次ターンの通常回復（+30見込み）で使えるようになりそうなら、
+        // 自身のライフに大きな不安が無い限り防御して待つ（単発技を撃ってもみがわりの回数を1つ減らして
+        // 終わるだけの無駄打ちになるため、通常のガッツ温存判定より優先してここで待つ）。
+        const meteorInfo = getMasmonEffectiveSkill(e, 'boss_meteor');
+        const selfLifeRatioForMeteorWait = e.stats.life / e.stats.maxLife;
+        if (meteorInfo && !isSkillUseLimitReached(e, 'boss_meteor') && (e.guts + 30) >= meteorInfo.cost && selfLifeRatioForMeteorWait >= 0.3) {
+            return KIN_NEJIKI_MOST_DEFEND_SENTINEL;
+        }
+        // メテオバーストが既に使用回数上限に達している等、待っても仕方がない場合は
+        // 通常のガッツ温存・技バリエーション判定にそのまま流れる。
     }
 
     // --- ① ガッツ温存判定 ---
