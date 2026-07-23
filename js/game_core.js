@@ -69,13 +69,16 @@ function renderMonsterVisual(containerEl, name, emoji, isAwakened = false, isPar
 
     const prefix = isAwakened ? "覚醒" : "";
     const imagePath = `images/${prefix}${cleanName}.png`;
+    // 日本語ファイル名をそのままCSSのurl()に渡すと、環境によってはmask-image側の読み込みだけ
+    // 不安定になることがあるため、URLとしてきちんとエンコードしたものを使う。
+    const encodedImagePath = encodeURI(imagePath);
 
     containerEl.dataset.visualSrc = imagePath;
     // 絶対配置のオーラ着色オーバーレイを正しい位置に重ねるための基準にする
     if (!containerEl.style.position) containerEl.style.position = 'relative';
 
     const img = new Image();
-    img.src = imagePath;
+    img.src = encodedImagePath;
     img.onload = () => {
         if (containerEl.dataset.visualSrc !== imagePath) return;
         const oldImgNow = containerEl.querySelector('img.monster-visual-img');
@@ -86,7 +89,7 @@ function renderMonsterVisual(containerEl, name, emoji, isAwakened = false, isPar
         const flipClass = isPartner ? '' : ' -scale-x-100';
 
         const imgEl = document.createElement('img');
-        imgEl.src = imagePath;
+        imgEl.src = encodedImagePath;
         imgEl.alt = name;
         // 画像は右向きが基本のため、敵側（isPartner=false）のみ左右反転して表示する
         imgEl.className = `monster-visual-img w-full h-full object-contain max-h-24 max-w-24 mx-auto drop-shadow-lg${flipClass}`;
@@ -104,8 +107,8 @@ function renderMonsterVisual(containerEl, name, emoji, isAwakened = false, isPar
             tintEl.style.backgroundColor = aura.hex;
             tintEl.style.opacity = String(MONSTER_VISUAL_AURA_TINT_STRENGTH);
             tintEl.style.mixBlendMode = MONSTER_VISUAL_AURA_TINT_BLEND_MODE;
-            tintEl.style.webkitMaskImage = `url(${imagePath})`;
-            tintEl.style.maskImage = `url(${imagePath})`;
+            tintEl.style.webkitMaskImage = `url("${encodedImagePath}")`;
+            tintEl.style.maskImage = `url("${encodedImagePath}")`;
             tintEl.style.webkitMaskMode = 'alpha';
             tintEl.style.maskMode = 'alpha';
             tintEl.style.webkitMaskSize = 'contain';
