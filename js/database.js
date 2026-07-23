@@ -515,13 +515,21 @@ function clearBattleStatModifiersOnSwitch(unit) {
     unit.spdDownStacks = 0;
     // 猛毒（isPoisoned）はバトル終了まで治らないため、ここでは解除しない。
     // ただし交代すると蓄積したダメージ量はリセットされ、次に受けるダメージは1/16からやり直しになる。
-    // （やけど isBurned／ねむり sleepTurns も他の状態異常と同様、控えに戻っても引き継がれるためリセットしない）
+    // （やけど isBurned／ねむり sleepTurns も他の状態異常と同様、控えに戻っても引き継がれるためリセットしない。
+    //  のろい isCursed も同様に固定割合（1/4）のダメージなのでカウンターが無く、ここでは何もリセットしない）
     if (unit.isPoisoned) {
         unit.poisonCounter = 0;
     }
+    // 最終奥義（デュラハン）の「ちから・かしこさ15%上昇（1回のみ）」は、他の重複バフ同様
+    // 交代すると解除される（再度技を使えば再度上昇させられる）。
+    unit.durahanBuffStacks = 0;
+    // ドロン（ゴースト）の「連続使用」判定用の直近使用技記録も、控えに戻ったタイミングでリセットする
+    // （場を離れた時点で「連続」の文脈が途切れるとみなす）。
+    unit.lastSkillKeyUsed = null;
 }
 
-// --- 状態異常（マヒ／混乱＝意味不明／出血／やけど／ねむり／猛毒）のバッジ表示用テキストを返す（無ければ空文字） ---
+// --- 状態異常（マヒ／混乱＝意味不明／出血／やけど／ねむり／猛毒／のろい）のバッジ表示用テキストを返す（無ければ空文字） ---
+// 猛毒（☠️）とのろい（👻）は見た目が被らないよう別アイコンにしている。
 // 控えにいるユニットでも状態異常は引き継がれるため、アクティブ/控え問わず同じ関数で判定できる。
 function getStatusAilmentBadgeText(unit) {
     if (!unit) return '';
@@ -533,6 +541,7 @@ function getStatusAilmentBadgeText(unit) {
     if (unit.sleepTurns > 0) text += '💤';
     if (unit.yawnTurns > 0) text += '🥱';
     if (unit.isPoisoned) text += '☠️';
+    if (unit.isCursed) text += '👻';
     return text;
 }
 
@@ -657,6 +666,7 @@ const SKILLS_DB = {
     daisharin: { name: '大車輪', aura: 'green', cost: 40, type: 'pow', hitRate: 65, force: 2.2, gutsDown: 15, effect: 'hitdown_stack_3', desc: '剣を大きく振り回す遠距離の大技。相手GUTS-15。さらに命中した場合、目眩ましとなり相手の命中率が10%低下する（最大3回まで累積、バトル終了まで持続）' },
     fujinken: { name: '風神剣', aura: 'green', cost: 25, type: 'int', hitRate: 88, force: 1.2, gutsDown: 25, effect: 'paralyze_25', desc: '風を纏った剣閃で相手の闘志を削ぐ。相手GUTS-25。さらに技命中時25%の確率で風圧で怯みマヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
     raijinken: { name: '雷神剣', aura: 'yellow', cost: 45, type: 'int', hitRate: 66, force: 2.6, gutsDown: 20, effect: 'paralyze_25', desc: '雷を纏わせた渾身の一閃。相手GUTS-20。さらに技命中時25%の確率で感電によりマヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
+    saigo_ougi: { name: '最終奥義', aura: null, cost: 40, type: 'pow', hitRate: 90, force: 2.6, gutsDown: 15, useCombinedPowInt: true, useEffect: 'self_pow_int_up15_once', desc: 'デュラハン渾身の最終奥義。相手GUTS-15。自身のちから・かしこさを15%上昇させる（重複せず1回のみ有効）。さらに、ちからとかしこさを合算した数値を攻撃力として扱う。' },
 
     // --- ゴーレム系統 ---
     dekopin: { name: 'でこぴん', aura: null, cost: 12, type: 'pow', hitRate: 90, force: 0.5, gutsDown: 6, effect: null, desc: '軽く弾き飛ばす基本技。相手GUTS-6' },
@@ -741,6 +751,8 @@ const SKILLS_DB = {
     card: { name: 'カード', aura: 'yellow', cost: 24, type: 'int', hitRate: 72, force: 1.15, gutsDown: 16, critBonus: 0.12, effect: 'dot_mine', desc: '呪いを込めた一枚のカードを相手に投げつける。相手GUTS-16。さらに命中した場合、呪いの効果で3ターンの間継続ダメージを与える' },
     ohki_otoshimono: { name: '大きなおとしもの', aura: 'yellow', cost: 33, type: 'int', hitRate: 78, force: 1.7, gutsDown: 21, critBonus: 0.17, effect: 'paralyze_25', desc: '頭上から巨大な物体を落として相手を直撃する。相手GUTS-21。さらに技命中時25%の確率で強い衝撃でマヒ状態にする（バトル終了まで治らず、25%の確率で行動不能になり、移動速度が3段階低下する）' },
     ghost_flash: { name: 'ゴーストフラッシュ', aura: 'yellow', cost: 48, type: 'int', hitRate: 70, force: 2.75, gutsDown: 28, critBonus: 0.13, effect: 'perma_dmg_up_20', desc: '無数の霊が一斉に光り輝く、この上ない最大の切り札。相手GUTS-28。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
+    noroi: { name: 'のろい', aura: null, cost: 10, type: 'int', hitRate: 100, force: 0, gutsDown: 0, noDamage: true, selfDamagePct: 0.5, effect: 'curse', desc: '自分の最大HPの半分を代償に、相手を「のろい状態」にする。のろい状態の相手は、毎ターン終了時に最大HPの1/4のダメージを受け続ける（バトル終了まで治らない）。' },
+    doron: { name: 'ドロン', aura: null, cost: 30, type: 'evade', hitRate: 100, force: 0, gutsDown: 0, noDamage: true, priority: 1, consecutiveSuccessRate: 0.33, desc: '素早く姿を消し、このターンの相手の攻撃を完全に回避する。素早さに関わらず必ず先制して行動できる（先制技）。連続で使用すると成功率が33%に低下する。' },
 
     // --- ゲル系統 ---
     tsukisashi: { name: '突き刺し', aura: 'blue', cost: 16, type: 'pow', hitRate: 50, force: 1.1, gutsDown: 3, critBonus: 0.10, effect: null, desc: 'ゲル状の体の一部を尖らせて突き刺す基本技。相手GUTS-3' },
@@ -885,7 +897,7 @@ function getGutsDownMitigation(defStat) {
 
 // --- ダメージランク判定ヘルパー ---
 function getDamageRank(force, type) {
-    if (type === 'heal' || type === 'buff_guts' || type === 'buff_pow' || type === 'hazard') return 'G';
+    if (type === 'heal' || type === 'buff_guts' || type === 'buff_pow' || type === 'hazard' || type === 'evade') return 'G';
     if (force >= 3.0) return 'S+';
     if (force >= 2.5) return 'S';
     if (force >= 2.0) return 'A';
@@ -941,6 +953,14 @@ function getSkillStyle(sk) {
             borderClass: 'border-stone-500',
             textClass: 'text-stone-200',
             textIntensity: 'text-stone-300'
+        };
+    }
+    if (type === 'evade') {
+        return {
+            bgClass: 'bg-slate-800/60 hover:bg-slate-700/70',
+            borderClass: 'border-slate-500',
+            textClass: 'text-slate-200',
+            textIntensity: 'text-slate-300'
         };
     }
     // 'pow'（ちから技）およびそれ以外はデフォルトで赤系
@@ -1142,6 +1162,15 @@ function applySkillOnHitEffect(caster, target, sk) {
         } else {
             logs.push({ short: `（${target.name} は堪えた！）`, detail: `（${target.name} は堪えて猛毒を免れた）` });
         }
+    } else if (sk.effect === 'curse') {
+        // のろい：バトル終了まで治らず、毎ターン終了時に最大ライフの1/4のダメージを受け続ける。
+        // 猛毒（isPoisoned／☠️）とは別の状態異常として扱い、見た目のバッジも👻で区別する。
+        if (target.isCursed) {
+            logs.push({ short: `（${target.name} には追加効果なし）`, detail: `（${target.name} はすでにのろい状態のため、追加の効果は発生しなかった）` });
+        } else {
+            target.isCursed = true;
+            logs.push({ short: `👻 ${target.name} はのろい状態になった！`, detail: `👻 ${target.name} はのろい状態になった！（バトル終了まで治らず、毎ターン終了時に最大ライフの1/4のダメージを受け続ける）` });
+        }
     } else if (sk.effect === 'self_dizzy') {
         caster.blindTurns = Math.max(caster.blindTurns || 0, 1);
         logs.push({ short: `😵 ${caster.name} は目を回してしまった！`, detail: `😵 ${caster.name} は勢い余って目を回してしまった！（1ターンの間、自身の命中率が低下する）` });
@@ -1267,6 +1296,14 @@ function applySkillOnUseEffect(caster, sk) {
         // みちづれ：このターンに相手の攻撃や状態異常で自身のライフが0になった場合、相手のライフも0にする
         caster.michizureActive = true;
         logs.push({ short: `💀 ${caster.name} はみちづれの構えを取った！`, detail: `💀 ${caster.name} はみちづれの構えを取った！（このターン、相手の攻撃や状態異常でライフが0になった場合、相手のライフも0になる）` });
+    } else if (sk.useEffect === 'self_pow_int_up15_once') {
+        // 最終奥義：ちから・かしこさを15%上昇させる（重複せず1回のみ有効。2回目以降使用しても追加効果は発生しない）
+        if ((caster.durahanBuffStacks || 0) >= 1) {
+            logs.push({ short: `（${caster.name} には追加効果なし）`, detail: `（${caster.name} はすでにこの技によるちから・かしこさ上昇効果を得ているため、追加の上昇は発生しなかった）` });
+        } else {
+            caster.durahanBuffStacks = 1;
+            logs.push({ short: `⚔️ ${caster.name} のちから・かしこさが上昇した！`, detail: `⚔️ ${caster.name} は闘志を極限まで高め、ちから・かしこさが15%上昇した！（この効果は重複せず1回のみ）` });
+        }
     }
     return logs;
 }
@@ -1287,12 +1324,12 @@ function applyShieldAbsorption(defender, damage) {
 // 戻り値: {
 //   confused: true/false,
 //   failReason: 'sleep'|'confuse'|'paralyze'|'flinch'|null,
-//   dotDamage: 数値（出血・やけど・猛毒の合計。実際にライフへ反映する処理は各バトルエンジン側で行う）,
-//   bleedDamage / burnDamage / poisonDamage: 内訳（個別にログ表示するため）
+//   dotDamage: 数値（出血・やけど・猛毒・のろいの合計。実際にライフへ反映する処理は各バトルエンジン側で行う）,
+//   bleedDamage / burnDamage / poisonDamage / curseDamage: 内訳（個別にログ表示するため）
 // }
 //   confused=true の場合、そのターンは状態異常により行動失敗（failReasonで原因を判別できる）
 function tickStatusTurnsAndCheckConfusion(unit) {
-    if (!unit) return { confused: false, failReason: null, dotDamage: 0, bleedDamage: 0, burnDamage: 0, poisonDamage: 0 };
+    if (!unit) return { confused: false, failReason: null, dotDamage: 0, bleedDamage: 0, burnDamage: 0, poisonDamage: 0, curseDamage: 0 };
 
     const maxLifeVal = unit.stats ? unit.stats.maxLife : unit.maxLife;
 
@@ -1317,7 +1354,13 @@ function tickStatusTurnsAndCheckConfusion(unit) {
         poisonDamage = Math.max(1, Math.floor((maxLifeVal || 0) * unit.poisonCounter / 16));
     }
 
-    const dotDamage = bleedDamage + burnDamage + poisonDamage;
+    // のろい：猛毒と異なり増加はせず、バトル終了まで治らず毎ターン終了時に最大ライフの1/4の固定ダメージを受け続ける。
+    let curseDamage = 0;
+    if (unit.isCursed) {
+        curseDamage = Math.max(1, Math.floor((maxLifeVal || 0) / 4));
+    }
+
+    const dotDamage = bleedDamage + burnDamage + poisonDamage + curseDamage;
 
     // 衰弱（weaken_pow_int）はターン経過では解除されず、交代するまで持続する（clearBattleStatModifiersOnSwitchでリセット）。
     if (unit.defDownTurns > 0) unit.defDownTurns--;
@@ -1359,12 +1402,12 @@ function tickStatusTurnsAndCheckConfusion(unit) {
         if (Math.random() < 0.5 && !failReason) failReason = 'flinch';
     }
 
-    return { confused: !!failReason, failReason, dotDamage, bleedDamage, burnDamage, poisonDamage };
+    return { confused: !!failReason, failReason, dotDamage, bleedDamage, burnDamage, poisonDamage, curseDamage };
 }
 
-// --- 出血／やけど／猛毒のダメージを種類ごとに個別のログ行として構築しつつ、実際にライフへ反映する ---
-// tickStatusTurnsAndCheckConfusion() の戻り値（result）を受け取り、bleedDamage/burnDamage/poisonDamageを
-// それぞれ🩸/🔥/☠️の別ログとして表示する。masmon_battle.js（stats.life）・masmon_realtime_battle.js（life）
+// --- 出血／やけど／猛毒／のろいのダメージを種類ごとに個別のログ行として構築しつつ、実際にライフへ反映する ---
+// tickStatusTurnsAndCheckConfusion() の戻り値（result）を受け取り、bleedDamage/burnDamage/poisonDamage/curseDamageを
+// それぞれ🩸/🔥/☠️/👻の別ログとして表示する。masmon_battle.js（stats.life）・masmon_realtime_battle.js（life）
 // どちらのライフ構造にも対応できるよう、getLife/setLifeで読み書きを吸収する。
 // 戻り値: ログ文字列の配列（0件の場合は空配列）
 function applyDotDamageAndBuildLogs(name, result, getLife, setLife) {
@@ -1374,6 +1417,7 @@ function applyDotDamageAndBuildLogs(name, result, getLife, setLife) {
         { amount: result.bleedDamage, emoji: '🩸', label: '出血' },
         { amount: result.burnDamage, emoji: '🔥', label: 'やけど' },
         { amount: result.poisonDamage, emoji: '☠️', label: '猛毒' },
+        { amount: result.curseDamage, emoji: '👻', label: 'のろい' },
     ];
     steps.forEach(step => {
         if (step.amount > 0) {
@@ -1497,6 +1541,8 @@ function getBuffedAttackStat(unit, statVal, statKind, opponent) {
     if (statKind === 'pow' && unit.kenbuStacks > 0) mult += unit.kenbuStacks * 0.25;
     if (statKind === 'int' && unit.meisoStacks > 0) mult += unit.meisoStacks * 0.3;
     if (statKind === 'int' && unit.youkoInoriStacks > 0) mult += unit.youkoInoriStacks * 0.5;
+    // 最終奥義（デュラハン）：ちから・かしこさ両方に15%上昇（重複なし・交代で解除）
+    if (unit.durahanBuffStacks > 0) mult += unit.durahanBuffStacks * 0.15;
     if (unit.arsMagnaBuffActive) mult += 0.2;
     if (opponent) mult *= getAuraMonClassStatMultiplier(unit, opponent);
     if (mult === 1) return statVal;
@@ -1848,14 +1894,14 @@ const KIN_NEJIKI_SKILL_POOL = {
     arrowhead: ['tail_attack', 'zoom_punch', 'rocket_punch', 'needle_turn', 'w_needle_turn', 'tornado_attack', 'tail_blade', 'jiraibari'],
     nendoro:   ['zoom_punch_nendoro', 'mach_punch', 'meido_no_miyage', 'ganduke', 'body_press_nendoro', 'nagekiss_nendoro', 'nendo_gatame', 'youkaieki'],
     henger:    ['w_kick', 'laser_blade', 'laser_cutter', 'w_laser_sword', 'drill_rocket', 'w_drill_rocket', 'napalm_cannon'],
-    durahan:   ['cho_dash_giri', 'midaretsuki', 'mappufutatsu', 'combo_punch', 'daisharin', 'fujinken', 'raijinken', 'kenbu'],
+    durahan:   ['cho_dash_giri', 'midaretsuki', 'mappufutatsu', 'combo_punch', 'daisharin', 'fujinken', 'raijinken', 'kenbu', 'saigo_ougi'],
     golem:     ['dekopin', 'shoda', 'claw_nage', 'double_chop', 'guruguru_attack', 'nobiru_punch', 'jishin', 'stealth_rock'],
     kawazumo:  ['harite', 'gappuri_yotsu', 'uwatenage', 'kawazutsuki', 'renzoku_harite', 'tobi_harite', 'kaeru_no_shita', 'dai_kaiten_otoshi', 'kaeru_no_uta', 'bakudan_nage', 'nen_eki'],
     hinotori:  ['kuchibashi', 'renzoku_kagizume', 'flame_typhoon', 'otakebi', 'bakuretsu_otoshi', 'flame_line', 'flame_beam', 'fire_bird', 'fire_wave', 'ebony_nova'],
     gari:      ['knuckle', 'holy_fire', 'god_bless', 'press', 'hurricane', 'holy_earth', 'spin_cutter', 'straight', 'holy_icicle', 'big_spin_cutter', 'god_final'],
     metalner:  ['ponken', 'hidarite', 'sunkei', 'senkousho', 'tetsuzankou', 'double_shoda', 'twin_shoda', 'meta_beam', 'sho_henka', 'taikyoku_henka'],
     kijin:     ['zutsuki', 'onite', 'nagetobashi', 'onitsume', 'kijin_ranbu', 'chiretsuzan', 'onikokushou', 'ashura', 'rasetsu', 'rashomon'],
-    ghost:     ['piko_hammer', 'taiatari', 'ohpunch', 'combination', 'odokasu', 'dokuro_beam', 'bikkuri_dokuro', 'card', 'ohki_otoshimono', 'ghost_flash', 'michizure'],
+    ghost:     ['piko_hammer', 'taiatari', 'ohpunch', 'combination', 'odokasu', 'dokuro_beam', 'bikkuri_dokuro', 'card', 'ohki_otoshimono', 'ghost_flash', 'michizure', 'noroi', 'doron'],
     gel:       ['tsukisashi', 'kushizashi', 'mana_drain', 'muchi', 'g_cube', 'gel_press', 'hae_tataki', 'parabola_beam', 'cho_parabola_beam', 'koma_attack', 'taihou', 'gel_copter'],
     ark:       ['waga_hitomi', 'sekai_wo_yurase', 'tobe_shinritsu_no_yaiba', 'shinkou_yo_kegare_wo_harae', 'ima_koso_shin_naru_mezame', 'aoki_ibara_yo_toga_wo_ugate', 'sabaki_no_hikari_yo_kudare', 'shuuen_ni_sukui_wo_ataeyo', 'shiten_no_tsurugi_yo_oritate', 'seiya_no_kane_yo_narihibike', 'inore_rinne_no_wa_yo', 'ten_no_jihi_yo_shimesareyo'],
     illumine:  ['plasma', 'shield_bash', 'straight_punch', 'venom_edge', 'assassin_claw', 'morning_star', 'arcana_flare', 'assault_arrow', 'buster_sword', 'ars_magna', 'blade_dance', 'requiem_end', 'mirage_claw', 'crimson_nova'],
@@ -2049,7 +2095,7 @@ const MONSTER_MOLDS = {
         // --- 型6 ---
         { skills: ['雷神剣', 'まっぷたつ', '大車輪', '乱れ突き'], equipment: '牙獣のお守り' },
         // --- 型7 ---
-        { skills: ['雷神剣', 'コンボパンチ', 'まっぷたつ', '大車輪'], equipment: '闘魂の紅玉' },
+        { skills: ['雷神剣', 'コンボパンチ', 'まっぷたつ', '最終奥義'], equipment: '闘魂の紅玉' },
     ],
     'ゴーレム': [
         { skills: ['でこぴん', '掌打', 'ダブルチョップ', 'ステルスロック'], equipment: '石の腕輪' },
@@ -2133,7 +2179,7 @@ const MONSTER_MOLDS = {
         // --- 型6 ---
         { skills: ['ゴーストフラッシュ', '大パンチ', '大きなおとしもの', 'ドクロビーム'], equipment: '護りの霊符' },
         // --- 型7 ---
-        { skills: ['ゴーストフラッシュ', 'びっくりドクロ', '大パンチ', '大きなおとしもの'], equipment: '牙獣のお守り' },
+        { skills: ['ゴーストフラッシュ', 'びっくりドクロ', 'のろい', 'ドロン'], equipment: '牙獣のお守り' },
     ],
     'ゲル': [
         { skills: ['突き刺し', 'くし刺し', 'ムチ', 'G・キューブ'], equipment: '荒縄のガントレット' },

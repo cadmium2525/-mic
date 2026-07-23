@@ -1021,6 +1021,7 @@ function renderMasmonBattleSkills() {
         if (sk.type === 'heal') typeIcon = '💖';
         if (sk.type === 'substitute') typeIcon = '🌸';
         if (sk.type === 'hazard') typeIcon = '🪨';
+        if (sk.type === 'evade') typeIcon = '💨';
 
         const enhBadge = isEnhanced
             ? `<span class="text-[8px] bg-purple-900 text-purple-200 px-1 py-0.5 rounded font-bold ml-1">⚔️Lv.${enh.level}</span>`
@@ -1222,7 +1223,7 @@ function openMasmonSkillModal(skKey) {
     document.getElementById('modal-skill-desc').textContent = (sk.desc || "説明はありません。") + useLimitNote;
     document.getElementById('modal-current-guts').textContent = currentGuts;
 
-    if (sk.type === 'heal' || sk.type.startsWith('buff') || sk.type === 'substitute' || sk.type === 'hazard') {
+    if (sk.type === 'heal' || sk.type.startsWith('buff') || sk.type === 'substitute' || sk.type === 'hazard' || sk.type === 'evade') {
         document.getElementById('modal-guts-dmg-scale').textContent = "なし (補助)";
         document.getElementById('modal-guts-hit-rate').textContent = "必中";
     } else {
@@ -1246,6 +1247,7 @@ function openMasmonSkillModal(skKey) {
     if (sk.type.startsWith('buff')) typeStr = "補助技";
     if (sk.type === 'substitute') typeStr = "身代わり技";
     if (sk.type === 'hazard') typeStr = "設置技";
+    if (sk.type === 'evade') typeStr = "回避技";
     document.getElementById('modal-skill-type').textContent = typeStr;
 
     document.getElementById('skill-modal').classList.remove('hidden');
@@ -1748,8 +1750,13 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
             return;
         }
 
+        // ドロン等「連続使用」判定を使う技のために、更新前の「直近に使った技」を先に控えておく
+        // （unit.lastSkillKeyUsed をこの後すぐ今回の技で上書きするため、判定に使う値は先に退避する）
+        const previousSkillKeyUsed = unit.lastSkillKeyUsed;
+
         unit.guts -= sk.cost;
         incrementSkillUseCount(unit, action.skKey);
+        unit.lastSkillKeyUsed = action.skKey;
         // モスト専用ハイブリッドAIの「技バリエーション優先」判定用に、直近2ターンの使用技を記録しておく
         // （敵側のみ。プレイヤー側では参照しないため記録しない）
         if (side === 'enemy') {
@@ -1770,6 +1777,8 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
             buildHealSteps(steps, side, unit);
         } else if (sk.type === 'substitute') {
             buildSubstituteSteps(steps, side, unit, sk);
+        } else if (sk.type === 'evade') {
+            buildEvadeSteps(steps, side, unit, sk, action.skKey, previousSkillKeyUsed);
         } else if (sk.type === 'hazard') {
             buildHazardSteps(steps, side, unit, sk);
         }
@@ -1893,6 +1902,21 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
 
     // ダメージ無し・状態異常付与のみを狙う技（どくのこな等）：命中判定・追加効果は通常通り行うが、ダメージ演算は一切行わない
     if (isHit && sk.noDamage) {
+        // 自傷技（のろい等）：sk.selfDamagePct が設定されている場合、命中時に1回だけ自身の最大ライフの割合分のダメージを受ける
+        // （身代わり系はbuildSubstituteStepsで個別に処理済みのため、ここは通常攻撃タイプのnoDamage技専用）
+        const selfDamagePct = (sk && sk.selfDamagePct) || 0;
+        if (selfDamagePct > 0) {
+            steps.push({
+                run: () => {
+                    const selfDamage = Math.max(1, Math.floor(attacker.stats.maxLife * selfDamagePct));
+                    attacker.stats.life = Math.max(0, attacker.stats.life - selfDamage);
+                    addLog(`💥 ${attacker.name} は【${sk.name}】の代償で、自身のライフが ${selfDamage} 減少した！(現在: ${Math.floor(attacker.stats.life)})`);
+                    updateMasmonBattleStatsUI();
+                },
+                wait: BATTLE_STEP_DELAY.perExtraLog
+            });
+        }
+
         for (let hitNo = 0; hitNo < hitCount; hitNo++) {
             const hitTag = hitCount > 1 ? `（${hitNo + 1}撃目）` : '';
             steps.push({
@@ -1942,9 +1966,13 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
         const hitTag = hitCount > 1 ? `（${hitNo + 1}撃目）` : '';
         const isPow = sk.type === 'pow';
         // useDefAsAtk：自身の丈夫さの値を攻撃の値として扱う技（例：ボディプレス）
+        // useCombinedPowInt：ちから・かしこさを合算した数値を攻撃力として扱う技（例：最終奥義）
         const attackerStat = (sk.useDefAsAtk
             ? getBuffedDefenseStat(attacker, getDefDownStat(attacker, attacker.stats.def), defender)
-            : getBuffedAttackStat(attacker, getWeakenedStat(attacker, isPow ? attacker.stats.pow : attacker.stats.int), isPow ? 'pow' : 'int', defender)
+            : sk.useCombinedPowInt
+                ? getBuffedAttackStat(attacker, getWeakenedStat(attacker, attacker.stats.pow), 'pow', defender)
+                  + getBuffedAttackStat(attacker, getWeakenedStat(attacker, attacker.stats.int), 'int', defender)
+                : getBuffedAttackStat(attacker, getWeakenedStat(attacker, isPow ? attacker.stats.pow : attacker.stats.int), isPow ? 'pow' : 'int', defender)
         ) * getEquipmentLowLifeAtkMultiplier(attacker);
         // 丈夫さ強化：ダメージ計算で使用する丈夫さは1.5倍して扱う（地震・テイルブレード等の防御崩し状態を反映）
         const defenderStat = getDefDownStat(defender, getBuffedDefenseStat(defender, defender.stats.def, attacker)) * 1.5;
@@ -2124,6 +2152,31 @@ function buildBuffPowSteps(steps, side, unit, sk) {
             unit.stats.pow += 15;
             addLog(side === 'player' ? `${unit.name} の闘志がみなぎる！ちからが15アップした！` : `${unit.name} は気合を入れて攻撃力を上げた！`);
             showEffect(cfg.buffEffect);
+            updateMasmonBattleStatsUI();
+        },
+        wait: BATTLE_STEP_DELAY.afterHitEffect
+    });
+}
+
+// --- 回避技（ドロン等）：このターンの相手の攻撃を完全回避する構えを取る ---
+// 直前の自分の行動が「同じ技」だった場合（＝連続使用）、成功率が sk.consecutiveSuccessRate（既定33%）に低下する。
+// 成功した場合のみ dodgeNextGuaranteed を立てる（次に自分が受ける攻撃を確実に回避する。既存の陽炎等と同じ仕組み）。
+// 失敗した場合は不発に終わり、このターンの回避効果は発動しない。
+function buildEvadeSteps(steps, side, unit, sk, skKey, previousSkillKeyUsed) {
+    const cfg = SIDE_UI[side];
+    steps.push({
+        run: () => {
+            const isConsecutive = previousSkillKeyUsed === skKey;
+            const successChance = isConsecutive ? (sk.consecutiveSuccessRate != null ? sk.consecutiveSuccessRate : 0.33) : 1.0;
+            const success = Math.random() < successChance;
+            if (success) {
+                unit.dodgeNextGuaranteed = true;
+                addLog(`💨 ${unit.name} は素早く姿を消した！`, `💨 ${unit.name} は【${sk.name}】で素早く姿を消し、このターンの相手の攻撃を完全に回避する構えを取った！`);
+                showEffect(cfg.evadeEffect || '💨 EVADE 💨');
+            } else {
+                addLog(`💦 ${unit.name} は姿を消そうとしたが失敗した！`, `💦 ${unit.name} は連続使用の反動で【${sk.name}】に失敗し、姿を消せなかった！（このターンは回避効果が発動しない）`);
+                showEffect('💦 FAILED 💦');
+            }
             updateMasmonBattleStatsUI();
         },
         wait: BATTLE_STEP_DELAY.afterHitEffect

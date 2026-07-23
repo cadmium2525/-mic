@@ -430,7 +430,10 @@ function kinNejikiEstimateExpectedDamage(attacker, defender, skInfo) {
 
     const atk = skInfo.useDefAsAtk
         ? getBuffedDefenseStat(attacker, getDefDownStat(attacker, attacker.stats.def), defender)
-        : getBuffedAttackStat(attacker, getWeakenedStat(attacker, skInfo.type === 'pow' ? attacker.stats.pow : attacker.stats.int), skInfo.type, defender);
+        : skInfo.useCombinedPowInt
+            ? getBuffedAttackStat(attacker, getWeakenedStat(attacker, attacker.stats.pow), 'pow', defender)
+              + getBuffedAttackStat(attacker, getWeakenedStat(attacker, attacker.stats.int), 'int', defender)
+            : getBuffedAttackStat(attacker, getWeakenedStat(attacker, skInfo.type === 'pow' ? attacker.stats.pow : attacker.stats.int), skInfo.type, defender);
     const def = getDefDownStat(defender, getBuffedDefenseStat(defender, defender.stats.def, attacker)) * 1.5;
     const rawDmg = Math.max(1, atk * skInfo.force - def * 0.35) * dmgMultiplier;
 
