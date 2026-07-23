@@ -63,6 +63,30 @@ async function fetchPvpPlayerRating(mode, season, playerId) {
     }
 }
 
+// --- アカウント管理画面用：自分のPvP記録を個人戦・団体戦合算（今シーズン分）で取得する ---
+async function fetchMyPvpTotalStats() {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return null;
+    try {
+        const pid = getMyPlayerId();
+        const season = getPvpSeasonKey();
+        const modes = ['solo', 'team'];
+        let gamesPlayed = 0, wins = 0, losses = 0;
+        for (const mode of modes) {
+            const snap = await firebaseDb.ref(`player_ratings/${mode}/${season}/${pid}`).once('value');
+            const val = snap.val();
+            if (val) {
+                gamesPlayed += val.gamesPlayed || 0;
+                wins += val.wins || 0;
+                losses += val.losses || 0;
+            }
+        }
+        return { gamesPlayed, wins, losses };
+    } catch (e) {
+        console.error('[PvP] 合算記録取得エラー:', e);
+        return null;
+    }
+}
+
 // --- プレイヤーの成績（レート・勝敗数）を取得 ---
 async function fetchPvpPlayerStats(mode, season, playerId) {
     if (!initFirebase()) return null;

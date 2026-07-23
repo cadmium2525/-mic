@@ -616,8 +616,11 @@ function maybeExecuteKinNejikiEnemySwitch() {
 
     clearBattleStatModifiersOnSwitch(active);
     MASMON_BATTLE_STATE.enemyActiveIdx = chosen.i;
-    // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
+    // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）。
+    // 相手（ここでは敵AI）が交代すると、プレイヤー側の対面相性も変わるため、
+    // プレイヤー側の現在アクティブなユニットも必ず再評価する。
     applyAuraMonClassLifeBonus(chosen.unit, opponent);
+    applyAuraMonClassLifeBonus(opponent, chosen.unit);
     const ownerLabel = MASMON_BATTLE_STATE.opponentOwnerName || '相手';
     addLog(`💦 ${active.name} は苦しい状況と判断し、${ownerLabel}は【${chosen.unit.name}】に交代した！`);
     showEffect('🔄 相手交代！ 🔄');
@@ -725,9 +728,22 @@ function toggleKinNejikiSelect(idx) {
     renderKinNejikiSelectScreen();
 }
 
+// --- モンスター使用率トラッキング（アカウント管理画面の「使用率」表示用） ---
+// パーティに編成された（初期選出・交換いずれも含む）タイミングで1体につき1回だけ加算する。
+async function trackKinNejikiMonsterUsage(speciesId) {
+    if (!speciesId || typeof initFirebase !== 'function' || !initFirebase()) return;
+    try {
+        const pid = getMyPlayerId();
+        await firebaseDb.ref(`kinnejiki_monster_usage/${pid}/${speciesId}`).transaction(current => (current || 0) + 1);
+    } catch (e) {
+        console.error('[ガッツファクトリー] 使用率記録エラー:', e);
+    }
+}
+
 function confirmKinNejikiParty() {
     if (KIN_NEJIKI_STATE.selectedIdx.length !== 3) return;
     KIN_NEJIKI_STATE.playerParty = KIN_NEJIKI_STATE.selectedIdx.map(idx => JSON.parse(JSON.stringify(KIN_NEJIKI_STATE.offer[idx])));
+    KIN_NEJIKI_STATE.playerParty.forEach(m => { if (m) trackKinNejikiMonsterUsage(m.speciesId); });
     advanceToNextKinNejikiBattle();
 }
 
@@ -1031,6 +1047,7 @@ function confirmKinNejikiSwap() {
     cloned.stats.life = cloned.stats.maxLife; // 交換直後は全回復した状態で仲間になる
     cloned.ownerName = 'あなた';
     KIN_NEJIKI_STATE.playerParty[kinNejikiSwapMineIdx] = cloned;
+    trackKinNejikiMonsterUsage(cloned.speciesId);
     showToast(`【${cloned.name}】を仲間に迎え入れた！`);
     showKinNejikiOrderStep();
 }
@@ -1060,36 +1077,49 @@ function renderKinNejikiOrderStep() {
     const orderContainer = document.getElementById('kinnejiki-order-container');
     if (!hintContainer || !orderContainer) return;
 
-    // --- 次の相手の1体目のヒント（技・装備までは見せず、姿・ステータス・オーラ／モン類のみ） ---
+    // --- 次の相手の1体目のヒント ---
+    // セットが進むほど得られる情報を減らし、5セット目以降は偵察情報そのものを無くす。
+    // （次に迎えるバトルが属するセット番号。7戦目クリア直後はまだset自体が繰り上がっていないため、
+    //   battleInSetが7に達している場合はここで+1して補正する）
+    const nextSetNumber = (KIN_NEJIKI_STATE.battleInSet >= 7) ? KIN_NEJIKI_STATE.set + 1 : KIN_NEJIKI_STATE.set;
     hintContainer.innerHTML = '';
     const nextLead = (KIN_NEJIKI_STATE.nextBattlePrepared && KIN_NEJIKI_STATE.nextBattlePrepared.opponentTeam)
         ? KIN_NEJIKI_STATE.nextBattlePrepared.opponentTeam[0]
         : null;
-    if (nextLead) {
+
+    if (!nextLead || nextSetNumber >= 5) {
+        // 5セット目以降はノーヒント（偵察不可）。出す順番の選択は引き続き行える。
+        hintContainer.innerHTML = `<div class="bg-[#2a1b15] border border-gray-700 rounded-xl p-3 text-center"><p class="text-[10px] text-gray-500">🔍 索敵不能… 次の相手の情報は得られなかった</p></div>`;
+    } else {
+        const showDetails = nextSetNumber <= 2;   // 1〜2セット目：シルエット＋名前＋オーラ/モン類＋ステータス
+        // 3〜4セット目：シルエット＋オーラ/モン類バッジのみ（名前・ステータスは伏せる）
+
         const auraInfo = nextLead.aura ? AURA_TYPES[nextLead.aura] : null;
         const monClassKey = getMonClassKeyForName(nextLead.monsterBaseName);
         const monClassInfo = monClassKey ? MON_CLASS_TYPES[monClassKey] : null;
         const auraBadge = auraInfo ? `<span class="px-1 py-0.5 rounded text-[8px] font-bold text-slate-900 ${auraInfo.colorClass}">${auraInfo.emoji}${auraInfo.name}</span>` : '';
         const monClassBadge = monClassInfo ? `<span class="px-1 py-0.5 rounded text-[8px] font-bold bg-slate-700 text-slate-200">${monClassInfo.emoji}${monClassInfo.name}</span>` : '';
+        const nameLine = showDetails ? nextLead.name : '？？？';
+        const statsLine = showDetails
+            ? `<div class="text-[9px] text-gray-400 mt-0.5">HP${nextLead.stats.maxLife} / ちから${nextLead.stats.pow} / かしこさ${nextLead.stats.int} / 命中${nextLead.stats.hit} / 回避${nextLead.stats.spd} / 丈夫さ${nextLead.stats.def}</div>`
+            : `<div class="text-[9px] text-gray-600 mt-0.5">（シルエットのみで詳細不明）</div>`;
 
         const card = document.createElement('div');
         card.className = 'bg-[#2a1b15] border border-red-900/50 rounded-xl p-2 flex items-center space-x-2';
         const visualId = 'kinnejiki-next-opponent-hint-visual';
         card.innerHTML = `
-            <div id="${visualId}" class="flex-shrink-0 w-12 h-12 flex items-center justify-center text-2xl"></div>
+            <div id="${visualId}" class="flex-shrink-0 w-12 h-12 flex items-center justify-center text-2xl" style="filter: brightness(0);"></div>
             <div class="flex-1 min-w-0">
                 <div class="flex items-center justify-between">
-                    <div class="text-xs font-bold text-red-200">${nextLead.name}</div>
+                    <div class="text-xs font-bold text-red-200">${nameLine}</div>
                     <div class="flex gap-1 flex-shrink-0 ml-1">${auraBadge}${monClassBadge}</div>
                 </div>
-                <div class="text-[9px] text-gray-400 mt-0.5">HP${nextLead.stats.maxLife} / ちから${nextLead.stats.pow} / かしこさ${nextLead.stats.int} / 命中${nextLead.stats.hit} / 回避${nextLead.stats.spd} / 丈夫さ${nextLead.stats.def}</div>
+                ${statsLine}
             </div>
         `;
         hintContainer.appendChild(card);
         const visualEl = card.querySelector(`#${CSS.escape(visualId)}`);
         renderMonsterVisual(visualEl, nextLead.visualName || nextLead.monsterBaseName || nextLead.name, nextLead.emoji, false, false, nextLead.aura);
-    } else {
-        hintContainer.innerHTML = `<p class="text-[10px] text-gray-500 p-2">（次の相手の情報を取得できませんでした）</p>`;
     }
 
     // --- 自パーティの出す順番選択（タップで先頭＝インデックス0と入れ替える） ---
@@ -1200,13 +1230,15 @@ async function saveKinNejikiRanking(wins, cleared) {
         const ref = firebaseDb.ref(`kinnejiki_ranking/${pid}`);
         await ref.transaction(current => {
             const best = (current && current.bestWins) || 0;
+            const totalRuns = ((current && current.totalRuns) || 0) + 1; // このランで挑戦1回分を必ずカウントする
             if (current && wins <= best) {
-                // 自己ベストを更新しない場合でも、名前やクリア済みフラグは最新化する
+                // 自己ベストを更新しない場合でも、名前やクリア済みフラグ・プレイ回数は最新化する
                 // （winsは既存の自己ベストのまま維持し、絶対に下げない）
                 return {
                     name,
                     bestWins: best,
                     bestCleared: !!(current.bestCleared || cleared),
+                    totalRuns,
                     updatedAt: current.updatedAt || Date.now()
                 };
             }
@@ -1214,11 +1246,57 @@ async function saveKinNejikiRanking(wins, cleared) {
                 name,
                 bestWins: wins,
                 bestCleared: !!(cleared || (current && current.bestCleared)),
+                totalRuns,
                 updatedAt: Date.now()
             };
         });
     } catch (e) {
         console.error('[ガッツファクトリー] ランキング保存エラー:', e);
+    }
+}
+
+// --- アカウント管理画面用：自分のガッツファクトリー記録（プレイ回数・自己ベスト連続勝利数等）を取得する ---
+async function fetchMyKinNejikiStats() {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return null;
+    try {
+        const pid = getMyPlayerId();
+        const snap = await firebaseDb.ref(`kinnejiki_ranking/${pid}`).once('value');
+        const val = snap.val();
+        return {
+            totalRuns: (val && val.totalRuns) || 0,
+            bestWins: (val && val.bestWins) || 0,
+            bestCleared: !!(val && val.bestCleared)
+        };
+    } catch (e) {
+        console.error('[ガッツファクトリー] 自己記録取得エラー:', e);
+        return null;
+    }
+}
+
+// --- アカウント管理画面用：自分のモンスター使用率トップNを取得する ---
+async function fetchMyKinNejikiMonsterUsageTop(limit = 5) {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return [];
+    try {
+        const pid = getMyPlayerId();
+        const snap = await firebaseDb.ref(`kinnejiki_monster_usage/${pid}`).once('value');
+        const val = snap.val() || {};
+        const total = Object.values(val).reduce((a, b) => a + (b || 0), 0);
+        const list = Object.keys(val).map(speciesId => {
+            const tmpl = MONSTER_TEMPLATES[speciesId];
+            const count = val[speciesId] || 0;
+            return {
+                speciesId,
+                name: tmpl ? tmpl.name : speciesId,
+                emoji: tmpl ? tmpl.emoji : '❓',
+                count,
+                pct: total > 0 ? Math.round((count / total) * 1000) / 10 : 0
+            };
+        });
+        list.sort((a, b) => b.count - a.count);
+        return list.slice(0, limit);
+    } catch (e) {
+        console.error('[ガッツファクトリー] 使用率取得エラー:', e);
+        return [];
     }
 }
 

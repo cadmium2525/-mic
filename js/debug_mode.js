@@ -434,3 +434,48 @@ function endDebugBattle() {
     changeScreen('screen-debug');
     showToast('デバッグバトルを終了しました。');
 }
+
+// =====================================================
+// ⑤ 全ユーザーのプレイ状況（ガッツファクトリー）
+// 本番のランキングデータ（kinnejiki_ranking）をそのまま読み出して一覧表示する。
+// あくまで開発者確認用の簡易ビューであり、書き込みは一切行わない。
+// =====================================================
+async function renderDebugAllUsersStats() {
+    const container = document.getElementById('debug-all-users-stats');
+    if (!container) return;
+    container.innerHTML = `<p class="text-[10px] text-gray-500">読み込み中…</p>`;
+
+    if (typeof fetchKinNejikiRanking !== 'function') {
+        container.innerHTML = `<p class="text-[10px] text-red-400">fetchKinNejikiRanking が見つかりません</p>`;
+        return;
+    }
+
+    try {
+        const list = await fetchKinNejikiRanking(200);
+        if (!list || list.length === 0) {
+            container.innerHTML = `<p class="text-[10px] text-gray-500">データがありません</p>`;
+            return;
+        }
+        const myPid = (typeof getMyPlayerId === 'function') ? getMyPlayerId() : null;
+        container.innerHTML = list.map(entry => {
+            const isMe = entry.id === myPid;
+            const updated = entry.updatedAt ? new Date(entry.updatedAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
+            return `
+                <div class="flex items-center justify-between bg-[#1a120b] rounded px-2 py-1.5 border ${isMe ? 'border-emerald-500' : 'border-amber-900/40'}">
+                    <div class="min-w-0 flex-1">
+                        <div class="text-[10px] font-bold ${isMe ? 'text-emerald-300' : 'text-amber-200'} truncate">${isMe ? '⭐ ' : ''}${entry.name || 'ブリーダー'}</div>
+                        <div class="text-[8px] text-gray-500 truncate">ID: ${entry.id}</div>
+                    </div>
+                    <div class="text-right flex-shrink-0 ml-2">
+                        <div class="text-[9px] text-gray-300">連勝<span class="text-amber-300 font-bold">${entry.bestWins || 0}</span> ${entry.bestCleared ? '👑' : ''}</div>
+                        <div class="text-[9px] text-gray-300">プレイ<span class="text-sky-300 font-bold">${entry.totalRuns || 0}</span>回</div>
+                        <div class="text-[8px] text-gray-600">${updated}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error('[DEBUG] 全ユーザー状況取得エラー:', e);
+        container.innerHTML = `<p class="text-[10px] text-red-400">取得に失敗しました</p>`;
+    }
+}

@@ -73,6 +73,58 @@ function openAccountModal() {
     const restoreInput = document.getElementById('account-restore-id-input');
     if (restoreInput) restoreInput.value = '';
     document.getElementById('account-modal').classList.remove('hidden');
+    loadAndRenderAccountStats();
+}
+
+// --- プレイ記録（ガッツファクトリー／PvP／モンスター使用率）を取得して描画する ---
+async function loadAndRenderAccountStats() {
+    const container = document.getElementById('account-stats-container');
+    if (!container) return;
+    container.innerHTML = `<p class="text-gray-500">読み込み中…</p>`;
+
+    const [kinStats, usageTop, pvpStats] = await Promise.all([
+        (typeof fetchMyKinNejikiStats === 'function') ? fetchMyKinNejikiStats() : Promise.resolve(null),
+        (typeof fetchMyKinNejikiMonsterUsageTop === 'function') ? fetchMyKinNejikiMonsterUsageTop(5) : Promise.resolve([]),
+        (typeof fetchMyPvpTotalStats === 'function') ? fetchMyPvpTotalStats() : Promise.resolve(null)
+    ]);
+
+    const kinRuns = kinStats ? kinStats.totalRuns : 0;
+    const kinBest = kinStats ? kinStats.bestWins : 0;
+    const pvpGames = pvpStats ? pvpStats.gamesPlayed : 0;
+    const pvpWins = pvpStats ? pvpStats.wins : 0;
+
+    let usageHtml = '';
+    if (usageTop && usageTop.length > 0) {
+        usageHtml = `
+            <div class="mt-2">
+                <p class="text-gray-400 mb-1">🐾 ガッツファクトリー モンスター使用率（自己集計）</p>
+                <div class="space-y-1">
+                    ${usageTop.map(u => `
+                        <div class="flex items-center justify-between bg-[#150b07] rounded px-2 py-1">
+                            <span>${u.emoji} ${u.name}</span>
+                            <span class="text-amber-300 font-bold">${u.pct}%（${u.count}回）</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    container.innerHTML = `
+        <div class="grid grid-cols-2 gap-2">
+            <div class="bg-[#150b07] rounded-lg p-2">
+                <p class="text-gray-400">🏭 ガッツファクトリー</p>
+                <p class="text-white mt-1">プレイ回数<br><span class="font-bold text-amber-300 text-sm">${kinRuns}</span></p>
+                <p class="text-white mt-1">最高連続勝利<br><span class="font-bold text-amber-300 text-sm">${kinBest}</span></p>
+            </div>
+            <div class="bg-[#150b07] rounded-lg p-2">
+                <p class="text-gray-400">⚔️ PvP（今シーズン）</p>
+                <p class="text-white mt-1">プレイ回数<br><span class="font-bold text-sky-300 text-sm">${pvpGames}</span></p>
+                <p class="text-white mt-1">総勝利数<br><span class="font-bold text-sky-300 text-sm">${pvpWins}</span></p>
+            </div>
+        </div>
+        ${usageHtml}
+    `;
 }
 
 function closeAccountModal() {

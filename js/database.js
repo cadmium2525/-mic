@@ -606,7 +606,7 @@ const SKILLS_DB = {
     boss_roll: { name: 'ローリング激突', cost: 40, type: 'pow', hitRate: 65, force: 2.4, gutsDown: 20, effect: null, desc: '大回転で激突してガッツを奪う' },
     boss_focus: { name: 'きあい', cost: 10, type: 'buff_pow', hitRate: 100, force: 0, gutsDown: 0, effect: 'pow_up', desc: '攻撃力を上昇させる' },
     boss_laser: { name: 'サイコブラスト', aura: 'white', cost: 45, type: 'int', hitRate: 70, force: 2.6, gutsDown: 30, effect: 'confuse_30', desc: '精神力を収束させた衝撃波。さらに技命中時、30%の確率で相手を混乱状態にする（混乱中は毎ターン40%の確率で意味不明になり行動できなくなり、30%の確率で混乱が解除される）' },
-    boss_meteor: { name: 'メテオバースト', aura: 'white', cost: 55, type: 'int', hitRate: 70, force: 1.0, gutsDown: 12, effect: null, hitCount: 4, useEffect: 'meteor_spd_up', desc: '巨大な隕石を4連続で放つ大技（4回攻撃・1発ごとに相手GUTS-12）。さらに自身の回避ステータスが1段階上昇する（1回につき10%アップ、最大3回まで累積）' },
+    boss_meteor: { name: 'メテオバースト', aura: 'white', cost: 55, type: 'int', hitRate: 70, force: 1.05, gutsDown: 12, effect: null, hitCount: 4, useEffect: 'meteor_spd_up', desc: '巨大な隕石を4連続で放つ大技（4回攻撃・1発ごとに相手GUTS-12）。さらに自身の回避ステータスが1段階上昇する（1回につき10%アップ、最大3回まで累積）' },
 
     // --- ハム系統 ---
     one_two_punch: { name: 'ワンツーパンチ', aura: 'green', cost: 15, type: 'pow', hitRate: 90, force: 0.7, gutsDown: 8, effect: null, desc: '素早い連続パンチの基本技。相手GUTS-8' },
@@ -2292,9 +2292,9 @@ const KIN_NEJIKI_BOSSES = {
         title: 'レジェンドブリーダー・コルト',
         templateId: 'golem',
         emoji: '🗿',
-        desc: 'ちからと丈夫さに全振りした岩石の怪物。ガッツが溜まると「ぐるぐるアタック」や「竜巻アタック」で大ダメージを与えてくる。さらに「ゴビステップ」で自身の回避を大きく高めてくるため、回避特化での対策も過信は禁物。',
+        desc: 'ちからと丈夫さに全振りした岩石の怪物。ガッツが溜まると「ローリング激突」や「竜巻アタック」で大ダメージを与えてくる。さらに「ゴビステップ」で自身の回避を大きく高めてくるため、回避特化での対策も過信は禁物。',
         statsBase: { maxLife: 260, pow: 78, int: 18, hit: 34, spd: 16, def: 62, gutsSpeed: 12 },
-        skills: ['dekopin', 'claw_nage', 'guruguru_attack', 'boss_roll', 'tornado_attack', 'gobi_step']
+        skills: ['claw_nage', 'boss_roll', 'tornado_attack', 'gobi_step']
     },
     set7: {
         name: 'コルトのモスト',

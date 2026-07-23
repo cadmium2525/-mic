@@ -800,6 +800,18 @@
                         </div>
                     </div>
 
+                    <!-- ⑤ 全ユーザーのプレイ状況（ガッツファクトリー） -->
+                    <div class="bg-[#2a1b15] border border-amber-900/50 rounded-xl p-3 space-y-2">
+                        <div class="text-xs font-bold text-amber-300 flex items-center justify-between">
+                            <span>⑤ 全ユーザーのプレイ状況（ガッツファクトリー）</span>
+                            <button onclick="renderDebugAllUsersStats()" class="text-[9px] text-emerald-400 underline">更新</button>
+                        </div>
+                        <div class="text-[9px] text-gray-500">Firebaseに記録されている全ユーザー分のプレイ回数・自己ベストを一覧表示します（本番のランキングデータをそのまま参照）。</div>
+                        <div id="debug-all-users-stats" class="space-y-1 max-h-64 overflow-y-auto">
+                            <p class="text-[10px] text-gray-500">「更新」を押すと読み込みます</p>
+                        </div>
+                    </div>
+
                 </div>
             </div>
 
@@ -940,6 +952,16 @@
                     </button>
                 </div>
                 <p class="text-[9px] text-amber-400 mt-1.5 leading-relaxed">⚠️ このIDはブラウザに保存されています。キャッシュ・データを消去すると引き継げなくなるので、控えておくことをおすすめします。</p>
+            </div>
+
+            <div class="border-t border-emerald-900 pt-3">
+                <p class="text-[10px] text-gray-400 mb-1.5 flex items-center justify-between">
+                    <span>📊 プレイ記録</span>
+                    <button onclick="loadAndRenderAccountStats()" class="text-[9px] text-emerald-400 underline">更新</button>
+                </p>
+                <div id="account-stats-container" class="text-[10px] leading-relaxed">
+                    <p class="text-gray-500">読み込み中…</p>
+                </div>
             </div>
 
             <div class="border-t border-emerald-900 pt-3">

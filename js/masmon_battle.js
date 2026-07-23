@@ -452,7 +452,12 @@ function applyPlayerSwitch(targetIdx, onDone) {
     MASMON_BATTLE_STATE.isDefending = false;
 
     // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
-    applyAuraMonClassLifeBonus(target, getEnemyActive());
+    // ※自分だけでなく、相手側も「対面する相手が変わった」ことになるため、相手の現在アクティブな
+    //   ユニットの最大ライフも新しい相性で再計算する（そうしないと最大ライフが古い相性のまま
+    //   据え置かれてしまう）。
+    const currentEnemyForPlayerSwitch = getEnemyActive();
+    applyAuraMonClassLifeBonus(target, currentEnemyForPlayerSwitch);
+    applyAuraMonClassLifeBonus(currentEnemyForPlayerSwitch, target);
 
     addLog(`あなたは【${target.name}】を繰り出した！`);
     renderBattleFieldIcon('player', target);
@@ -488,8 +493,12 @@ function applyEnemySwitch(targetIdx, onDone) {
 
     MASMON_BATTLE_STATE.enemyActiveIdx = targetIdx;
 
-    // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
-    applyAuraMonClassLifeBonus(target, getPlayerActive());
+    // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）。
+    // 相手が交代すると、こちら側の対面相性も変わるため、プレイヤー側の現在アクティブなユニットも
+    // 必ず再評価する（そうしないと、こちらのライフボーナスが交代前の相手との相性のまま固定されてしまう）。
+    const currentPlayerForEnemySwitch = getPlayerActive();
+    applyAuraMonClassLifeBonus(target, currentPlayerForEnemySwitch);
+    applyAuraMonClassLifeBonus(currentPlayerForEnemySwitch, target);
 
     const sideLabel = MASMON_BATTLE_STATE.opponentOwnerName || '相手';
     addLog(`${sideLabel}は【${target.name}】を繰り出した！`);
@@ -1123,7 +1132,11 @@ function executeMasmonSwitch(targetIdx) {
     MASMON_BATTLE_STATE.isDefending = false;
 
     // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
-    applyAuraMonClassLifeBonus(target, getEnemyActive());
+    // ※相手側の現在アクティブなユニットも「対面する相手が変わった」ことになるため、
+    //   そちらの最大ライフも新しい相性で再計算する。
+    const currentEnemyForExecSwitch = getEnemyActive();
+    applyAuraMonClassLifeBonus(target, currentEnemyForExecSwitch);
+    applyAuraMonClassLifeBonus(currentEnemyForExecSwitch, target);
 
     addLog(`${prev.name} を引っ込め、【${target.name}】を繰り出した！`);
     showEffect('🔄 交代！ 🔄');
