@@ -2231,10 +2231,19 @@ function findEquipmentIdByName(name) {
     return Object.keys(EQUIPMENT_DB).find(k => EQUIPMENT_DB[k].name === name) || null;
 }
 
-// --- ガッツファクトリーのセット数（周回数）から、解放済みの型の数（1〜4）を返す ---
+// --- ガッツファクトリーのセット数（周回数）から、解放済みの型の数（1〜7）を返す ---
+// 型は全7段階。1セットごとに1段階ずつ解放していく（セット1→型1のみ、セット7→型1〜7すべて）…という
+// 基本の進行に加えて、「1セット目から型1〜3がランダムに解放される」変化を持たせている。
+// これは、序盤（特にセット1）は毎回同じ型1のモンスターしか出てこず、レンタル交換の面白みが薄い
+// （型のラインナップに変化を感じられない）という意見を受けての調整で、
+// 個体（レンタル候補・敵チームのモンスター1体ごと）ごとに独立して抽選するため、
+// 「今回は型1しか出なかったけど、次は掘り出し物の型2・型3に出会えた」という揺らぎが生まれる。
+// セット2以降は、この乱数上振れ分がセット進行本来の解放数を上回った時だけ反映され、
+// 通常の右肩上がりの解放進行自体は変えていない（セット3以降は setNumber がほぼ常に上回るため実質従来通り）。
 function getMoldUnlockCountForSet(setNumber) {
-    // 型は全7段階。1セットごとに1段階ずつ解放していく（セット1→型1のみ、セット7→型1〜7すべて）。
-    return Math.max(1, Math.min(7, setNumber));
+    const progressionCount = Math.max(1, Math.min(7, setNumber));
+    const earlyGameBonusRoll = 1 + Math.floor(Math.random() * 3); // 1〜3のランダム
+    return Math.max(progressionCount, earlyGameBonusRoll);
 }
 
 // --- 装備が重複回避（excludeEquipIds）のため使用できなくなった場合の代役を選ぶ ---
