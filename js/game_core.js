@@ -76,6 +76,13 @@ function renderMonsterVisual(containerEl, name, emoji, isAwakened = false, isPar
     containerEl.dataset.visualSrc = imagePath;
     // 絶対配置のオーラ着色オーバーレイを正しい位置に重ねるための基準にする
     if (!containerEl.style.position) containerEl.style.position = 'relative';
+    // mix-blend-mode（オーラ着色）が、このアイコン自身の画像だけでなく背後にある
+    // 画面全体の描画結果と混ざってしまわないよう、新しいスタッキングコンテキストを
+    // 作って着色の影響範囲をこの要素内に閉じ込める。
+    // （isolationが無いと、同じオーラ色でも背景に写っている技ボタン／ログ欄など
+    //   その時々で「裏に写っているもの」が変わることで、控えモンスターの色の濃さが
+    //   場面によって変わって見えてしまう不具合の原因になっていた）
+    containerEl.style.isolation = 'isolate';
 
     const img = new Image();
     img.src = encodedImagePath;
