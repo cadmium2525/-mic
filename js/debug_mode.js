@@ -11,6 +11,8 @@
 //    3. 既存の masmon_battle.js の3vs3バトルエンジンでそのまま模擬戦できる
 //       （本編のガッツファクトリーの周回・ランキングには一切影響しない）
 //    4. 全BGMをワンタップで試聴・停止できる
+//    5. 対戦相手（CPU）のAIレベル（1〜4）とAIタイプ（性格：速攻型／搦め手型／粘り型／バランス型／ランダム）を
+//       指定してバトルできる（ボスプリセット選択時は本編相当のレベルが自動セットされるが、上書き可能）
 //
 // 依存: database.js（MONSTER_TEMPLATES / SKILLS_DB / KIN_NEJIKI_SKILL_POOL / KIN_NEJIKI_BOSSES）、
 //       game_core.js（changeScreen / showToast）、
@@ -29,10 +31,31 @@ const DEBUG_STATE = {
     opponentTeam: [],
     opponentIsBossSet: null, // ボスプリセット選択時は 3 or 7、自由編成時は null
     builder: {
-        player: { speciesId: null, selectedSkills: [], aura: null },
-        opponent: { speciesId: null, selectedSkills: [], aura: null }
-    }
+        player: { speciesId: null, selectedSkills: [], aura: null, equip: null },
+        opponent: { speciesId: null, selectedSkills: [], aura: null, equip: null }
+    },
+    // CPU（対戦相手）のAI設定。aiLevel: 1〜4（数値が高いほど強いロジック）、
+    // aiPersonality: 'random'（バトル開始時にランダムで1つ性格を割り当てる、既定の本編動作）
+    // または 'speedy' / 'control' / 'sustain' / 'balanced' のいずれかを固定指定。
+    ai: { level: 2, personality: 'random' }
 };
+
+// AIレベルの選択肢（数値と説明のペア）
+const DEBUG_AI_LEVEL_OPTIONS = [
+    { value: 1, label: 'Lv1（完全ランダム）' },
+    { value: 2, label: 'Lv2（通常）' },
+    { value: 3, label: 'Lv3（強め・ボス級）' },
+    { value: 4, label: 'Lv4（最強・最終ボス級）' }
+];
+
+// AIタイプ（性格）の選択肢。'random' は本編と同じくバトル開始時に毎回ランダム抽選する。
+const DEBUG_AI_PERSONALITY_OPTIONS = [
+    { value: 'random', label: '🎲 ランダム（本編と同じ）' },
+    { value: 'speedy', label: '⚡ 速攻型（常に最大火力）' },
+    { value: 'control', label: '🧩 搦め手型（ガッツダウン優先）' },
+    { value: 'sustain', label: '🛡️ 粘り型（ライフ40%未満で回復優先）' },
+    { value: 'balanced', label: '⚖️ バランス型（レベル別の標準ロジック）' }
+];
 
 // ボス専用モンスター（コルトのゴビ／コルトのモスト）を種族セレクトに混ぜて選べるようにするための
 // 疑似種族キー。KIN_NEJIKI_BOSSES のキー（set3/set7）と対応させる。
@@ -88,9 +111,61 @@ function openDebugScreen() {
     renderDebugSpeciesOptionsInto(document.getElementById('debug-opponent-species'));
     renderDebugAuraOptionsInto(document.getElementById('debug-player-aura'), 'player');
     renderDebugAuraOptionsInto(document.getElementById('debug-opponent-aura'), 'opponent');
+    renderDebugEquipOptionsInto(document.getElementById('debug-player-equip'));
+    renderDebugEquipOptionsInto(document.getElementById('debug-opponent-equip'));
+    renderDebugEquipStatus('player');
+    renderDebugEquipStatus('opponent');
+    renderDebugAiOptions();
     renderDebugTeamLists();
     renderDebugBreederPreviewList();
     changeScreen('screen-debug');
+}
+
+// -----------------------------------------------------
+// CPU（対戦相手）のAI設定セレクトボックスの選択肢を描画する
+// -----------------------------------------------------
+function renderDebugAiOptions() {
+    const levelEl = document.getElementById('debug-ai-level');
+    const personalityEl = document.getElementById('debug-ai-personality');
+    if (levelEl) {
+        levelEl.innerHTML = '';
+        DEBUG_AI_LEVEL_OPTIONS.forEach(({ value, label }) => {
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = label;
+            levelEl.appendChild(opt);
+        });
+        levelEl.value = DEBUG_STATE.ai.level;
+    }
+    if (personalityEl) {
+        personalityEl.innerHTML = '';
+        DEBUG_AI_PERSONALITY_OPTIONS.forEach(({ value, label }) => {
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = label;
+            personalityEl.appendChild(opt);
+        });
+        personalityEl.value = DEBUG_STATE.ai.personality;
+    }
+}
+
+// AIレベルのセレクトが変更された時の反映
+function onDebugAiLevelChange(value) {
+    DEBUG_STATE.ai.level = parseInt(value, 10) || 2;
+}
+
+// AIタイプ（性格）のセレクトが変更された時の反映
+function onDebugAiPersonalityChange(value) {
+    DEBUG_STATE.ai.personality = value || 'random';
+}
+
+// 現在のDEBUG_STATE.aiの内容から、実際にバトルへ渡すaiPersonalityの値を解決する
+// （'random'指定時のみ、本編と同じくその場でランダムに1つ選ぶ）
+function resolveDebugAiPersonality() {
+    if (DEBUG_STATE.ai.personality === 'random') {
+        return (typeof pickKinNejikiAiPersonality === 'function') ? pickKinNejikiAiPersonality() : 'balanced';
+    }
+    return DEBUG_STATE.ai.personality;
 }
 
 // -----------------------------------------------------
@@ -182,6 +257,126 @@ function onDebugAuraChange(side, auraKey) {
     DEBUG_STATE.builder[side].aura = auraKey || null;
 }
 
+// -----------------------------------------------------
+// 装備セレクトボックス（自分側・相手側で共通）
+// デバッグツールでは実際に装備した状態でテストしたいという要望のため、
+// 「型」を選ぶとその型が本来持つ装備（ステータス装備／特殊効果装備どちらもありうる）をそのまま反映する。
+// 加えて、このセレクトから「特殊効果装備（EQUIPMENT_DB上でtype: 'special'のもの）」への
+// 差し替えも自由にできるようにする（ステータス装備は種類が多く、テスト用途では特殊効果の検証が
+// 主目的であるため、差し替え候補は特殊効果装備のみに絞っている）。
+// -----------------------------------------------------
+function renderDebugEquipOptionsInto(selectEl) {
+    if (!selectEl) return;
+    selectEl.innerHTML = '<option value="">（装備なし）</option>';
+    Object.values(EQUIPMENT_DB).filter(eq => eq.type === 'special').forEach(eq => {
+        const opt = document.createElement('option');
+        opt.value = eq.id;
+        opt.textContent = `${eq.icon || ''} ${eq.name}`;
+        selectEl.appendChild(opt);
+    });
+}
+
+// 装備セレクトが変更された時の反映（特殊効果装備への差し替え。空欄を選べば装備なしに戻せる）
+function onDebugEquipChange(side, equipId) {
+    const base = equipId ? EQUIPMENT_DB[equipId] : null;
+    DEBUG_STATE.builder[side].equip = base ? buildEquipmentInstanceFromBase(base) : null;
+    renderDebugEquipStatus(side);
+}
+
+// 現在ビルダーが保持している装備の名称を、読み取り専用の表示欄に反映する。
+// （型由来のステータス装備等、差し替えセレクトの選択肢に無いものが装備されている場合も、
+//   ここで名称だけは必ず確認できるようにする）
+function renderDebugEquipStatus(side) {
+    const statusEl = document.getElementById(side === 'player' ? 'debug-player-equip-current' : 'debug-opponent-equip-current');
+    const selectEl = document.getElementById(side === 'player' ? 'debug-player-equip' : 'debug-opponent-equip');
+    const equip = DEBUG_STATE.builder[side].equip;
+    const base = equip ? EQUIPMENT_DB[equip.equipId] : null;
+    if (statusEl) statusEl.textContent = base ? `${base.icon || ''} ${base.name}` : '（装備なし）';
+    // 差し替えセレクトは特殊効果装備のみが選択肢のため、現在の装備がステータス装備等の場合は
+    // 選択肢に存在せず空欄表示になる（実際の装備自体はそのまま保持され続ける）。
+    if (selectEl) selectEl.value = (base && base.type === 'special') ? base.id : '';
+}
+
+// -----------------------------------------------------
+// 「型」（MONSTER_MOLDSに定義された技構成プリセット）を種族選択に応じて選べるようにする。
+// すべてのモンスターの型を暗記していなくても、型を選ぶだけでその型の技構成を一括反映できる
+// （反映後もチェックボックスから個別に加除して調整可能）。
+// -----------------------------------------------------
+
+// 指定種族（または専属ボスの疑似種族キー）の「型」を全て列挙する。
+// 通常種族：MONSTER_MOLDS[種族名] を読み、型番号・（dualStatType種族のみ）ちから/かしこさの別をラベル化する。
+// 専属ボス：KIN_NEJIKI_BOSSES[bossKey].molds（技キー配列そのもの）を型として扱う。
+// 型データが無い種族の場合は空配列を返す。
+function getDebugMoldOptionsForSpecies(speciesId) {
+    if (isDebugBossSpeciesKey(speciesId)) {
+        const { bossDef } = getDebugBossDefFromSpeciesKey(speciesId);
+        if (!bossDef || !bossDef.molds || bossDef.molds.length === 0) return [];
+        return bossDef.molds.map((skills, idx) => ({
+            label: `型${idx + 1}`,
+            skills: [...skills],
+            equipmentName: null
+        }));
+    }
+
+    const tmpl = MONSTER_TEMPLATES[speciesId];
+    if (!tmpl) return [];
+    const molds = MONSTER_MOLDS[tmpl.name];
+    if (!molds || molds.length === 0) return [];
+
+    const isDual = !!tmpl.dualStatType; // ちから特化型／かしこさ特化型を型ごとに2パターン持つ種族かどうか
+    return molds.map((mold, idx) => {
+        const moldNumber = isDual ? Math.floor(idx / 2) + 1 : idx + 1;
+        const statLabel = isDual ? (idx % 2 === 0 ? 'ちから型' : 'かしこさ型') : null;
+        const skillKeys = (mold.skills || []).map(n => findSkillKeyByName(n, speciesId)).filter(Boolean);
+        return {
+            label: `型${moldNumber}${statLabel ? `（${statLabel}）` : ''}`,
+            skills: skillKeys,
+            equipmentName: mold.equipment || null
+        };
+    }).filter(m => m.skills.length > 0);
+}
+
+// 種族選択に応じて「型」ボタンの一覧を描画する（型データが無い種族なら空のまま何も表示しない）
+function renderDebugMoldOptions(side) {
+    const wrapEl = document.getElementById(side === 'player' ? 'debug-player-molds' : 'debug-opponent-molds');
+    if (!wrapEl) return;
+    wrapEl.innerHTML = '';
+
+    const speciesId = DEBUG_STATE.builder[side].speciesId;
+    if (!speciesId) return;
+
+    const molds = getDebugMoldOptionsForSpecies(speciesId);
+    if (molds.length === 0) return;
+
+    molds.forEach(mold => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'py-1 px-1.5 bg-emerald-950 hover:bg-emerald-900 text-emerald-200 text-[9px] font-bold rounded-lg border border-emerald-800 active:scale-95 transition-all leading-tight';
+        btn.textContent = mold.equipmentName ? `${mold.label} 🎒${mold.equipmentName}` : mold.label;
+        btn.onclick = () => applyDebugMoldToBuilder(side, mold);
+        wrapEl.appendChild(btn);
+    });
+}
+
+// 選んだ「型」の技構成・装備を、現在編集中のビルダーへ一括反映する
+// （型に含まれない技は自動でチェックを外す＝完全にその型の技構成へ置き換える。
+//   装備も型が指定する物にそのまま差し替える。型に装備指定が無ければ装備なしにする）
+function applyDebugMoldToBuilder(side, mold) {
+    const skillsWrapEl = document.getElementById(side === 'player' ? 'debug-player-skills' : 'debug-opponent-skills');
+    DEBUG_STATE.builder[side].selectedSkills = [...mold.skills].slice(0, 4);
+    if (skillsWrapEl) {
+        skillsWrapEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            cb.checked = DEBUG_STATE.builder[side].selectedSkills.includes(cb.value);
+        });
+    }
+
+    const equipId = mold.equipmentName ? findEquipmentIdByName(mold.equipmentName) : null;
+    DEBUG_STATE.builder[side].equip = equipId ? buildEquipmentInstanceFromBase(EQUIPMENT_DB[equipId]) : null;
+    renderDebugEquipStatus(side);
+
+    showToast(`${mold.label}の技構成${mold.equipmentName ? '・装備' : ''}を反映しました。（技はチェックボックス、装備は下のセレクトから個別に調整できます）`);
+}
+
 // 種族セレクトが変更されたら、その種族の技候補チェックボックス一覧を描画する
 function onDebugSpeciesChange(side) {
     const selectEl = document.getElementById(side === 'player' ? 'debug-player-species' : 'debug-opponent-species');
@@ -192,6 +387,7 @@ function onDebugSpeciesChange(side) {
     DEBUG_STATE.builder[side].speciesId = speciesId || null;
     DEBUG_STATE.builder[side].selectedSkills = [];
     skillsWrapEl.innerHTML = '';
+    renderDebugMoldOptions(side);
     if (!speciesId) return;
 
     const pool = isDebugBossSpeciesKey(speciesId)
@@ -264,7 +460,7 @@ function buildDebugMonster(side) {
             stats: { ...bossDef.statsBase, life: bossDef.statsBase.maxLife },
             skills,
             skillEnhancements: {},
-            equip: null,
+            equip: builder.equip || null,
             ownerName
         };
     }
@@ -289,7 +485,7 @@ function buildDebugMonster(side) {
         stats: { ...tmpl.stats, life: tmpl.stats.maxLife },
         skills,
         skillEnhancements: {},
-        equip: null,
+        equip: builder.equip || null,
         ownerName
     };
 }
@@ -329,12 +525,15 @@ function renderDebugTeamListInto(containerId, team, side) {
     }
     team.forEach((m, idx) => {
         const skillNames = (m.skills || []).map(sk => (SKILLS_DB[sk] ? SKILLS_DB[sk].name : sk)).join('、');
+        const equipBase = m.equip ? EQUIPMENT_DB[m.equip.equipId] : null;
+        const equipLabel = equipBase ? `🎒${equipBase.name}` : '装備なし';
         const row = document.createElement('div');
         row.className = 'flex items-center justify-between bg-[#1a120b] rounded px-2 py-1 text-[9px] gap-2';
         row.innerHTML = `
             <div class="min-w-0">
                 <div class="text-amber-200 font-bold">${m.name}</div>
                 <div class="text-gray-500 truncate">${skillNames}</div>
+                <div class="text-emerald-400 truncate">${equipLabel}</div>
             </div>
             <button class="text-red-400 font-bold px-2 flex-shrink-0">✕</button>
         `;
@@ -350,6 +549,10 @@ function setDebugOpponentToBoss(setNumber) {
     const team = generateKinNejikiOpponentTeam(setNumber, true, [], [], setNumber === 7 ? 43 : 15).filter(Boolean);
     DEBUG_STATE.opponentTeam = team;
     DEBUG_STATE.opponentIsBossSet = setNumber;
+    // ボスプリセットに応じた既定のAIレベルを自動セット（本編相当）。AIタイプはユーザーの選択を尊重して変更しない。
+    DEBUG_STATE.ai.level = setNumber === 7 ? 4 : 3;
+    const levelEl = document.getElementById('debug-ai-level');
+    if (levelEl) levelEl.value = DEBUG_STATE.ai.level;
     renderDebugTeamLists();
     showToast(setNumber === 7 ? '相手を「コルトのモスト」チームに設定しました。' : '相手を「コルトのゴビ」チームに設定しました。');
 }
@@ -393,8 +596,8 @@ function launchDebugBattle() {
         set: bossSet || 1,
         battleIndex: 1,
         isNejiki: isBoss, // trueにするとボス戦用BGM（boss/finalboss）が自動再生される
-        aiLevel: isBoss ? (bossSet === 7 ? 4 : 3) : 2,
-        aiPersonality: (typeof pickKinNejikiAiPersonality === 'function') ? pickKinNejikiAiPersonality() : 'balanced'
+        aiLevel: DEBUG_STATE.ai.level, // ①のAI設定セレクトで指定した値（ボスプリセット選択時は既定値が自動セットされるが上書き可）
+        aiPersonality: resolveDebugAiPersonality() // 'random'指定時のみその場でランダム抽選、それ以外は固定タイプ
     };
 
     const floorText = isBoss

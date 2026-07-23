@@ -101,6 +101,7 @@
                         <span class="text-amber-400 font-bold pixel-font truncate max-w-[65%]" id="battle-floor-indicator">FLOOR 10 - BOSS BATTLE</span>
                         <div class="flex items-center flex-wrap gap-1.5">
                             <span id="player-defense-shield" class="hidden bg-blue-600 text-white font-bold text-[9px] px-1.5 py-0.5 rounded">🛡️ 防御中</span>
+                            <span id="enemy-defense-shield" class="hidden bg-red-700 text-white font-bold text-[9px] px-1.5 py-0.5 rounded">🛡️ 相手が防御中</span>
                             <span id="realtime-turn-indicator" class="hidden text-white font-bold text-[9px] px-1.5 py-0.5 rounded"></span>
                             <span id="realtime-action-timer" class="hidden bg-amber-900 text-amber-200 font-bold text-[9px] px-1.5 py-0.5 rounded">⏱️ 30</span>
                             <span class="bg-[#1a120b] px-2 py-0.5 rounded text-white text-[10px] whitespace-nowrap">戦闘ターン: <span id="battle-turn-counter" class="text-amber-400 font-bold">0</span></span>
@@ -747,8 +748,14 @@
                             class="w-full bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
                         <select id="debug-player-aura" onchange="onDebugAuraChange('player', this.value)"
                             class="w-full bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
+                        <div class="text-[9px] text-gray-500">型（プリセット技構成）があれば一括反映できます。無ければ下のチェックボックスから直接選んでください：</div>
+                        <div id="debug-player-molds" class="flex flex-wrap gap-1"></div>
                         <div class="text-[9px] text-gray-500">技を最大4つまでチェック（未選択のまま追加すると既定4技を自動採用）</div>
                         <div id="debug-player-skills" class="flex flex-wrap gap-1"></div>
+                        <div class="text-[9px] text-gray-500 pt-1">現在の装備（型を選ぶとその型の装備を自動反映。下のセレクトで特殊効果装備に差し替えも可）：</div>
+                        <div id="debug-player-equip-current" class="text-[9px] text-emerald-300 font-bold">（装備なし）</div>
+                        <select id="debug-player-equip" onchange="onDebugEquipChange('player', this.value)"
+                            class="w-full bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
                         <button onclick="addDebugMonsterToTeam('player')"
                             class="w-full py-1.5 bg-amber-700 hover:bg-amber-600 text-white text-xs font-bold rounded-lg active:scale-95 transition-all">＋ 自分パーティに追加</button>
                         <div id="debug-player-team-list" class="space-y-1 pt-1"></div>
@@ -757,6 +764,19 @@
                     <!-- ② 対戦相手編成 -->
                     <div class="bg-[#2a1b15] border border-amber-900/50 rounded-xl p-3 space-y-2">
                         <div class="text-xs font-bold text-amber-300">② 対戦相手（最大3体）</div>
+
+                        <!-- CPUのAI設定（AIレベル・AIタイプ） -->
+                        <div class="bg-[#1a120b] border border-amber-900/40 rounded-lg p-2 space-y-1.5">
+                            <div class="text-[9px] font-bold text-amber-400">🧠 CPU AI設定（技選択・交代の思考ルーチン）</div>
+                            <div class="grid grid-cols-2 gap-1.5">
+                                <select id="debug-ai-level" onchange="onDebugAiLevelChange(this.value)"
+                                    class="w-full bg-[#241b12] border border-amber-800 text-white text-[10px] rounded-lg px-1.5 py-1"></select>
+                                <select id="debug-ai-personality" onchange="onDebugAiPersonalityChange(this.value)"
+                                    class="w-full bg-[#241b12] border border-amber-800 text-white text-[10px] rounded-lg px-1.5 py-1"></select>
+                            </div>
+                            <div class="text-[8px] text-gray-500 leading-tight">レベルが高いほど確殺判断・妨害技の優先度が上がります。ボスプリセット選択時はセットに応じた既定レベルが自動セットされますが、ここで上書きできます。</div>
+                        </div>
+
                         <div class="flex gap-1.5">
                             <button onclick="setDebugOpponentToBoss(3)"
                                 class="flex-1 py-1.5 bg-red-900 hover:bg-red-800 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">🗿 コルトのゴビ（Set3ボス）</button>
@@ -768,7 +788,13 @@
                             class="w-full bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
                         <select id="debug-opponent-aura" onchange="onDebugAuraChange('opponent', this.value)"
                             class="w-full bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
+                        <div class="text-[9px] text-gray-500">型（プリセット技構成）があれば一括反映できます：</div>
+                        <div id="debug-opponent-molds" class="flex flex-wrap gap-1"></div>
                         <div id="debug-opponent-skills" class="flex flex-wrap gap-1"></div>
+                        <div class="text-[9px] text-gray-500 pt-1">現在の装備（型を選ぶとその型の装備を自動反映。下のセレクトで特殊効果装備に差し替えも可）：</div>
+                        <div id="debug-opponent-equip-current" class="text-[9px] text-emerald-300 font-bold">（装備なし）</div>
+                        <select id="debug-opponent-equip" onchange="onDebugEquipChange('opponent', this.value)"
+                            class="w-full bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
                         <button onclick="addDebugMonsterToTeam('opponent')"
                             class="w-full py-1.5 bg-sky-800 hover:bg-sky-700 text-white text-xs font-bold rounded-lg active:scale-95 transition-all">＋ 相手パーティに追加</button>
                         <div id="debug-opponent-team-list" class="space-y-1 pt-1"></div>

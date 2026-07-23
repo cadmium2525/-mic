@@ -2237,12 +2237,32 @@ function getMoldUnlockCountForSet(setNumber) {
     return Math.max(1, Math.min(7, setNumber));
 }
 
+// --- 装備が重複回避（excludeEquipIds）のため使用できなくなった場合の代役を選ぶ ---
+// まず同じtype（special/stat）・mode（normal/hard）の中から探し、無ければmode条件を緩め、
+// それでも無ければ最終手段としてexcludeEquipIds自体を無視してでも同じtypeの何かを返す
+// （guaranteeEquip指定時に「未装備」を発生させないための保険）。
+function pickSubstituteEquipmentBase(originalBase, excludeEquipIds) {
+    if (!originalBase) return null;
+    const excluded = excludeEquipIds || [];
+
+    const sameTypeAndMode = Object.values(EQUIPMENT_DB).filter(eq => eq.type === originalBase.type && eq.mode === originalBase.mode && !excluded.includes(eq.id));
+    if (sameTypeAndMode.length > 0) return sameTypeAndMode[Math.floor(Math.random() * sameTypeAndMode.length)];
+
+    const sameType = Object.values(EQUIPMENT_DB).filter(eq => eq.type === originalBase.type && !excluded.includes(eq.id));
+    if (sameType.length > 0) return sameType[Math.floor(Math.random() * sameType.length)];
+
+    const anySameType = Object.values(EQUIPMENT_DB).filter(eq => eq.type === originalBase.type);
+    return anySameType.length > 0 ? anySameType[Math.floor(Math.random() * anySameType.length)] : originalBase;
+}
+
 // --- 指定種族の「型」を、解放数（unlockedCount: 1〜4）の範囲からランダムに1つ選び、
 //     技キー配列と装備インスタンスに変換して返す。型データが無ければ null を返す。
 // excludeEquipIds: この配列に含まれる装備IDが選ばれた場合、その型は装備なし扱いにする
 //                  （同じ道具を持ったモンスター同士が対面しない、という仕様のための調整弁）
 // minIndex: 抽選対象の型の開始インデックス（0始まり）。省略時は0（型1から）。
 //           PvPレンタルのように「上位の型（型3・型4）のみから選出したい」場合は 2 を渡す。
+// guaranteeEquip: trueの場合、重複回避で本来の装備が使えなくなっても「未装備」にはせず、
+//                 同種の装備で代役を立てる（ガッツファクトリーの敵生成用。省略時はfalse＝従来通り）。
 //
 // ※ dualStatType（ちから/かしこさ特化型を型ごとに2パターン持つ種族）の場合、
 //   MONSTER_MOLDS側の配列は [型1ちから,型1かしこさ,型2ちから,型2かしこさ,...] という
@@ -2250,7 +2270,7 @@ function getMoldUnlockCountForSet(setNumber) {
 //   ここで内部的に2倍にして扱う（型の番号ベースの意味はそのまま保たれる）。
 //   これにより呼び出し側（kinnejiki.js）は今まで通り
 //   「型番号（1〜7）」の感覚でunlockedCount・minIndexを渡すだけでよい。
-function pickMonsterMold(speciesId, unlockedCount, excludeEquipIds, minIndex) {
+function pickMonsterMold(speciesId, unlockedCount, excludeEquipIds, minIndex, guaranteeEquip) {
     const tmpl = MONSTER_TEMPLATES[speciesId];
     const molds = tmpl ? MONSTER_MOLDS[tmpl.name] : null;
     if (!molds || molds.length === 0) return null;
@@ -2276,7 +2296,18 @@ function pickMonsterMold(speciesId, unlockedCount, excludeEquipIds, minIndex) {
         const isExcluded = equipId && excludeEquipIds && excludeEquipIds.includes(equipId);
         if (equipId && !isExcluded) {
             equip = buildEquipmentInstanceFromBase(EQUIPMENT_DB[equipId]);
+        } else if (equipId && isExcluded && guaranteeEquip) {
+            // 本来の装備が重複回避で使えない場合、未装備にはせず同種の代役を立てる
+            const substitute = pickSubstituteEquipmentBase(EQUIPMENT_DB[equipId], excludeEquipIds);
+            if (substitute) equip = buildEquipmentInstanceFromBase(substitute);
         }
+    } else if (guaranteeEquip) {
+        // 型自体に装備指定が無い場合も、guaranteeEquip指定時は特殊効果装備の中から必ず1つ持たせる
+        const excluded = excludeEquipIds || [];
+        const specialPool = Object.values(EQUIPMENT_DB).filter(eq => eq.type === 'special' && !excluded.includes(eq.id));
+        const fallbackPool = specialPool.length > 0 ? specialPool : Object.values(EQUIPMENT_DB).filter(eq => eq.type === 'special');
+        const base = fallbackPool[Math.floor(Math.random() * fallbackPool.length)];
+        if (base) equip = buildEquipmentInstanceFromBase(base);
     }
     // statMod: ちから/かしこさ特化型が種族ベースのpow/intステータスに掛ける倍率（{pow, int}）。
     // 未指定の型（dualStatTypeでない通常種族）はnullのまま返し、呼び出し側で1倍として扱われる。

@@ -43,6 +43,7 @@ const MASMON_BATTLE_STATE = {
     isPlayerTurnActive: true,
     turn: 1,
     isDefending: false,
+    isEnemyDefending: false, // 敵（CPU）が防御コマンドを選んだターンかどうか（被ダメ半減の判定に使用）
     usedSkillsThisTurn: {},
     // --- 行動順バトルエンジン用：両者の「今ターンの行動」を一時保持する ---
     // { actionType: 'skill'|'defend'|'item'|'switch'|'none', skKey?, itemKey?, switchIdx?, reason? }
@@ -234,6 +235,7 @@ function startMasmonBattleCommon(floorText) {
     MASMON_BATTLE_STATE.isBattleEnd = false;
     MASMON_BATTLE_STATE.turn = 1;
     MASMON_BATTLE_STATE.isDefending = false;
+    MASMON_BATTLE_STATE.isEnemyDefending = false;
     MASMON_BATTLE_STATE.usedSkillsThisTurn = {};
     MASMON_BATTLE_STATE.battleResult = null;
 
@@ -496,6 +498,7 @@ function applyEnemySwitch(targetIdx, onDone) {
     clearBattleStatModifiersOnSwitch(prev);
 
     MASMON_BATTLE_STATE.enemyActiveIdx = targetIdx;
+    MASMON_BATTLE_STATE.isEnemyDefending = false;
     // 場に出たばかりのユニットは、次のターン開始時のガッツ回復（+30）を受けない
     // （まだ自分のターンを一度も経験していないため、いきなり回復扱いにするのは不自然なため）。
     target.justSwitchedIn = true;
@@ -658,6 +661,8 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
     MASMON_BATTLE_STATE.pendingEnemyAction = null;
 
     document.getElementById('player-defense-shield').classList.add('hidden');
+    const enemyDefenseShieldElAtTurnStart = document.getElementById('enemy-defense-shield');
+    if (enemyDefenseShieldElAtTurnStart) enemyDefenseShieldElAtTurnStart.classList.add('hidden');
 
     const p = getPlayerActive();
     const e = getEnemyActive();
@@ -730,6 +735,7 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
     }
 
     MASMON_BATTLE_STATE.isDefending = false;
+    MASMON_BATTLE_STATE.isEnemyDefending = false;
     updateMasmonBattleStatsUI();
 
     // マヒ／混乱（意味不明）／出血の残ターン消化と行動失敗判定（プレイヤー側）
@@ -1533,6 +1539,13 @@ function decideMasmonEnemyAction(onDecided) {
                 ? chooseKinNejikiEnemySkill(e, p, affordableSkills, MASMON_BATTLE_STATE.kinNejiki.aiLevel || 1, MASMON_BATTLE_STATE.kinNejiki.aiPersonality)
                 : affordableSkills.slice().sort((a, b) => b.info.cost - a.info.cost)[0].key;
 
+            // モスト専用ハイブリッドAIが「防御」を選んだ場合（'__most_defend__'は kinnejiki.js の
+            // KIN_NEJIKI_MOST_DEFEND_SENTINEL と同じ文字列。変更時は両方同時に直すこと）
+            if (skKey === '__most_defend__') {
+                onDecided({ actionType: 'defend' });
+                return;
+            }
+
             onDecided({ actionType: 'skill', skKey: skKey });
         });
     });
@@ -1699,8 +1712,14 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
     }
 
     if (action.actionType === 'defend') {
-        MASMON_BATTLE_STATE.isDefending = true;
-        document.getElementById('player-defense-shield').classList.remove('hidden');
+        if (side === 'enemy') {
+            MASMON_BATTLE_STATE.isEnemyDefending = true;
+            const enemyShieldEl = document.getElementById('enemy-defense-shield');
+            if (enemyShieldEl) enemyShieldEl.classList.remove('hidden');
+        } else {
+            MASMON_BATTLE_STATE.isDefending = true;
+            document.getElementById('player-defense-shield').classList.remove('hidden');
+        }
         addLog(`${unit.name} は身を守るため防御の構えを取った！（被ダメ半減／ガッツ回復ペナルティ無し）`);
         showEffect('🛡️ DEFENSE 🛡️');
         updateMasmonBattleStatsUI();
@@ -1731,6 +1750,13 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
 
         unit.guts -= sk.cost;
         incrementSkillUseCount(unit, action.skKey);
+        // モスト専用ハイブリッドAIの「技バリエーション優先」判定用に、直近2ターンの使用技を記録しておく
+        // （敵側のみ。プレイヤー側では参照しないため記録しない）
+        if (side === 'enemy') {
+            if (!Array.isArray(unit.kinNejikiRecentSkills)) unit.kinNejikiRecentSkills = [];
+            unit.kinNejikiRecentSkills.push(action.skKey);
+            if (unit.kinNejikiRecentSkills.length > 2) unit.kinNejikiRecentSkills.shift();
+        }
         updateMasmonBattleStatsUI();
 
         const steps = [];
@@ -1955,8 +1981,11 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
             damage = Math.floor(damage * 1.5);
         }
 
-        // 防御コマンドによる被ダメージ半減（既存仕様通り、現状は「敵の攻撃をプレイヤーが防御する」場合のみ）
+        // 防御コマンドによる被ダメージ半減（プレイヤー・敵どちらが防御していても対称に適用する）
         if (side === 'enemy' && MASMON_BATTLE_STATE.isDefending) {
+            damage = Math.floor(damage / 2);
+        }
+        if (side === 'player' && MASMON_BATTLE_STATE.isEnemyDefending) {
             damage = Math.floor(damage / 2);
         }
 
@@ -1993,6 +2022,9 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
                 addLog(shortLine, detailLine);
                 if (side === 'enemy' && MASMON_BATTLE_STATE.isDefending) {
                     addLog(`【防御効果】ダメージを半減した！`, `【防御効果】攻撃を盾で受け流し、ダメージを半減した！`);
+                }
+                if (side === 'player' && MASMON_BATTLE_STATE.isEnemyDefending) {
+                    addLog(`【相手の防御効果】ダメージを半減された！`, `【相手の防御効果】${defender.name} が盾で攻撃を受け流し、ダメージを半減された！`);
                 }
                 if (shieldResult.absorbed > 0) {
                     addLog(`🛡️ シールドが ${shieldResult.absorbed} のダメージを吸収した！`, `🛡️ ${defender.name} のシールドが ${shieldResult.absorbed} のダメージを吸収した！(シールド残量: ${defender.shieldValue})`);

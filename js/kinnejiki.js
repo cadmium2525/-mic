@@ -234,11 +234,14 @@ function kinNejikiAiLevelForSet(setNumber) {
 // セット1〜2：ノーマル産ステータス装備中心 / セット3〜5：ハード産＋一部特殊効果 / セット6〜7：特殊効果中心
 // excludeEquipIds: この配列に含まれる装備IDは抽選対象から除外する
 //                  （除外しすぎて候補が0件になった場合は保険として除外を無視する）
-function kinNejikiRollEquipmentForSet(setNumber, excludeEquipIds) {
+// guaranteeEquip: trueの場合、「装備なし」の抽選結果を出さず必ず何かしらの装備を持たせる
+//                 （ガッツファクトリーの敵生成時にtrueを渡し、「敵の装備が未所持になりがち」な問題を解消する。
+//                  省略時はfalse＝従来通り一定確率で未装備もありうる）
+function kinNejikiRollEquipmentForSet(setNumber, excludeEquipIds, guaranteeEquip) {
     const excluded = excludeEquipIds || [];
 
-    // 装備なし（未装備）の余地も一定確率で残す
-    if (Math.random() < 0.15) return null;
+    // 装備なし（未装備）の余地も一定確率で残す（guaranteeEquip指定時はこの抽選自体を行わない）
+    if (!guaranteeEquip && Math.random() < 0.15) return null;
 
     let pool;
     if (setNumber <= 2) {
@@ -267,12 +270,14 @@ function kinNejikiRollEquipmentForSet(setNumber, excludeEquipIds) {
 // ・ステータス：種族ベース値に個体差(±8%)とセット進行によるスケールを掛ける
 // excludeEquipIds: 生成する装備から除外したい装備IDの配列（同じ道具を持ったモンスター同士が
 //                  対面しないようにするための調整。省略可）
-function generateKinNejikiRentalMonster(speciesId, setNumber, excludeEquipIds) {
+// guaranteeEquip: trueの場合、型・ランダム抽選いずれの経路でも「未装備」にはせず必ず何かを持たせる
+//                 （ガッツファクトリーの敵生成用。省略時はfalse＝従来通り）
+function generateKinNejikiRentalMonster(speciesId, setNumber, excludeEquipIds, guaranteeEquip) {
     const tmpl = MONSTER_TEMPLATES[speciesId];
     if (!tmpl) return null;
 
     const unlockedMoldCount = (typeof getMoldUnlockCountForSet === 'function') ? getMoldUnlockCountForSet(setNumber) : 1;
-    const mold = (typeof pickMonsterMold === 'function') ? pickMonsterMold(speciesId, unlockedMoldCount, excludeEquipIds) : null;
+    const mold = (typeof pickMonsterMold === 'function') ? pickMonsterMold(speciesId, unlockedMoldCount, excludeEquipIds, undefined, guaranteeEquip) : null;
 
     let chosenSkills, equipInstance;
     if (mold) {
@@ -283,7 +288,7 @@ function generateKinNejikiRentalMonster(speciesId, setNumber, excludeEquipIds) {
         const skillPool = KIN_NEJIKI_SKILL_POOL[speciesId] || [];
         const shuffledSkills = [...skillPool].sort(() => Math.random() - 0.5);
         chosenSkills = shuffledSkills.slice(0, Math.min(4, shuffledSkills.length));
-        equipInstance = kinNejikiRollEquipmentForSet(setNumber, excludeEquipIds);
+        equipInstance = kinNejikiRollEquipmentForSet(setNumber, excludeEquipIds, guaranteeEquip);
     }
 
     const individualVariance = () => 0.92 + Math.random() * 0.16; // ±8%の個体差
@@ -324,7 +329,12 @@ function generateKinNejikiRentalMonster(speciesId, setNumber, excludeEquipIds) {
 // excludeSpeciesIds: 抽選対象から除外したい種族IDの配列（同じモンスター同士が対面しないための調整。省略可）
 // excludeEquipIds:   各個体の装備から除外したい装備IDの配列（省略可）
 // count:             生成する体数（既定6）
-function generateKinNejikiOffer(setNumber, excludeSpeciesIds, excludeEquipIds, count) {
+// --- 12種族プールから重複なく指定数（既定6体）のレンタル候補を生成 ---
+// excludeSpeciesIds: 抽選対象から除外したい種族IDの配列（同じモンスター同士が対面しないための調整。省略可）
+// excludeEquipIds:   各個体の装備から除外したい装備IDの配列（省略可）
+// count:             生成する体数（既定6）
+// guaranteeEquip:    trueの場合、生成する全個体を必ず何かしらの装備ありにする（省略時はfalse＝従来通り）
+function generateKinNejikiOffer(setNumber, excludeSpeciesIds, excludeEquipIds, count, guaranteeEquip) {
     const n = count || 6;
     const excludeSpecies = excludeSpeciesIds || [];
 
@@ -333,7 +343,7 @@ function generateKinNejikiOffer(setNumber, excludeSpeciesIds, excludeEquipIds, c
 
     const shuffledSpecies = [...candidatePool].sort(() => Math.random() - 0.5);
     const chosenSpecies = shuffledSpecies.slice(0, n);
-    return chosenSpecies.map(sp => generateKinNejikiRentalMonster(sp, setNumber, excludeEquipIds));
+    return chosenSpecies.map(sp => generateKinNejikiRentalMonster(sp, setNumber, excludeEquipIds, guaranteeEquip));
 }
 
 // --- 対戦相手チーム（3体）を生成。ボス戦の場合は専用ボス＋帯同2体を返す ---
@@ -367,16 +377,19 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, e
             stats: { ...bossDef.statsBase, life: bossDef.statsBase.maxLife },
             skills: [...bossSkills],
             skillEnhancements: {},
-            equip: kinNejikiRollEquipmentForSet(7, excludeEquip),
+            // guaranteeEquip=true：敵（ボス本体）は装備なしにはせず必ず何かを持たせる
+            equip: kinNejikiRollEquipmentForSet(7, excludeEquip, true),
             ownerName: bossDef.title
         };
-        const escorts = generateKinNejikiOffer(7, excludeSpecies, excludeEquip, 2);
+        // guaranteeEquip=true：帯同2体も同様に必ず何かを装備させる
+        const escorts = generateKinNejikiOffer(7, excludeSpecies, excludeEquip, 2, true);
         escorts.forEach(m => { if (m) m.ownerName = bossDef.title; });
         return [bossUnit, ...escorts.filter(Boolean)];
     }
 
     const breederName = getKinNejikiBreederName(totalBattleNumber || 1);
-    const team = generateKinNejikiOffer(setNumber, excludeSpecies, excludeEquip, 3);
+    // guaranteeEquip=true：通常の対戦相手チームも必ず何かを装備させる
+    const team = generateKinNejikiOffer(setNumber, excludeSpecies, excludeEquip, 3, true);
     team.forEach(m => { if (m) m.ownerName = breederName; });
     return team;
 }
@@ -446,8 +459,59 @@ function kinNejikiOpponentIsBuffedUp(opponent) {
     return buffScore >= 2;
 }
 
+// --- モスト専用ハイブリッドAIが「防御する」と判断したことを呼び出し元（masmon_battle.js）に伝えるための特別な戻り値 ---
+// masmon_battle.js の decideMasmonEnemyAction 側でもこの文字列リテラルを直接比較しているため、変更time は両方同時に直すこと。
+const KIN_NEJIKI_MOST_DEFEND_SENTINEL = '__most_defend__';
+
+// --- モスト（最終ボス）専用の思考ルーチン ---
+// 通常の性格別ロジック（speedy/control/sustain/balanced）とは別枠。以下2つを組み合わせたハイブリッド：
+//   ① ガッツ温存：今は手が届かない高コスト技（メテオバースト等）が、次ターンの通常回復（+30見込み）で
+//      使えるようになりそうな時、確殺の見込みが無く自身のライフにも大きな不安が無いなら、
+//      「防御」して被ダメを半減しつつガッツを溜め、大技のバリエーションを引き出しやすくする。
+//   ② 技バリエーション：直近2ターンに使った技は避けて選び、同じ技（ドレイン等）の連発を防ぐ。
+// どちらも常に発動すると読みやすくなりすぎるため、①は確率で揺らぎを持たせている。
+function chooseKinNejikiMostAction(e, p, affordableSkills) {
+    const withEstimate = affordableSkills.map(s => ({ ...s, estDmg: kinNejikiEstimateExpectedDamage(e, p, s.info) }));
+    const lethalNow = withEstimate.filter(s => s.estDmg >= p.stats.life);
+
+    // 確殺のチャンスがあるなら、温存もバリエーションも無視して最優先で撃ち抜く
+    if (lethalNow.length > 0) {
+        return lethalNow.slice().sort((a, b) => b.estDmg - a.estDmg)[0].key;
+    }
+
+    // --- ① ガッツ温存判定 ---
+    // 「今は使えないが、次ターンの通常回復（+30見込み）があれば使えるようになる」技が存在するかを見る。
+    const affordableKeys = new Set(affordableSkills.map(s => s.key));
+    const notYetAffordable = (e.skills || [])
+        .filter(skKey => !affordableKeys.has(skKey))
+        .map(skKey => ({ key: skKey, info: getMasmonEffectiveSkill(e, skKey) }))
+        .filter(s => s.info && !isSkillUseLimitReached(e, s.key));
+    const willBeAffordableNextTurn = notYetAffordable.filter(s => (e.guts + 30) >= s.info.cost);
+
+    const selfLifeRatio = e.stats.life / e.stats.maxLife;
+    if (willBeAffordableNextTurn.length > 0 && selfLifeRatio >= 0.4) {
+        // 常に温存すると「毎回防御してくる」と読まれてしまうため、7割の確率でのみ防御を選ぶ
+        if (Math.random() < 0.7) {
+            return KIN_NEJIKI_MOST_DEFEND_SENTINEL;
+        }
+    }
+
+    // --- ② 技バリエーション優先（直近2ターンに使った技を避ける） ---
+    const recentUses = e.kinNejikiRecentSkills || [];
+    const fresh = withEstimate.filter(s => !recentUses.includes(s.key));
+    const pool = fresh.length > 0 ? fresh : withEstimate; // 手持ちを一通り使い切っていたら通常評価に戻す
+    return pool.slice().sort((a, b) => b.estDmg - a.estDmg)[0].key;
+}
+
 function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel, personality) {
     if (!affordableSkills || affordableSkills.length === 0) return null;
+
+    // --- モスト（最終ボス）専用のハイブリッドAI ---
+    // aiLevel4（最終決戦相当）でモストと戦う時だけ、通常の性格別ロジックとは別枠の専用ロジックを使う。
+    // （ボスプリセット以外でデバッグツールから種族「モスト」を選んで戦わせた場合も、aiLevel4なら同様に適用される）
+    if (aiLevel >= 4 && e.visualName === 'モスト') {
+        return chooseKinNejikiMostAction(e, p, affordableSkills);
+    }
 
     if (aiLevel <= 1) {
         return affordableSkills[Math.floor(Math.random() * affordableSkills.length)].key;
@@ -616,6 +680,7 @@ function maybeExecuteKinNejikiEnemySwitch() {
 
     clearBattleStatModifiersOnSwitch(active);
     MASMON_BATTLE_STATE.enemyActiveIdx = chosen.i;
+    MASMON_BATTLE_STATE.isEnemyDefending = false;
     // 場に出たばかりのユニットは、次のターン開始時のガッツ回復（+30）を受けない
     chosen.unit.justSwitchedIn = true;
     // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）。
