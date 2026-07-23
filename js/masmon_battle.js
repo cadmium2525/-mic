@@ -140,6 +140,7 @@ function convertMasmonToBattleUnit(masmonData, equippedItem) {
         aura: masmonData.aura || null,
         isAwakened: !!masmonData.isAwakened,
         guts: 50,
+        justSwitchedIn: false, // 場に出た直後かどうか（trueの間はターン開始時のガッツ回復をスキップする）
         critBonusTurns: 0,
         statusEffect: masmonData.statusEffect || null,   // 育成中に得た状態変化（根性/逆上/底力/闘魂/集中）
         isGyakujoActive: false,
@@ -450,6 +451,9 @@ function applyPlayerSwitch(targetIdx, onDone) {
 
     MASMON_BATTLE_STATE.playerActiveIdx = targetIdx;
     MASMON_BATTLE_STATE.isDefending = false;
+    // 場に出たばかりのユニットは、次のターン開始時のガッツ回復（+30）を受けない
+    // （まだ自分のターンを一度も経験していないため、いきなり回復扱いにするのは不自然なため）。
+    target.justSwitchedIn = true;
 
     // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
     // ※自分だけでなく、相手側も「対面する相手が変わった」ことになるため、相手の現在アクティブな
@@ -492,6 +496,9 @@ function applyEnemySwitch(targetIdx, onDone) {
     clearBattleStatModifiersOnSwitch(prev);
 
     MASMON_BATTLE_STATE.enemyActiveIdx = targetIdx;
+    // 場に出たばかりのユニットは、次のターン開始時のガッツ回復（+30）を受けない
+    // （まだ自分のターンを一度も経験していないため、いきなり回復扱いにするのは不自然なため）。
+    target.justSwitchedIn = true;
 
     // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）。
     // 相手が交代すると、こちら側の対面相性も変わるため、プレイヤー側の現在アクティブなユニットも
@@ -669,41 +676,53 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
 
     if (!isFirstTurn) {
         // --- ターン開始時点で、両者同時にガッツが回復する ---
-        let recovery = 30;
-        if (p.isGyakujoActive) {
-            recovery = Math.floor(recovery * 1.2);
-        }
-        if (p.statusEffect === "闘魂" && e && e.guts > 70) {
-            recovery = Math.floor(recovery * 1.5);
-        }
-        recovery += getEquipmentGutsRecoveryBonus(p) + getSkillGutsRecoveryBonus(p);
-        if (p.gutsRecoveryDownNext > 0) {
-            recovery = Math.max(0, recovery - p.gutsRecoveryDownNext);
-            p.gutsRecoveryDownNext = 0;
-        }
+        // ただし、直前に場に出たばかりのユニット（戦闘不能による強制交代・任意交代いずれも含む）は、
+        // まだ自分のターンを一度も経験していないため、このタイミングでの回復は受けない
+        // （例：敵を倒して次のモンスターが出てきた直後に、いきなりガッツ80から始まってしまう、を防ぐ）。
         addLog(`--- ターン ${MASMON_BATTLE_STATE.turn} ---`);
-        p.guts = Math.min(100, p.guts + recovery);
-        addLog(`${p.name} のガッツが ${recovery} 回復した！(現在: ${Math.floor(p.guts)})`);
-        const pRegenLog = applyEquipmentTurnRegen(p);
-        if (pRegenLog) addLog(pRegenLog);
+
+        if (p.justSwitchedIn) {
+            p.justSwitchedIn = false;
+        } else {
+            let recovery = 30;
+            if (p.isGyakujoActive) {
+                recovery = Math.floor(recovery * 1.2);
+            }
+            if (p.statusEffect === "闘魂" && e && e.guts > 70) {
+                recovery = Math.floor(recovery * 1.5);
+            }
+            recovery += getEquipmentGutsRecoveryBonus(p) + getSkillGutsRecoveryBonus(p);
+            if (p.gutsRecoveryDownNext > 0) {
+                recovery = Math.max(0, recovery - p.gutsRecoveryDownNext);
+                p.gutsRecoveryDownNext = 0;
+            }
+            p.guts = Math.min(100, p.guts + recovery);
+            addLog(`${p.name} のガッツが ${recovery} 回復した！(現在: ${Math.floor(p.guts)})`);
+            const pRegenLog = applyEquipmentTurnRegen(p);
+            if (pRegenLog) addLog(pRegenLog);
+        }
 
         if (e) {
-            let enemyRecovery = 30;
-            if (e.isGyakujoActive) {
-                enemyRecovery = Math.floor(enemyRecovery * 1.2);
+            if (e.justSwitchedIn) {
+                e.justSwitchedIn = false;
+            } else {
+                let enemyRecovery = 30;
+                if (e.isGyakujoActive) {
+                    enemyRecovery = Math.floor(enemyRecovery * 1.2);
+                }
+                if (e.statusEffect === "闘魂" && p.guts > 70) {
+                    enemyRecovery = Math.floor(enemyRecovery * 1.5);
+                }
+                enemyRecovery += getEquipmentGutsRecoveryBonus(e) + getSkillGutsRecoveryBonus(e);
+                if (e.gutsRecoveryDownNext > 0) {
+                    enemyRecovery = Math.max(0, enemyRecovery - e.gutsRecoveryDownNext);
+                    e.gutsRecoveryDownNext = 0;
+                }
+                e.guts = Math.min(100, e.guts + enemyRecovery);
+                addLog(`${e.name} のガッツが ${enemyRecovery} 回復した！(現在: ${Math.floor(e.guts)})`);
+                const eRegenLog = applyEquipmentTurnRegen(e);
+                if (eRegenLog) addLog(eRegenLog);
             }
-            if (e.statusEffect === "闘魂" && p.guts > 70) {
-                enemyRecovery = Math.floor(enemyRecovery * 1.5);
-            }
-            enemyRecovery += getEquipmentGutsRecoveryBonus(e) + getSkillGutsRecoveryBonus(e);
-            if (e.gutsRecoveryDownNext > 0) {
-                enemyRecovery = Math.max(0, enemyRecovery - e.gutsRecoveryDownNext);
-                e.gutsRecoveryDownNext = 0;
-            }
-            e.guts = Math.min(100, e.guts + enemyRecovery);
-            addLog(`${e.name} のガッツが ${enemyRecovery} 回復した！(現在: ${Math.floor(e.guts)})`);
-            const eRegenLog = applyEquipmentTurnRegen(e);
-            if (eRegenLog) addLog(eRegenLog);
         }
         showEffect('⚔️ TURN START ⚔️');
     } else {
@@ -1130,6 +1149,8 @@ function executeMasmonSwitch(targetIdx) {
     clearBattleStatModifiersOnSwitch(prev);
     MASMON_BATTLE_STATE.playerActiveIdx = targetIdx;
     MASMON_BATTLE_STATE.isDefending = false;
+    // 場に出たばかりのユニットは、次のターン開始時のガッツ回復（+30）を受けない
+    target.justSwitchedIn = true;
 
     // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）
     // ※相手側の現在アクティブなユニットも「対面する相手が変わった」ことになるため、
@@ -1729,9 +1750,13 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
 
         runBattleStepSequence(steps, () => {
             updateMasmonBattleStatsUI();
-            // 攻撃時にみがわりからモンスター本体の絵に切り替えていた場合、ここで必ずみがわりに戻す
-            // （renderBattleFieldIconはみがわり設置中かどうかを見て自動的に適切な絵を選んでくれる）。
-            renderBattleFieldIcon(side, unit);
+            // みがわりからモンスター本体の絵に一瞬切り替えていた場合のみ、ここでみがわりの絵に戻す。
+            // ※ここを条件なしで毎回呼ぶと、みがわりが無い通常時も技を出すたびにアイコンが
+            //   再読み込みされてチラつく不具合になるため、実際に切り替えた場合のみ呼び出すこと。
+            if (unit.peekedOutForAttack) {
+                unit.peekedOutForAttack = false;
+                renderBattleFieldIcon(side, unit);
+            }
             onComplete();
         });
         return;
@@ -1750,6 +1775,7 @@ function buildSkillNameStep(steps, side, unit, sk, skKey) {
             // 攻撃する（攻撃後はrunBattleStepSequence側の完了処理で自動的にみがわりの絵へ戻る）。
             const stateKey = side === 'player' ? 'playerSubstituteHits' : 'enemySubstituteHits';
             if ((sk.type === 'pow' || sk.type === 'int') && MASMON_BATTLE_STATE[stateKey] > 0) {
+                unit.peekedOutForAttack = true;
                 renderMonsterVisual(document.getElementById(side === 'player' ? 'battle-player-icon' : 'battle-enemy-icon'), unit.visualName || unit.monsterBaseName, unit.emoji, unit.isAwakened, side === 'player', unit.aura);
             }
             animateSprite(cfg.spriteContainer, cfg.spriteAnim);
@@ -2095,6 +2121,10 @@ function buildSubstituteSteps(steps, side, unit, sk) {
             }
 
             updateMasmonBattleStatsUI();
+            // みがわりを設置したこのタイミングで、アイコンをみがわりの絵に切り替える
+            // （通常時は行動のたびにアイコンを再描画しないようにしているため、実際に見た目が
+            //   変わるこの瞬間だけ明示的に呼び出す）。
+            renderBattleFieldIcon(side, unit);
         },
         wait: BATTLE_STEP_DELAY.afterHitEffect
     });

@@ -616,6 +616,8 @@ function maybeExecuteKinNejikiEnemySwitch() {
 
     clearBattleStatModifiersOnSwitch(active);
     MASMON_BATTLE_STATE.enemyActiveIdx = chosen.i;
+    // 場に出たばかりのユニットは、次のターン開始時のガッツ回復（+30）を受けない
+    chosen.unit.justSwitchedIn = true;
     // オーラ／モン類有利ボーナスをライフにも反映する（今まさに対面する相手との相性で判定）。
     // 相手（ここでは敵AI）が交代すると、プレイヤー側の対面相性も変わるため、
     // プレイヤー側の現在アクティブなユニットも必ず再評価する。
