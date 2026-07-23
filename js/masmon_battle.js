@@ -70,6 +70,23 @@ const MASMON_BATTLE_STATE = {
 
 // --- 現在アクティブなユニットの取得 ---
 function getPlayerActive() { return MASMON_BATTLE_STATE.playerTeam[MASMON_BATTLE_STATE.playerActiveIdx]; }
+
+// --- 陣営アイコン（battle-player-icon / battle-enemy-icon）の表示窓口 ---
+// みがわり設置中（[side]SubstituteHits > 0）は、場に出ているモンスターが誰であっても
+// 常にみがわり画像を優先して表示する（みがわりはモンスターを交換しても場に残り続ける仕様のため）。
+// 以後、この2つのアイコンを更新する箇所は、renderMonsterVisualを直接呼ばずに必ずこの関数を経由すること。
+function renderBattleFieldIcon(side, unit) {
+    if (!unit) return;
+    const elId = side === 'player' ? 'battle-player-icon' : 'battle-enemy-icon';
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const stateKey = side === 'player' ? 'playerSubstituteHits' : 'enemySubstituteHits';
+    if (MASMON_BATTLE_STATE[stateKey] > 0) {
+        renderSubstituteVisual(el, side === 'player');
+        return;
+    }
+    renderMonsterVisual(el, unit.visualName || unit.monsterBaseName, unit.emoji, unit.isAwakened, side === 'player', unit.aura);
+}
 function getEnemyActive() { return MASMON_BATTLE_STATE.enemyTeam[MASMON_BATTLE_STATE.enemyActiveIdx]; }
 
 // =====================================================
@@ -242,12 +259,12 @@ function startMasmonBattleCommon(floorText) {
     const enemyOwner = MASMON_BATTLE_STATE.enemyMeta[MASMON_BATTLE_STATE.enemyActiveIdx].ownerName || '相手ブリーダー';
 
     document.getElementById('enemy-name').textContent = e.shortName || e.name;
-    renderMonsterVisual(document.getElementById('battle-enemy-icon'), e.visualName || e.monsterBaseName, e.emoji, e.isAwakened, false, e.aura);
+    renderBattleFieldIcon('enemy', e);
     document.getElementById('battle-enemy-type').textContent = e.shortName || e.name;
     renderAuraBadge('enemy-aura-badge', e.aura, e.monsterBaseName);
     renderStatusAilmentBadge('enemy-status-badge', e);
 
-    renderMonsterVisual(document.getElementById('battle-player-icon'), p.visualName || p.monsterBaseName, p.emoji, p.isAwakened, true, p.aura);
+    renderBattleFieldIcon('player', p);
     document.getElementById('battle-player-name').textContent = p.name;
     renderAuraBadge('player-aura-badge', p.aura, p.monsterBaseName);
     renderStatusAilmentBadge('player-status-badge', p);
@@ -437,7 +454,7 @@ function applyPlayerSwitch(targetIdx, onDone) {
     applyAuraMonClassLifeBonus(target, getEnemyActive());
 
     addLog(`あなたは【${target.name}】を繰り出した！`);
-    renderMonsterVisual(document.getElementById('battle-player-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened, true, target.aura);
+    renderBattleFieldIcon('player', target);
     document.getElementById('battle-player-name').textContent = target.name;
     renderAuraBadge('player-aura-badge', target.aura, target.monsterBaseName);
     renderStatusAilmentBadge('player-status-badge', target);
@@ -476,7 +493,7 @@ function applyEnemySwitch(targetIdx, onDone) {
     const sideLabel = MASMON_BATTLE_STATE.opponentOwnerName || '相手';
     addLog(`${sideLabel}は【${target.name}】を繰り出した！`);
     document.getElementById('enemy-name').textContent = target.shortName || target.name;
-    renderMonsterVisual(document.getElementById('battle-enemy-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened, false, target.aura);
+    renderBattleFieldIcon('enemy', target);
     document.getElementById('battle-enemy-type').textContent = target.shortName || target.name;
     renderAuraBadge('enemy-aura-badge', target.aura, target.monsterBaseName);
     renderStatusAilmentBadge('enemy-status-badge', target);
@@ -1110,7 +1127,7 @@ function executeMasmonSwitch(targetIdx) {
     addLog(`${prev.name} を引っ込め、【${target.name}】を繰り出した！`);
     showEffect('🔄 交代！ 🔄');
 
-    renderMonsterVisual(document.getElementById('battle-player-icon'), target.visualName || target.monsterBaseName, target.emoji, target.isAwakened, true, target.aura);
+    renderBattleFieldIcon('player', target);
     document.getElementById('battle-player-name').textContent = target.name;
     renderAuraBadge('player-aura-badge', target.aura, target.monsterBaseName);
     renderStatusAilmentBadge('player-status-badge', target);
@@ -1698,6 +1715,9 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
 
         runBattleStepSequence(steps, () => {
             updateMasmonBattleStatsUI();
+            // 攻撃時にみがわりからモンスター本体の絵に切り替えていた場合、ここで必ずみがわりに戻す
+            // （renderBattleFieldIconはみがわり設置中かどうかを見て自動的に適切な絵を選んでくれる）。
+            renderBattleFieldIcon(side, unit);
             onComplete();
         });
         return;
@@ -1712,6 +1732,12 @@ function buildSkillNameStep(steps, side, unit, sk, skKey) {
     steps.push({
         run: () => {
             addLog(`${unit.name} の 【${sk.name}】！`);
+            // みがわり設置中に自身が攻撃技を繰り出す場合、一瞬だけモンスター本体の絵を表示してから
+            // 攻撃する（攻撃後はrunBattleStepSequence側の完了処理で自動的にみがわりの絵へ戻る）。
+            const stateKey = side === 'player' ? 'playerSubstituteHits' : 'enemySubstituteHits';
+            if ((sk.type === 'pow' || sk.type === 'int') && MASMON_BATTLE_STATE[stateKey] > 0) {
+                renderMonsterVisual(document.getElementById(side === 'player' ? 'battle-player-icon' : 'battle-enemy-icon'), unit.visualName || unit.monsterBaseName, unit.emoji, unit.isAwakened, side === 'player', unit.aura);
+            }
             animateSprite(cfg.spriteContainer, cfg.spriteAnim);
             if (skKey && typeof playSkillVisualEffect === 'function') playSkillVisualEffect(skKey, side);
             applySkillOnUseEffect(unit, sk).forEach(m => addLog(m.short, m.detail));
@@ -1783,10 +1809,13 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
         const consumedSub = Math.min(MASMON_BATTLE_STATE[defenderSubKey], hitCount);
         MASMON_BATTLE_STATE[defenderSubKey] -= consumedSub;
         const remaining = MASMON_BATTLE_STATE[defenderSubKey];
+        const defenderSide = side === 'player' ? 'enemy' : 'player';
         steps.push({
             run: () => {
                 showEffect('🌸 身代わり！');
                 addLog(`🌸 桜餅の身代わりが${defender.name}の代わりに攻撃を${consumedSub > 1 ? consumedSub + '回分' : ''}受けた！（身代わりの残り回数: ${remaining}）`);
+                // みがわりが尽きた場合、この瞬間にモンスター本体の絵へ戻す
+                if (remaining <= 0) renderBattleFieldIcon(defenderSide, defender);
             },
             wait: BATTLE_STEP_DELAY.afterHitEffect
         });

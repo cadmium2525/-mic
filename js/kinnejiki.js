@@ -624,7 +624,7 @@ function maybeExecuteKinNejikiEnemySwitch() {
 
     const newUnit = chosen.unit;
     document.getElementById('enemy-name').textContent = newUnit.shortName || newUnit.name;
-    renderMonsterVisual(document.getElementById('battle-enemy-icon'), newUnit.visualName || newUnit.monsterBaseName, newUnit.emoji, newUnit.isAwakened, false, newUnit.aura);
+    renderBattleFieldIcon('enemy', newUnit);
     document.getElementById('battle-enemy-type').textContent = newUnit.shortName || newUnit.name;
     renderAuraBadge('enemy-aura-badge', newUnit.aura, newUnit.monsterBaseName);
 
@@ -987,7 +987,7 @@ function renderKinNejikiSwapLists() {
             const card = document.createElement('div');
             card.className = `bg-[#2a1b15] border rounded-xl p-2 cursor-pointer active:scale-[0.98] transition-all flex items-center space-x-2 ${isSelected ? 'border-emerald-400 shadow-[0_0_6px_2px_rgba(52,211,153,0.4)]' : 'border-amber-900/50'}`;
             card.onclick = () => onClick(idx);
-            const skillNames = (m.skills || []).map(sk => (SKILLS_DB[sk] ? SKILLS_DB[sk].name : sk)).join('、');
+            const skillNames = buildSkillListWithAuraText(m.skills || []);
             const visualId = `kinnejiki-swap-visual-${keyPrefix}-${idx}`;
 
             const auraInfo = m.aura ? AURA_TYPES[m.aura] : null;

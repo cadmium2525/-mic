@@ -127,6 +127,35 @@ function renderMonsterVisual(containerEl, name, emoji, isAwakened = false, isPar
     };
 }
 
+// --- みがわり（身代わり）画像を陣営アイコン枠に表示する ---
+// renderMonsterVisualと同じ見た目・フォールバック規則（画像が無ければ🌸で代替）に揃えている。
+// isPartner: 自分側（プレイヤー側）ならtrue。敵側の画像は左右反転して表示する規則もrenderMonsterVisualに合わせる。
+function renderSubstituteVisual(containerEl, isPartner) {
+    if (!containerEl) return;
+    const imagePath = 'images/みがわり.png';
+    containerEl.innerHTML = '';
+    containerEl.dataset.visualSrc = imagePath;
+    if (!containerEl.style.position) containerEl.style.position = 'relative';
+
+    const img = new Image();
+    img.src = imagePath;
+    img.onload = () => {
+        if (containerEl.dataset.visualSrc !== imagePath) return;
+        containerEl.innerHTML = '';
+        const flipClass = isPartner ? '' : ' -scale-x-100';
+        const imgEl = document.createElement('img');
+        imgEl.src = imagePath;
+        imgEl.alt = 'みがわり';
+        imgEl.className = `monster-visual-img w-full h-full object-contain max-h-24 max-w-24 mx-auto drop-shadow-lg${flipClass}`;
+        containerEl.appendChild(imgEl);
+    };
+    img.onerror = () => {
+        console.warn(`[renderSubstituteVisual] 画像が見つかりません: ${imagePath}`);
+        if (containerEl.dataset.visualSrc !== imagePath) return;
+        containerEl.textContent = '🌸';
+    };
+}
+
 
 // --- オーラバッジ表示ヘルパー（バトル画面の名前横に色付きバッジを表示する） ---
 function renderAuraBadge(elId, auraKey, monsterRawName) {
