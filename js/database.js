@@ -767,8 +767,8 @@ const SKILLS_DB = {
     shuuen_ni_sukui_wo_ataeyo: { name: '終焉に救いを与えよ', aura: null, cost: 35, type: 'int', hitRate: 80, force: 2.3, gutsDown: 16, critBonus: 0.04, effect: 'self_heal_15pct', desc: '終わりゆく者にすら救済を与える圧倒的な一撃。相手GUTS-16。さらに命中した場合、救済の奇跡により自身のライフを15%回復する' },
     shiten_no_tsurugi_yo_oritate: { name: '熾天の剣よ降り立て', aura: 'red', cost: 42, type: 'int', hitRate: 80, force: 1.75, gutsDown: 25, critBonus: 0.11, effect: 'def_down_15', desc: '天より舞い降りる熾天使の剣を叩きつける。相手GUTS-25。さらに命中した場合、聖剣の衝撃で30%の確率で相手の丈夫さを15%低下させる（最大3回まで累積・交代するまで持続）' },
     seiya_no_kane_yo_narihibike: { name: '聖夜の鐘よ鳴響け', aura: 'green', cost: 43, type: 'int', hitRate: 72, force: 2.35, gutsDown: 20, critBonus: 0.11, effect: 'confuse_30', desc: '荘厳な鐘の音を鳴り響かせ精神を揺さぶる。相手GUTS-20。さらに命中した場合、30%の確率で相手を混乱状態にする（混乱中は毎ターン40%の確率で意味不明になり行動できなくなり、30%の確率で混乱が解除される）' },
-    inore_rinne_no_wa_yo: { name: '祈れ輪廻の環よ', aura: 'blue', cost: 45, type: 'int', hitRate: 60, force: 2.6, gutsDown: 20, critBonus: 0.11, effect: 'shield_self_20pct', desc: '輪廻転生の環を呼び覚まし絶大な力を叩きつける。相手GUTS-20。さらに命中した場合、自身の最大ライフの20%に相当するシールドを展開する' },
-    ten_no_jihi_yo_shimesareyo: { name: '天の慈悲よ示されよ', aura: 'blue', cost: 50, type: 'int', hitRate: 72, force: 2.7, gutsDown: 20, critBonus: 0.07, effect: 'perma_dmg_up_20', desc: '天の慈悲そのものを解き放つ、この上ない最大の切り札。相手GUTS-20。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
+    inore_rinne_no_wa_yo: { name: '祈れ輪廻の環よ', aura: 'blue', cost: 45, type: 'int', hitRate: 90, force: 2.6, gutsDown: 20, critBonus: 0.11, effect: 'shield_self_20pct', desc: '輪廻転生の環を呼び覚まし絶大な力を叩きつける。相手GUTS-20。さらに命中した場合、自身の最大ライフの20%に相当するシールドを展開する' },
+    ten_no_jihi_yo_shimesareyo: { name: '天の慈悲よ示されよ', aura: 'blue', cost: 50, type: 'int', hitRate: 92, force: 2.7, gutsDown: 20, critBonus: 0.07, effect: 'perma_dmg_up_20', desc: '天の慈悲そのものを解き放つ、この上ない最大の切り札。相手GUTS-20。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
 
     // --- イルミネ系統 ---
     plasma: { name: 'プラズマ', aura: null, cost: 13, type: 'pow', hitRate: 100, force: 0.15, gutsDown: 3, critBonus: 0.06, effect: 'grant_double_hit_next', desc: '体内で生成した電光を放つ、回避を完全に無視して【必中】する基本技。相手GUTS-3。さらに命中した場合、自身が次に繰り出す技を2回攻撃扱いにする（命中判定は1回のみだが、命中時のダメージ・追加効果の抽選を2回分まとめて処理する）' },
