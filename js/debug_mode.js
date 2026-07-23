@@ -252,11 +252,16 @@ function buildDebugMonster(side) {
 
         return {
             name: bossDef.name,
+            shortName: bossDef.shortName || null,
             monsterBaseName: bossDef.templateId ? (MONSTER_TEMPLATES[bossDef.templateId] || {}).name || bossDef.name : bossDef.name,
             visualName: DEBUG_BOSS_VISUAL_NAME[bossKey] || null,
             emoji: bossDef.emoji,
             speciesId: bossDef.templateId,
             aura: builder.aura || bossDef.aura || null,
+            isAwakened: false,
+            statusEffect: null,
+            difficulty: 'debug',
+            stats: { ...bossDef.statsBase, life: bossDef.statsBase.maxLife },
             skills,
             skillEnhancements: {},
             equip: null,

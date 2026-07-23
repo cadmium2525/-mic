@@ -130,6 +130,7 @@ function convertMasmonToBattleUnit(masmonData, equippedItem) {
     const equipBonus = getEquipmentStatBonuses(equippedItem);
     return {
         name: masmonData.name,
+        shortName: masmonData.shortName || null,
         monsterBaseName: masmonData.monsterBaseName || masmonData.name,
         // 専用イラスト名の上書き（例：コルトのゴビ／コルトのモスト等、種族名とは別のファイル名の
         // 画像を使わせたいボス）。ここで引き継がないと、生成元オブジェクト側でどれだけ
