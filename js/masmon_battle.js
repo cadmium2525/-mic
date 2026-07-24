@@ -2359,6 +2359,10 @@ function handleMasmonBattleWin() {
         setTimeout(() => kinNejikiHandleBattleEnd(true), 1500);
         return;
     }
+    if (MASMON_BATTLE_STATE.endless && MASMON_BATTLE_STATE.endless.inRun && typeof endlessHandleBattleEnd === 'function') {
+        setTimeout(() => endlessHandleBattleEnd(true), 1500);
+        return;
+    }
     setTimeout(() => showMasmonBattleResult(true), 1500);
 }
 
@@ -2371,6 +2375,10 @@ function handleMasmonBattleLose() {
     showEffect('💀 LOSE... 💀');
     if (MASMON_BATTLE_STATE.kinNejiki && MASMON_BATTLE_STATE.kinNejiki.inRun && typeof kinNejikiHandleBattleEnd === 'function') {
         setTimeout(() => kinNejikiHandleBattleEnd(false), 1500);
+        return;
+    }
+    if (MASMON_BATTLE_STATE.endless && MASMON_BATTLE_STATE.endless.inRun && typeof endlessHandleBattleEnd === 'function') {
+        setTimeout(() => endlessHandleBattleEnd(false), 1500);
         return;
     }
     setTimeout(() => showMasmonBattleResult(false), 1500);

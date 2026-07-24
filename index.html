@@ -76,6 +76,10 @@
                         <i class="fa-solid fa-crown"></i>
                         <span>ガッツファクトリーに挑戦！</span>
                     </button>
+                    <button id="endless-mode-home-btn" onclick="openEndlessHomeScreen()" class="hidden w-full py-3.5 bg-gradient-to-r from-purple-600 to-fuchsia-700 hover:from-purple-500 hover:to-fuchsia-600 text-white font-black rounded-xl text-md shadow-lg transform active:scale-95 transition-all pixel-font border-b-4 border-fuchsia-900 flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-infinity"></i>
+                        <span>エンドレスモード</span>
+                    </button>
                     <button onclick="startPvpRentalEntry('team')" class="w-full py-3.5 bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-black rounded-xl text-md shadow-lg transform active:scale-95 transition-all pixel-font border-b-4 border-blue-800 flex items-center justify-center space-x-2">
                         <i class="fa-solid fa-swords"></i>
                         <span>PvP対戦（レンタルモンスター）</span>
@@ -734,6 +738,64 @@
                 </button>
             </div>
 
+            <!-- ==================== SCREEN: エンドレスモード ホーム画面 ==================== -->
+            <div id="screen-endless-home" class="screen flex-col h-full bg-gradient-to-b from-[#2a1730] to-[#1a120b]">
+                <div class="p-3 border-b border-purple-950 flex items-center justify-between bg-[#24101e] flex-shrink-0">
+                    <button onclick="returnFromEndlessHome()" class="text-purple-300 text-xs font-bold px-2 py-1">← 戻る</button>
+                    <h2 class="text-sm font-black text-white pixel-font">♾️ エンドレスモード</h2>
+                    <div class="w-10"></div>
+                </div>
+                <div class="flex-1 overflow-y-auto p-3">
+                    <div id="endless-home-content"></div>
+                </div>
+            </div>
+
+            <!-- ==================== SCREEN: エンドレスモード チーム編成画面 ==================== -->
+            <div id="screen-endless-team-builder" class="screen flex-col h-full bg-[#1a120b]">
+                <div class="p-3 border-b border-purple-950 flex items-center justify-between bg-[#24101e] flex-shrink-0">
+                    <button onclick="returnFromEndlessTeamBuilder()" class="text-purple-300 text-xs font-bold px-2 py-1">← 戻る</button>
+                    <h2 class="text-sm font-black text-white pixel-font">✏️ チーム編成</h2>
+                    <div class="w-10"></div>
+                </div>
+                <div class="flex-1 overflow-y-auto p-3 space-y-3">
+                    <div class="bg-[#2a1b15] border border-purple-900/50 rounded-xl p-3 space-y-2">
+                        <div class="text-xs font-bold text-purple-300">モンスターを追加（最大4体）</div>
+                        <select id="endless-builder-species" onchange="onEndlessSpeciesChange()"
+                            class="w-full bg-[#1a120b] border border-purple-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
+                        <select id="endless-builder-aura" onchange="onEndlessAuraChange(this.value)"
+                            class="w-full bg-[#1a120b] border border-purple-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
+                        <div class="text-[9px] text-gray-500">技を最大4つまでチェック：</div>
+                        <div id="endless-builder-skills" class="flex flex-wrap gap-1"></div>
+                        <div class="text-[9px] text-gray-500 pt-1">装備（ステータス装備・特殊効果装備どちらも選択可）：</div>
+                        <select id="endless-builder-equip" onchange="onEndlessEquipChange(this.value)"
+                            class="w-full bg-[#1a120b] border border-purple-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
+                        <button onclick="addEndlessMonsterToTeam()"
+                            class="w-full py-1.5 bg-purple-700 hover:bg-purple-600 text-white text-xs font-bold rounded-lg active:scale-95 transition-all">＋ チームに追加</button>
+                    </div>
+                    <div class="bg-[#2a1b15] border border-purple-900/50 rounded-xl p-3 space-y-2">
+                        <div class="text-xs font-bold text-purple-300">現在のチーム</div>
+                        <div id="endless-builder-team-list" class="space-y-1.5"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== SCREEN: エンドレスモード 3/4体選択画面 ==================== -->
+            <div id="screen-endless-select" class="screen flex-col justify-between h-full p-4 bg-[#1a120b] space-y-3">
+                <div class="bg-purple-950/40 p-2.5 rounded-xl border border-purple-700 text-center relative">
+                    <button onclick="abandonEndlessChallenge()" class="absolute left-2 top-2 text-[9px] text-gray-400 hover:text-gray-300">✕ 中断</button>
+                    <h2 class="text-sm font-black text-purple-300 pixel-font">出撃する3体を選ぼう！</h2>
+                    <p id="endless-select-header" class="text-[9px] text-gray-400 mt-0.5">通算1戦目・現在0連勝</p>
+                </div>
+
+                <div class="flex-1 overflow-y-auto space-y-2 pr-1" id="endless-select-container">
+                    <!-- JSで4体のチームカードを生成 -->
+                </div>
+
+                <button id="endless-confirm-party-btn" onclick="confirmEndlessParty()" disabled class="w-full py-3.5 bg-purple-700 hover:bg-purple-600 disabled:cursor-not-allowed text-white font-bold rounded-xl text-sm shadow-lg transform active:scale-95 transition-all pixel-font border-b-4 border-purple-900 opacity-50">
+                    パーティを選択中 (0/3)
+                </button>
+            </div>
+
             <!-- ==================== SCREEN 17: 開発者用デバッグモード ====================
                  通常のプレイ導線からは一切リンクされていない隠し画面。
                  画面最下部のフッター文言（#secret-debug-trigger）を素早く7回タップすると開く。 -->
@@ -1067,6 +1129,7 @@
     <script src="js/masmon_realtime.js"></script>
     <script src="js/masmon_realtime_battle.js"></script>
     <script src="js/kinnejiki.js"></script>
+    <script src="js/endless_mode.js"></script>
     <script src="js/pvp_rental.js"></script>
     <script src="js/pvp_preset.js"></script>
     <script src="js/monster_dex.js"></script>

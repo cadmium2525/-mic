@@ -82,16 +82,18 @@ async function loadAndRenderAccountStats() {
     if (!container) return;
     container.innerHTML = `<p class="text-gray-500">読み込み中…</p>`;
 
-    const [kinStats, usageTop, pvpStats] = await Promise.all([
+    const [kinStats, usageTop, pvpStats, endlessStats] = await Promise.all([
         (typeof fetchMyKinNejikiStats === 'function') ? fetchMyKinNejikiStats() : Promise.resolve(null),
         (typeof fetchMyKinNejikiMonsterUsageTop === 'function') ? fetchMyKinNejikiMonsterUsageTop(5) : Promise.resolve([]),
-        (typeof fetchMyPvpTotalStats === 'function') ? fetchMyPvpTotalStats() : Promise.resolve(null)
+        (typeof fetchMyPvpTotalStats === 'function') ? fetchMyPvpTotalStats() : Promise.resolve(null),
+        (typeof fetchMyEndlessStats === 'function') ? fetchMyEndlessStats() : Promise.resolve(null)
     ]);
 
     const kinRuns = kinStats ? kinStats.totalRuns : 0;
     const kinBest = kinStats ? kinStats.bestWins : 0;
     const pvpGames = pvpStats ? pvpStats.gamesPlayed : 0;
     const pvpWins = pvpStats ? pvpStats.wins : 0;
+    const endlessBest = endlessStats ? endlessStats.bestStreak : 0;
 
     let usageHtml = '';
     if (usageTop && usageTop.length > 0) {
@@ -121,6 +123,10 @@ async function loadAndRenderAccountStats() {
                 <p class="text-gray-400">⚔️ PvP（今シーズン）</p>
                 <p class="text-white mt-1">プレイ回数<br><span class="font-bold text-sky-300 text-sm">${pvpGames}</span></p>
                 <p class="text-white mt-1">総勝利数<br><span class="font-bold text-sky-300 text-sm">${pvpWins}</span></p>
+            </div>
+            <div class="bg-[#150b07] rounded-lg p-2 col-span-2">
+                <p class="text-gray-400">♾️ エンドレスモード</p>
+                <p class="text-white mt-1">自己ベスト連勝記録<br><span class="font-bold text-purple-300 text-sm">${endlessBest}</span></p>
             </div>
         </div>
         ${usageHtml}
@@ -170,4 +176,14 @@ function restoreMyPlayerId() {
     if (idDisplay) idDisplay.value = getMyPlayerId();
     if (input) input.value = '';
     showToast('アカウントIDを復帰しました！');
+    // 復帰したIDに紐づくガッツファクトリーのクリア状況を反映し、エンドレスモードボタンの表示を即座に更新する
+    if (typeof checkEndlessModeUnlockAndUpdateHomeButton === 'function') checkEndlessModeUnlockAndUpdateHomeButton();
+    // 復帰したIDに紐づくエンドレスモードのチーム編成・自己ベスト連勝記録も、次回エンドレス画面を開いた時に
+    // 正しく読み込まれるよう、メモリ上のキャッシュ（ENDLESS_STATE）をリセットしておく
+    if (typeof ENDLESS_STATE !== 'undefined') {
+        ENDLESS_STATE.team = [];
+        ENDLESS_STATE.bestStreak = 0;
+        ENDLESS_STATE.currentStreak = 0;
+        ENDLESS_STATE.active = false;
+    }
 }

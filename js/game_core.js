@@ -230,6 +230,7 @@ window.addEventListener('load', () => {
         nameInputEl.value = GAME_STATE.playerName;
     }
     if (typeof initFirebase === 'function') initFirebase();
+    if (typeof checkEndlessModeUnlockAndUpdateHomeButton === 'function') checkEndlessModeUnlockAndUpdateHomeButton();
 });
 
 // 画面遷移

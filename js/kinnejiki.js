@@ -1497,6 +1497,10 @@ async function kinNejikiFinishRun(cleared) {
     // ランキングへの書き込みが完了しないまま消えてしまう（特に早期敗退時に起きやすい）。
     // そのため画面遷移の前に保存の完了を待つ。
     await saveKinNejikiRanking(finalWins, cleared);
+    if (cleared && typeof checkEndlessModeUnlockAndUpdateHomeButton === 'function') {
+        // 初クリアの場合、タイトルに戻った時にすぐ「エンドレスモード」ボタンが出るよう即座に再判定する
+        checkEndlessModeUnlockAndUpdateHomeButton();
+    }
     renderKinNejikiResultScreen(finalWins, cleared);
     changeScreen('screen-kinnejiki-result');
 }
