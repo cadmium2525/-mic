@@ -1808,6 +1808,11 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
         // （unit.lastSkillKeyUsed をこの後すぐ今回の技で上書きするため、判定に使う値は先に退避する）
         const previousSkillKeyUsed = unit.lastSkillKeyUsed;
 
+        // 技選択画面で見せた命中%は「技を打つ前」のガッツを基準に計算しているため、
+        // 実際の命中判定も同じ「技を打つ前」のガッツを使うよう、消費前の値をここで退避しておく
+        // （buildAttackSkillStepsのガッツ補正で参照する。ダメージ倍率は従来通り消費後のガッツを使う）。
+        unit.gutsBeforeSkillCost = unit.guts;
+
         unit.guts -= sk.cost;
         incrementSkillUseCount(unit, action.skKey);
         unit.lastSkillKeyUsed = action.skKey;
@@ -1884,7 +1889,9 @@ function buildSkillNameStep(steps, side, unit, sk, skKey) {
 function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
     const cfg = SIDE_UI[side];
     const useGutsMods = (side === 'player');
-    const mods = getGutsModifiers(attacker.guts);
+    // ガッツ補正（命中率・ダメージ倍率とも）は「技を打つ前」のガッツを基準にする
+    // （技選択画面で見せた命中%と実際の判定を一致させるため。PvP側も元々この方式）。
+    const mods = getGutsModifiers(typeof attacker.gutsBeforeSkillCost === 'number' ? attacker.gutsBeforeSkillCost : attacker.guts);
 
     // 装備の「攻撃するたびにライフ消費・技威力アップ」効果：技を繰り出した時点（命中判定に関わらず）で1回だけ適用する
     const recoilCost = getEquipmentRecoilLifeCost(attacker);
