@@ -619,6 +619,15 @@ function openPostVictorySwitchModal(candidates, onDone) {
                 <div class="text-[8px] text-gray-400 truncate w-full">技: ${buildSkillListWithAuraText(unit.skills)}</div>
             `;
             btn.onclick = () => {
+                // 相手を倒した直後（＝この投稿勝利交代プロンプト）に控えへ戻る場合、
+                // 勝利の勢いでガッツを30回復させてから交代する（そうしないと控えで足止めされたまま
+                // ガッツが低い状態で放置されてしまうため）。
+                const outgoing = MASMON_BATTLE_STATE.playerTeam[MASMON_BATTLE_STATE.playerActiveIdx];
+                if (outgoing && outgoing.stats.life > 0) {
+                    const before = Math.floor(outgoing.guts);
+                    outgoing.guts = Math.min(100, outgoing.guts + 30);
+                    addLog(`💪 ${outgoing.name} は勝利の勢いでガッツを取り戻した！（ガッツ+30・${before}→${Math.floor(outgoing.guts)}）`);
+                }
                 applyPlayerSwitch(idx, () => {
                     closeAndFinish();
                 });

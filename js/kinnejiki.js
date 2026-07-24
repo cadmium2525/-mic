@@ -396,7 +396,10 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, e
             ownerName: bossDef.title
         };
         // guaranteeEquip=true：帯同2体も同様に必ず何かを装備させる
-        const escorts = generateKinNejikiOffer(7, excludeSpecies, excludeEquip, 2, true);
+        // ※以前は常にセット7相当（最大ステータス・特殊装備・全型解放）で生成してしまっていたため、
+        //   セット3のボス戦でも帯同2体だけ最終盤仕様の強さになってしまっていた。
+        //   実際のsetNumberを渡すことで、そのセットにふさわしい強さに揃える（セット7はこれまで通り）。
+        const escorts = generateKinNejikiOffer(setNumber, excludeSpecies, excludeEquip, 2, true);
         escorts.forEach(m => { if (m) m.ownerName = bossDef.title; });
         return [bossUnit, ...escorts.filter(Boolean)];
     }
@@ -816,6 +819,127 @@ function beginKinNejikiRun() {
     changeScreen('screen-kinnejiki-select');
 }
 
+// =====================================================
+// レンタルモンスター詳細モーダル（長押しで表示）
+// パーティ選出画面（renderKinNejikiSelectScreen）・交換画面（renderKinNejikiSwapLists）の
+// 両方のカードから共通で利用する。
+// =====================================================
+
+// --- カードに「タップ＝onTap実行」「長押し＝詳細モーダル表示」の両方を仕込む共通ヘルパー ---
+// 呼び出し側では card.onclick を直接設定せず、必ずこの関数経由でタップ処理(onTap)を渡すこと。
+// （clickイベントを1つのリスナーだけで処理することで、長押し発火後にタップの選択処理まで
+//   誤って実行されてしまう、というイベントの実行順序に依存した不具合を避けている）
+function attachKinNejikiCardInteractions(el, monster, onTap) {
+    if (!el) return;
+    const LONG_PRESS_MS = 500;
+    let timer = null;
+    let longPressFired = false;
+
+    const start = () => {
+        longPressFired = false;
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            longPressFired = true;
+            timer = null;
+            if (navigator.vibrate) { try { navigator.vibrate(15); } catch (e) { /* ignore */ } }
+            showKinNejikiMonsterDetailModal(monster);
+        }, LONG_PRESS_MS);
+    };
+    const cancelTimer = () => {
+        if (timer) { clearTimeout(timer); timer = null; }
+    };
+
+    el.addEventListener('pointerdown', start);
+    el.addEventListener('pointerup', cancelTimer);
+    el.addEventListener('pointerleave', cancelTimer);
+    el.addEventListener('pointercancel', cancelTimer);
+    el.addEventListener('click', () => {
+        if (longPressFired) {
+            // 長押しで詳細モーダルを表示済みなので、続けて発火するclickでの選択トグルは無視する
+            longPressFired = false;
+            return;
+        }
+        if (typeof onTap === 'function') onTap();
+    });
+}
+
+// --- レンタルモンスター1体分の詳細（ステータス・装備説明・所持技の説明）をモーダルで表示する ---
+function showKinNejikiMonsterDetailModal(monster) {
+    if (!monster) return;
+    const modal = document.getElementById('kinnejiki-monster-detail-modal');
+    if (!modal) return;
+
+    const nameEl = document.getElementById('kinnejiki-detail-name');
+    const auraEl = document.getElementById('kinnejiki-detail-aura');
+    const statsEl = document.getElementById('kinnejiki-detail-stats');
+    const equipEl = document.getElementById('kinnejiki-detail-equip');
+    const skillsEl = document.getElementById('kinnejiki-detail-skills');
+    const visualEl = document.getElementById('kinnejiki-detail-visual');
+
+    if (nameEl) nameEl.textContent = monster.name || '';
+
+    const auraInfo = monster.aura ? AURA_TYPES[monster.aura] : null;
+    const monClassKey = getMonClassKeyForName(monster.monsterBaseName);
+    const monClassInfo = monClassKey ? MON_CLASS_TYPES[monClassKey] : null;
+    if (auraEl) {
+        auraEl.textContent = [
+            auraInfo ? `${auraInfo.emoji}${auraInfo.name}オーラ` : null,
+            monClassInfo ? `${monClassInfo.emoji}${monClassInfo.name}` : null
+        ].filter(Boolean).join(' ／ ');
+    }
+
+    if (statsEl && monster.stats) {
+        statsEl.innerHTML = `HP ${monster.stats.maxLife} ／ ちから ${monster.stats.pow} ／ かしこさ ${monster.stats.int} ／ 命中 ${monster.stats.hit} ／ 回避 ${monster.stats.spd} ／ 丈夫さ ${monster.stats.def}`;
+    }
+
+    if (equipEl) {
+        if (monster.equip) {
+            const base = EQUIPMENT_DB[monster.equip.equipId];
+            const icon = base ? (base.icon || '⚙️') : '⚙️';
+            equipEl.innerHTML = `<div class="font-bold text-sky-200">${icon} ${getEquipmentDisplayName(monster.equip)}</div><div class="mt-0.5">${getEquipmentDisplayDesc(monster.equip)}</div>`;
+        } else {
+            equipEl.textContent = '装備なし';
+        }
+    }
+
+    if (skillsEl) {
+        skillsEl.innerHTML = '';
+        (monster.skills || []).forEach(skKey => {
+            const sk = SKILLS_DB[skKey];
+            const row = document.createElement('div');
+            row.className = 'bg-[#1a120b] rounded-lg p-2';
+            if (!sk) {
+                row.innerHTML = `<div class="text-[10px] text-gray-400">${skKey}（不明な技）</div>`;
+                skillsEl.appendChild(row);
+                return;
+            }
+            const auraForSkill = sk.aura ? AURA_TYPES[sk.aura] : null;
+            const auraMark = auraForSkill ? auraForSkill.emoji : '▫️';
+            const hitDisplay = sk.hitRate === 100 ? '必中' : `${sk.hitRate}%`;
+            row.innerHTML = `
+                <div class="flex items-center justify-between">
+                    <div class="text-[11px] font-bold text-amber-200">${auraMark} ${sk.name}</div>
+                    <div class="text-[9px] text-gray-400 flex-shrink-0 ml-1">G${sk.cost} ／ 命中${hitDisplay}</div>
+                </div>
+                <div class="text-[9px] text-gray-300 mt-1 leading-relaxed">${sk.desc || ''}</div>
+            `;
+            skillsEl.appendChild(row);
+        });
+    }
+
+    if (visualEl) {
+        visualEl.innerHTML = '';
+        renderMonsterVisual(visualEl, monster.visualName || monster.monsterBaseName || monster.name, monster.emoji, !!monster.isAwakened, true, monster.aura);
+    }
+
+    modal.classList.remove('hidden');
+}
+
+function closeKinNejikiMonsterDetailModal() {
+    const modal = document.getElementById('kinnejiki-monster-detail-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
 // --- パーティ選出画面（6体提示→タップで最大3体選択）の描画 ---
 function renderKinNejikiSelectScreen() {
     const container = document.getElementById('kinnejiki-offer-container');
@@ -827,7 +951,7 @@ function renderKinNejikiSelectScreen() {
         const isSelected = KIN_NEJIKI_STATE.selectedIdx.includes(idx);
         const card = document.createElement('div');
         card.className = `bg-[#2a1b15] border rounded-xl p-2.5 cursor-pointer active:scale-[0.98] transition-all ${isSelected ? 'border-amber-400 shadow-[0_0_6px_2px_rgba(251,191,36,0.4)]' : 'border-amber-900/50'}`;
-        card.onclick = () => toggleKinNejikiSelect(idx);
+        // タップ＝選択トグル、長押し＝詳細モーダル表示（両方を1つのヘルパーにまとめて管理する）
 
         const skillNames = buildSkillListWithAuraText(m.skills);
         const equipText = m.equip ? getEquipmentDisplayName(m.equip) : '未装備';
@@ -852,6 +976,7 @@ function renderKinNejikiSelectScreen() {
         `;
         card.querySelector('.flex.items-center').prepend(iconWrap);
         container.appendChild(card);
+        attachKinNejikiCardInteractions(card, m, () => toggleKinNejikiSelect(idx));
     });
 
     const confirmBtn = document.getElementById('kinnejiki-confirm-party-btn');
@@ -1151,7 +1276,7 @@ function renderKinNejikiSwapLists() {
             const isSelected = idx === selectedIdx;
             const card = document.createElement('div');
             card.className = `bg-[#2a1b15] border rounded-xl p-2 cursor-pointer active:scale-[0.98] transition-all flex items-center space-x-2 ${isSelected ? 'border-emerald-400 shadow-[0_0_6px_2px_rgba(52,211,153,0.4)]' : 'border-amber-900/50'}`;
-            card.onclick = () => onClick(idx);
+            // タップ＝選択トグル、長押し＝詳細モーダル表示（両方を1つのヘルパーにまとめて管理する）
             const skillNames = buildSkillListWithAuraText(m.skills || []);
             const visualId = `kinnejiki-swap-visual-${keyPrefix}-${idx}`;
 
@@ -1177,6 +1302,7 @@ function renderKinNejikiSwapLists() {
                 </div>
             `;
             container.appendChild(card);
+            attachKinNejikiCardInteractions(card, m, () => onClick(idx));
             const visualEl = card.querySelector(`#${CSS.escape(visualId)}`);
             renderMonsterVisual(visualEl, m.visualName || m.monsterBaseName || m.name, m.emoji, !!m.isAwakened, keyPrefix === 'mine', m.aura);
         });
