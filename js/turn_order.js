@@ -19,6 +19,7 @@ const ACTION_TIER_PRIORITY = {
     item: 6,        // 対戦アイテム使用（既存仕様通り、必ず先に処理する）
     defend: 4,      // 防御（技優先度に関わらず、必ず通常の技より先攻する）
     skill: 0,       // 通常の技（技ごとの priority がここに加算される）
+    charge: -1,     // ガッツを溜める（無防備になる代わりに大きくガッツを得る。必ず通常の技より後攻する）
     none: -99       // 行動不能（ガッツ不足・混乱・戦闘不能など）
 };
 
@@ -36,7 +37,7 @@ function getMoveSpeedValueFromRankSafe(rank) {
 
 /**
  * 1体分の「今ターンの行動」を表すオブジェクトを作成する。
- * @param {'switchOut'|'item'|'defend'|'skill'|'none'} actionType
+ * @param {'switchOut'|'item'|'defend'|'skill'|'charge'|'none'} actionType
  * @param {number} skillPriority 技固有の優先度（未指定は0。数値が大きいほど先攻）
  * @param {number} speed 実効移動速度（装備・バフ等を加味した最終値）
  * @returns {{actionType:string, priority:number, speed:number}}

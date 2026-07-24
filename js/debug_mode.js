@@ -118,6 +118,7 @@ function openDebugScreen() {
     renderDebugAiOptions();
     renderDebugTeamLists();
     renderDebugBreederPreviewList();
+    updateDebugKinNejikiRunBadge();
     changeScreen('screen-debug');
 }
 
@@ -564,6 +565,99 @@ function setDebugOpponentToBoss(setNumber) {
 // kinNejiki.inRun は必ず false にし、本編の周回・ランキング・タスクキル判定には
 // 一切影響を与えないようにする。
 // -----------------------------------------------------
+// -----------------------------------------------------
+// 🏁 デバッグ：〇戦目から「本番と全く同じ流れ」でガッツファクトリーのランを開始する。
+// ・①で編成した自分パーティ（DEBUG_STATE.playerTeam）をそのままKIN_NEJIKI_STATE.playerPartyへ流用する。
+// ・set / battleInSet / totalWins を指定した通算戦数から逆算してセットし、
+//   あとは本編と全く同じ advanceToNextKinNejikiBattle() に処理を渡す
+//   （勝てば通常通り交換画面→次バトルへ進み、負ければ通常通り結果画面へ進む）。
+// ・KIN_NEJIKI_STATE.isDebugRun = true を立てることで、ランキング保存・一時セーブの上書き・
+//   モンスター使用率トラッキングを一切行わないようにしている（kinNejikiFinishRun/saveKinNejikiSuspend側で判定）。
+// -----------------------------------------------------
+function startDebugKinNejikiRunFromBattle() {
+    if (DEBUG_STATE.playerTeam.length === 0) {
+        showToast('先に①で自分側パーティを1体以上編成してください。');
+        return;
+    }
+
+    const inputEl = document.getElementById('debug-start-battle-number');
+    let totalBattleNumber = parseInt(inputEl ? inputEl.value : '1', 10);
+    if (!Number.isFinite(totalBattleNumber)) totalBattleNumber = 1;
+    totalBattleNumber = Math.max(1, Math.min(49, totalBattleNumber));
+    if (inputEl) inputEl.value = totalBattleNumber;
+
+    const set = Math.ceil(totalBattleNumber / 7);
+    const battleInSet = ((totalBattleNumber - 1) % 7) + 1;
+
+    KIN_NEJIKI_STATE.active = true;
+    KIN_NEJIKI_STATE.isDebugRun = true; // ランキング保存・一時セーブ上書き・使用率トラッキングを無効化するフラグ
+    KIN_NEJIKI_STATE.set = set;
+    KIN_NEJIKI_STATE.battleInSet = battleInSet;
+    KIN_NEJIKI_STATE.totalWins = totalBattleNumber - 1;
+    // ①の自分側編成をそのままディープコピーして流用する（本編のplayerPartyと同じ形式のため互換）
+    KIN_NEJIKI_STATE.playerParty = DEBUG_STATE.playerTeam.map(m => JSON.parse(JSON.stringify(m)));
+    KIN_NEJIKI_STATE.offer = [];
+    KIN_NEJIKI_STATE.selectedIdx = [];
+    KIN_NEJIKI_STATE.pendingSwap = null;
+    KIN_NEJIKI_STATE.nextBattlePrepared = null;
+    KIN_NEJIKI_STATE.taskKillCount = 0;
+
+    showToast(`🛠️ 通算${totalBattleNumber}戦目（第${set}セット・${battleInSet}戦目）から開始します（ランキング対象外）`);
+    updateDebugKinNejikiRunBadge();
+    advanceToNextKinNejikiBattle();
+}
+
+// -----------------------------------------------------
+// 🏁 デバッグラン（〇戦目から開始した通しラン）の終了ボタンの表示/非表示を切り替える。
+// KIN_NEJIKI_STATE.isDebugRunの値が変わるたび（開始時・終了時）に呼ぶこと。
+// -----------------------------------------------------
+function updateDebugKinNejikiRunBadge() {
+    const btn = document.getElementById('debug-kinnejiki-run-end-btn');
+    if (btn) btn.classList.toggle('hidden', !KIN_NEJIKI_STATE.isDebugRun);
+}
+
+// -----------------------------------------------------
+// 🏁 デバッグラン（〇戦目から開始した通しラン）を、どの画面（対峙演出／バトル中／交換画面等）に
+// いる状態からでも即座に強制終了し、デバッグ画面へ戻る。
+// ・本編の一時セーブ・ランキング・使用率トラッキングには一切触れない
+//   （そもそもisDebugRun中はこれらへの書き込み自体が別途ブロックされているため、
+//   ここでは進行中の状態をクリアしてデバッグ画面に戻すことだけを行う）。
+// -----------------------------------------------------
+function endDebugKinNejikiRun() {
+    if (!KIN_NEJIKI_STATE.isDebugRun) return;
+
+    // バトルの真っ最中に押された場合は、バトルエンジン側の状態も強制終了させる
+    MASMON_BATTLE_STATE.isBattleEnd = true;
+    MASMON_BATTLE_STATE.isPlayerTurnActive = false;
+    MASMON_BATTLE_STATE.isDebugBattle = false;
+    ACTIVE_BATTLE_MODE = 'adventure';
+    clearKinNejikiBattleFlag(); // タスクキル検知用フラグを解除（本編の一時セーブ自体には触れない）
+
+    KIN_NEJIKI_STATE.active = false;
+    KIN_NEJIKI_STATE.isDebugRun = false;
+    KIN_NEJIKI_STATE.pendingSwap = null;
+    KIN_NEJIKI_STATE.nextBattlePrepared = null;
+    if (typeof KIN_NEJIKI_PENDING_BATTLE !== 'undefined') KIN_NEJIKI_PENDING_BATTLE = null;
+
+    // マスモン団体戦専用のUI残留を防ぐ（既存のendDebugBattle()と同様の後始末）
+    const playerTeamIconsEl = document.getElementById('player-team-icons');
+    const enemyTeamIconsEl = document.getElementById('enemy-team-icons');
+    const battleItemsEl = document.getElementById('battle-items-container');
+    if (playerTeamIconsEl) { playerTeamIconsEl.classList.add('hidden'); playerTeamIconsEl.innerHTML = ''; }
+    if (enemyTeamIconsEl) { enemyTeamIconsEl.classList.add('hidden'); enemyTeamIconsEl.innerHTML = ''; }
+    if (battleItemsEl) { battleItemsEl.classList.add('hidden'); battleItemsEl.innerHTML = ''; }
+    const endturnControlsEl = document.getElementById('battle-endturn-controls');
+    if (endturnControlsEl) endturnControlsEl.classList.remove('hidden');
+    const debugEndBtn = document.getElementById('debug-end-battle-btn');
+    if (debugEndBtn) debugEndBtn.classList.add('hidden');
+
+    if (typeof AudioManager !== 'undefined') AudioManager.playBGM('adventure');
+
+    updateDebugKinNejikiRunBadge();
+    changeScreen('screen-debug');
+    showToast('🛠️ デバッグランを終了しました（ランキング等には影響していません）。');
+}
+
 function launchDebugBattle() {
     if (DEBUG_STATE.playerTeam.length === 0) {
         showToast('自分側のパーティを1体以上編成してください。');

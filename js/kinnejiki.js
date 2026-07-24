@@ -25,7 +25,10 @@ const KIN_NEJIKI_STATE = {
     // { opponentTeam, floorLabel, isNejiki, aiLevel } または null
     nextBattlePrepared: null,
     // タスクキル（バトル中のアプリ強制終了）を検知した回数。3回で強制ゲームオーバーとする。
-    taskKillCount: 0
+    taskKillCount: 0,
+    // true の間は「デバッグモードから途中の戦目を指定して開始したラン」を示す。
+    // ランキング保存・一時セーブの上書き・モンスター使用率トラッキングを一切行わないようにするためのフラグ。
+    isDebugRun: false
 };
 
 // =====================================================
@@ -149,6 +152,12 @@ function hasKinNejikiSuspendSave() {
 function saveKinNejikiSuspend() {
     if (!KIN_NEJIKI_STATE.active) {
         showToast('挑戦中のみ一時セーブできます。');
+        return;
+    }
+    if (KIN_NEJIKI_STATE.isDebugRun) {
+        // デバッグから開始したランは、本編の一時セーブ（他に進行中の本番のランがあるかもしれない）を
+        // 誤って上書きしてしまわないよう、一時セーブ自体をさせない。
+        showToast('🛠️ デバッグランは一時セーブできません（本編のセーブデータ保護のため）。');
         return;
     }
     // 勝利後の交換画面から呼ばれた場合、この勝利分をまだカウンタ（battleInSet/set）へ
@@ -470,6 +479,8 @@ function kinNejikiOpponentIsBuffedUp(opponent) {
 // --- モスト専用ハイブリッドAIが「防御する」と判断したことを呼び出し元（masmon_battle.js）に伝えるための特別な戻り値 ---
 // masmon_battle.js の decideMasmonEnemyAction 側でもこの文字列リテラルを直接比較しているため、変更time は両方同時に直すこと。
 const KIN_NEJIKI_MOST_DEFEND_SENTINEL = '__most_defend__';
+// --- 敵AIが「気合をためる」を選んだと伝えるための特別な戻り値（上と同様、masmon_battle.js側と対で変更すること） ---
+const KIN_NEJIKI_CHARGE_SENTINEL = '__charge__';
 
 // --- モスト（最終ボス）専用の思考ルーチン ---
 // 通常の性格別ロジック（speedy/control/sustain/balanced）とは別枠。以下3つを組み合わせたハイブリッド：
@@ -524,8 +535,13 @@ function chooseKinNejikiMostAction(e, p, affordableSkills) {
 
     const selfLifeRatio = e.stats.life / e.stats.maxLife;
     if (willBeAffordableNextTurn.length > 0 && selfLifeRatio >= 0.4) {
-        // 常に温存すると「毎回防御してくる」と読まれてしまうため、7割の確率でのみ防御を選ぶ
+        // 常に温存すると「毎回防御してくる」と読まれてしまうため、7割の確率でのみ温存を選ぶ
         if (Math.random() < 0.7) {
+            // 温存する場合、ライフに十分余裕がある（6割以上）なら、被ダメ軽減は無いが
+            // ガッツをより速く溜められる「気合をためる」を半々の確率で選ぶ。余裕が無いなら安全に防御する。
+            if (selfLifeRatio >= 0.6 && Math.random() < 0.5) {
+                return KIN_NEJIKI_CHARGE_SENTINEL;
+            }
             return KIN_NEJIKI_MOST_DEFEND_SENTINEL;
         }
     }
@@ -540,6 +556,14 @@ function chooseKinNejikiMostAction(e, p, affordableSkills) {
 function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel, personality) {
     if (!affordableSkills || affordableSkills.length === 0) return null;
 
+    // ゴビステップ等、自身に既に効果が発動中の一回限りの自己バフ技は、再度使っても何の意味も
+    // 無いため、他に選べる技がある限り候補から除外する（控えに戻って効果が切れれば、
+    // gobiStepActiveがfalseに戻り、再び候補に含まれるようになる）。
+    if (e.gobiStepActive) {
+        const withoutRedundantGobiStep = affordableSkills.filter(s => s.info.useEffect !== 'gobi_step');
+        if (withoutRedundantGobiStep.length > 0) affordableSkills = withoutRedundantGobiStep;
+    }
+
     // --- モスト（最終ボス）専用のハイブリッドAI ---
     // aiLevel4（最終決戦相当）でモストと戦う時だけ、通常の性格別ロジックとは別枠の専用ロジックを使う。
     // （ボスプリセット以外でデバッグツールから種族「モスト」を選んで戦わせた場合も、aiLevel4なら同様に適用される）
@@ -549,6 +573,30 @@ function chooseKinNejikiEnemySkill(e, p, affordableSkills, aiLevel, personality)
 
     if (aiLevel <= 1) {
         return affordableSkills[Math.floor(Math.random() * affordableSkills.length)].key;
+    }
+
+    // --- 汎用：ガッツを温存して「気合をためる」判定（モスト以外のレベル2以上の敵に適用） ---
+    // 「今の手持ちガッツでは使えないが、通常回復＋気合をためるコマンド分（+55見込み）なら使えるようになる」技があり、
+    // 通常回復のみ（+30見込み）ではまだ届かない場合に限り、自身のライフに十分余裕があれば
+    // 一定確率で「気合をためる」を選ぶ（防御と違い被ダメ軽減は無いが、ガッツの蓄積が速い）。
+    // 現状の手持ちで相手を確殺できる見込みがある時は、温存せず今すぐ攻める。
+    {
+        const affordableKeysGeneral = new Set(affordableSkills.map(s => s.key));
+        const notYetAffordableGeneral = (e.skills || [])
+            .filter(skKey => !affordableKeysGeneral.has(skKey))
+            .map(skKey => ({ key: skKey, info: getMasmonEffectiveSkill(e, skKey) }))
+            .filter(s => s.info && !isSkillUseLimitReached(e, s.key));
+        const willBeAffordableWithCharge = notYetAffordableGeneral.filter(s =>
+            (e.guts + 55) >= s.info.cost && (e.guts + 30) < s.info.cost);
+        const selfLifeRatioGeneral = e.stats.life / e.stats.maxLife;
+        const currentLethalPossible = affordableSkills.some(s =>
+            kinNejikiEstimateExpectedDamage(e, p, s.info) >= p.stats.life);
+        if (willBeAffordableWithCharge.length > 0 && selfLifeRatioGeneral >= 0.6 && !currentLethalPossible) {
+            const chargeChance = aiLevel >= 3 ? 0.35 : 0.2; // レベルが高いほど計画的に温存する
+            if (Math.random() < chargeChance) {
+                return KIN_NEJIKI_CHARGE_SENTINEL;
+            }
+        }
     }
 
     // 命中率を加味した期待ダメージ（実際の計算式に準拠）で技を評価する
@@ -1304,8 +1352,21 @@ function proceedAfterKinNejikiSwap() {
 // =====================================================
 async function kinNejikiFinishRun(cleared) {
     KIN_NEJIKI_STATE.active = false;
-    clearKinNejikiSuspendSave(); // 敗北時・クリア時のいずれも一時セーブは削除する（コンティニュー用途ではないため）
+    const wasDebugRun = KIN_NEJIKI_STATE.isDebugRun;
+    KIN_NEJIKI_STATE.isDebugRun = false; // ランが終わったのでフラグは必ずリセットする
     const finalWins = KIN_NEJIKI_STATE.totalWins;
+    if (wasDebugRun) {
+        // デバッグから開始したランは、本編の一時セーブ（他に進行中の本番のランがあるかもしれない）を
+        // 誤って消したり、ランキングへ書き込んだりしないよう、ここで完全に処理を分ける。
+        if (typeof updateDebugKinNejikiRunBadge === 'function') updateDebugKinNejikiRunBadge();
+        renderKinNejikiResultScreen(finalWins, cleared);
+        changeScreen('screen-kinnejiki-result');
+        if (typeof showToast === 'function') {
+            showToast('🛠️ デバッグランが終了しました（ランキングには反映されません）');
+        }
+        return;
+    }
+    clearKinNejikiSuspendSave(); // 敗北時・クリア時のいずれも一時セーブは削除する（コンティニュー用途ではないため）
     // 保存が終わる前に結果画面へ進んでしまうと、プレイヤーがすぐタブを閉じた場合に
     // ランキングへの書き込みが完了しないまま消えてしまう（特に早期敗退時に起きやすい）。
     // そのため画面遷移の前に保存の完了を待つ。

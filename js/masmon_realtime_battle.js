@@ -571,6 +571,12 @@ function triggerRealtimeCombatEffects(entry) {
         return;
     }
 
+    // ガッツを溜めるコマンド
+    if (text.includes('気合を込めてガッツを溜めた')) {
+        showEffect('🔥 気合をためる 🔥');
+        return;
+    }
+
     // 交代コマンド
     if (text.includes('を引っ込め、【')) {
         showEffect('🔄 交代！ 🔄');
@@ -927,6 +933,21 @@ function renderRealtimeBattleSkills(state) {
     `;
     container.appendChild(defendBtn);
 
+    // --- ガッツを溜めるコマンド（防御とは逆に、被ダメ軽減は無い代わりに大きくガッツを得る。必ず技より後攻） ---
+    const chargeBtn = document.createElement('button');
+    chargeBtn.className = `text-left p-2 rounded border transition-all active:scale-95 flex flex-col justify-between bg-orange-950/40 border-orange-700 text-orange-200 ${isMyTurn ? '' : 'opacity-40 pointer-events-none'}`;
+    chargeBtn.onclick = () => executeRealtimeCharge();
+    chargeBtn.innerHTML = `
+        <div class="flex justify-between items-center w-full">
+            <span class="font-bold text-xs">🔥 気合をためる <span class="ml-1 text-[10px] text-orange-300 bg-[#1a120b]/10 px-1 py-0.2 rounded">ガッツ+25</span></span>
+            <span class="text-[9px] font-bold">G:0</span>
+        </div>
+        <div class="flex justify-between items-center mt-0.5 w-full">
+            <div class="text-[8px] opacity-85 line-clamp-1 flex-1">被ダメ軽減は無いが、ガッツを25多く得る（必ず技より後攻）</div>
+        </div>
+    `;
+    container.appendChild(chargeBtn);
+
     // --- 交代コマンド（団体戦のみ。ライフが残っている控えのマスモンと入れ替える。1ターン消費） ---
     const switchCandidates = getRealtimeSwitchCandidates(state);
     if (switchCandidates.length > 0) {
@@ -1083,6 +1104,9 @@ function executeRealtimeSkill(skKey) {
 function executeRealtimeDefend() {
     performRealtimeAction({ kind: 'defend' });
 }
+function executeRealtimeCharge() {
+    performRealtimeAction({ kind: 'charge' });
+}
 function executeRealtimeItem(itemKey) {
     performRealtimeAction({ kind: 'item', key: itemKey });
 }
@@ -1128,6 +1152,7 @@ function buildRealtimeTurnActionDescriptor(unit, action) {
     if (action.kind === 'switch') return createTurnAction('switchOut', 0, speed);
     if (action.kind === 'item') return createTurnAction('item', 0, speed);
     if (action.kind === 'defend') return createTurnAction('defend', 0, speed);
+    if (action.kind === 'charge') return createTurnAction('charge', 0, speed);
     if (action.kind === 'skill') {
         const sk = SKILLS_DB[action.key];
         const skPriority = (sk && sk.priority) || 0;
@@ -1336,6 +1361,12 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                 const isCrit = Math.random() < critChance;
                 if (isCrit) damage = Math.floor(damage * 1.5);
 
+                // やけど状態：与えるダメージが0.75倍になる
+                if (me.isBurned) {
+                    damage = Math.floor(damage * 0.75);
+                    meExtraDmgMsg += " (やけど×0.75)";
+                }
+
                 if (opp.isDefending) {
                     damage = Math.floor(damage / 2);
                     resultLogs.push(`${opp.name} は防御の構えでダメージを半減した！`);
@@ -1448,6 +1479,14 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
     } else if (action.kind === 'defend') {
         me.isDefending = true;
         resultLogs.push(`${me.name} は身を守るため防御の構えを取った！（被ダメ半減／ガッツ回復ペナルティ無し）`);
+    } else if (action.kind === 'charge') {
+        // ガッツを溜める：防御とは逆に、被ダメ軽減は無い代わりに大きくガッツを得る。
+        // 必ず技より後攻する（turn_order.jsのACTION_TIER_PRIORITY.charge=-1）。
+        const CHARGE_GUTS_AMOUNT = 25;
+        if (me.life > 0) {
+            me.guts = Math.min(100, me.guts + CHARGE_GUTS_AMOUNT);
+            resultLogs.push(`${me.name} は気合を込めてガッツを溜めた！（ガッツ+${CHARGE_GUTS_AMOUNT}・被ダメ軽減は無し・現在: ${Math.floor(me.guts)}）`);
+        }
     } else if (action.kind === 'switch') {
         const targetIdx = action.targetIdx;
         const target = actingTeam.units[targetIdx];

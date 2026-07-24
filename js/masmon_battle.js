@@ -46,7 +46,7 @@ const MASMON_BATTLE_STATE = {
     isEnemyDefending: false, // 敵（CPU）が防御コマンドを選んだターンかどうか（被ダメ半減の判定に使用）
     usedSkillsThisTurn: {},
     // --- 行動順バトルエンジン用：両者の「今ターンの行動」を一時保持する ---
-    // { actionType: 'skill'|'defend'|'item'|'switch'|'none', skKey?, itemKey?, switchIdx?, reason? }
+    // { actionType: 'skill'|'defend'|'charge'|'item'|'switch'|'none', skKey?, itemKey?, switchIdx?, reason? }
     pendingPlayerAction: null,
     pendingEnemyAction: null,
     battleResult: null,     // 'win' | 'lose'
@@ -1084,6 +1084,21 @@ function renderMasmonBattleSkills() {
     `;
     container.appendChild(defendBtn);
 
+    // --- ガッツを溜めるコマンド（防御とは逆に、被ダメ軽減は無い代わりに大きくガッツを得る。必ず技より後攻） ---
+    const chargeBtn = document.createElement('button');
+    chargeBtn.className = `text-left p-2 rounded border transition-all active:scale-95 flex flex-col justify-between bg-orange-950/40 border-orange-700 text-orange-200`;
+    chargeBtn.onclick = () => executeMasmonCharge();
+    chargeBtn.innerHTML = `
+        <div class="flex justify-between items-center w-full">
+            <span class="font-bold text-xs">🔥 気合をためる <span class="ml-1 text-[10px] text-orange-300 bg-[#1a120b]/10 px-1 py-0.2 rounded">ガッツ+25</span></span>
+            <span class="text-[9px] font-bold">G:0</span>
+        </div>
+        <div class="flex justify-between items-center mt-0.5 w-full">
+            <div class="text-[8px] opacity-85 line-clamp-1 flex-1">被ダメ軽減は無いが、ガッツを25多く得る（必ず技より後攻）</div>
+        </div>
+    `;
+    container.appendChild(chargeBtn);
+
     // --- 交代コマンド（団体戦のみ。ライフが残っている控えのマスモンと入れ替える。1ターン消費） ---
     const switchCandidates = getMasmonSwitchCandidates();
     if (switchCandidates.length > 0) {
@@ -1399,6 +1414,14 @@ function executeMasmonDefend() {
     submitMasmonPlayerAction({ actionType: 'defend' });
 }
 
+// --- ガッツを溜めるコマンド（技一覧内から選択。被ダメ軽減は無い代わりに大きくガッツを得る） ---
+// 防御とは逆に、行動順に関わらず必ず技より後攻する（turn_order.jsのACTION_TIER_PRIORITY.charge=-1）。
+function executeMasmonCharge() {
+    if (MASMON_BATTLE_STATE.isBattleEnd || !MASMON_BATTLE_STATE.isPlayerTurnActive) return;
+    beginActionLog();
+    submitMasmonPlayerAction({ actionType: 'charge' });
+}
+
 // --- 敵CPUのアイテム使用AI（シンプルな条件判定） ---
 function runEnemyItemAI() {
     const e = getEnemyActive();
@@ -1453,6 +1476,7 @@ function buildTurnActionDescriptor(unit, action) {
     if (action.actionType === 'switch') return createTurnAction('switchOut', 0, speed);
     if (action.actionType === 'item') return createTurnAction('item', 0, speed);
     if (action.actionType === 'defend') return createTurnAction('defend', 0, speed);
+    if (action.actionType === 'charge') return createTurnAction('charge', 0, speed);
     if (action.actionType === 'skill') {
         const sk = SKILLS_DB[action.skKey];
         const skPriority = (sk && sk.priority) || 0;
@@ -1545,6 +1569,12 @@ function decideMasmonEnemyAction(onDecided) {
             // KIN_NEJIKI_MOST_DEFEND_SENTINEL と同じ文字列。変更時は両方同時に直すこと）
             if (skKey === '__most_defend__') {
                 onDecided({ actionType: 'defend' });
+                return;
+            }
+            // 敵AIが「気合をためる」を選んだ場合（'__charge__'は kinnejiki.js の
+            // KIN_NEJIKI_CHARGE_SENTINEL と同じ文字列。変更時は両方同時に直すこと）
+            if (skKey === '__charge__') {
+                onDecided({ actionType: 'charge' });
                 return;
             }
 
@@ -1725,6 +1755,21 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
         addLog(`${unit.name} は身を守るため防御の構えを取った！（被ダメ半減／ガッツ回復ペナルティ無し）`);
         showEffect('🛡️ DEFENSE 🛡️');
         updateMasmonBattleStatsUI();
+        setTimeout(onComplete, BATTLE_STEP_DELAY.afterHitEffect);
+        return;
+    }
+
+    if (action.actionType === 'charge') {
+        // ガッツを溜める：防御とは逆に、被ダメ軽減は一切無い代わりに大きくガッツを得る。
+        // 必ず技より後攻するため（turn_order.jsのACTION_TIER_PRIORITY.charge=-1）、
+        // 相手の攻撃を先に受けてから発動する（無防備になるリスクの引き換え）。
+        const CHARGE_GUTS_AMOUNT = 25;
+        if (unit.stats.life > 0) {
+            unit.guts = Math.min(100, unit.guts + CHARGE_GUTS_AMOUNT);
+            addLog(`${unit.name} は気合を込めてガッツを溜めた！（ガッツ+${CHARGE_GUTS_AMOUNT}・被ダメ軽減は無し・現在: ${Math.floor(unit.guts)}）`);
+            showEffect('🔥 気合をためる 🔥');
+            updateMasmonBattleStatsUI();
+        }
         setTimeout(onComplete, BATTLE_STEP_DELAY.afterHitEffect);
         return;
     }
@@ -2007,6 +2052,12 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
         let isCrit = Math.random() < critChance;
         if (isCrit) {
             damage = Math.floor(damage * 1.5);
+        }
+
+        // やけど状態：与えるダメージが0.75倍になる
+        if (attacker.isBurned) {
+            damage = Math.floor(damage * 0.75);
+            extraDmgMsg += " (やけど×0.75)";
         }
 
         // 防御コマンドによる被ダメージ半減（プレイヤー・敵どちらが防御していても対称に適用する）

@@ -666,9 +666,12 @@ const AudioManager = (() => {
     // 通常戦闘曲('battle')かボス曲('boss'/'finalboss')かを振り分ける。
     // MASMON_BATTLE_STATE.kinNejiki は launchKinNejikiBattleEngine 内で
     // changeScreen('screen-battle') より前にセットされているため、ここで参照可能。
+    // 注意：MASMON_BATTLE_STATEはmasmon_battle.js側でconst宣言されており、
+    // （classicスクリプトではconst/letのトップレベル宣言はwindowのプロパティにならないため）
+    // window.MASMON_BATTLE_STATE経由では参照できない。素の識別子として参照する。
     function resolveBattleTrack() {
         try {
-            const state = window.MASMON_BATTLE_STATE;
+            const state = (typeof MASMON_BATTLE_STATE !== 'undefined') ? MASMON_BATTLE_STATE : null;
             const kn = state && state.kinNejiki;
             if (kn && kn.isNejiki) {
                 return kn.set >= 7 ? 'finalboss' : 'boss';

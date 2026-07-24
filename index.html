@@ -44,7 +44,14 @@
             class="absolute top-2 right-2 z-40 w-8 h-8 flex items-center justify-center bg-[#1a120b]/80 hover:bg-[#2a1b15] border border-amber-800 rounded-full shadow-lg text-amber-300 text-sm transition-all active:scale-90">
             <i id="audio-settings-icon" class="fa-solid fa-volume-xmark"></i>
         </button>
-        
+
+        <!-- 🛠️ デバッグラン終了ボタン（〇戦目から開始した通しランの最中、どの画面にいても常時表示。
+             KIN_NEJIKI_STATE.isDebugRunがtrueの間だけ表示され、endDebugKinNejikiRun()で強制終了できる） -->
+        <button id="debug-kinnejiki-run-end-btn" onclick="endDebugKinNejikiRun()" aria-label="デバッグラン終了"
+            class="hidden absolute top-2 left-2 z-40 px-2 py-1 flex items-center gap-1 bg-red-900/90 hover:bg-red-800 border border-red-600 rounded-full shadow-lg text-white text-[10px] font-bold transition-all active:scale-90">
+            <i class="fa-solid fa-flag-checkered"></i><span>デバッグ終了</span>
+        </button>
+
         <!-- ゲームプレイコンテンツエリア (各screenが個別にスクロール制御するため、ここはflexで高さを子に委譲) -->
         <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
 
@@ -759,6 +766,20 @@
                         <button onclick="addDebugMonsterToTeam('player')"
                             class="w-full py-1.5 bg-amber-700 hover:bg-amber-600 text-white text-xs font-bold rounded-lg active:scale-95 transition-all">＋ 自分パーティに追加</button>
                         <div id="debug-player-team-list" class="space-y-1 pt-1"></div>
+                    </div>
+
+                    <!-- ①-B 通しラン（〇戦目から開始・勝てば本番同様に次へ進む・ランキング対象外） -->
+                    <div class="bg-[#2a1b15] border border-emerald-900/50 rounded-xl p-3 space-y-2">
+                        <div class="text-xs font-bold text-emerald-300">🏁 〇戦目から通しラン開始（流れ確認用）</div>
+                        <div class="text-[9px] text-gray-500 leading-tight">上の①で編成した自分パーティを使い、指定した戦目（1〜49戦目）から本番と同じ流れでスタートします。勝利すれば通常通り次の戦闘・交換画面へ進みます。<span class="text-emerald-400 font-bold">このランはランキングには一切反映されません。</span></div>
+                        <div class="flex gap-1.5 items-center">
+                            <span class="text-[10px] text-gray-400 flex-shrink-0">通算</span>
+                            <input id="debug-start-battle-number" type="number" min="1" max="49" value="1"
+                                class="w-16 bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5 text-center">
+                            <span class="text-[10px] text-gray-400 flex-shrink-0">戦目から</span>
+                        </div>
+                        <button onclick="startDebugKinNejikiRunFromBattle()"
+                            class="w-full py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg active:scale-95 transition-all">🏁 この戦目から開始</button>
                     </div>
 
                     <!-- ② 対戦相手編成 -->
