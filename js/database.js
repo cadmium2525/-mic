@@ -616,6 +616,8 @@ const SKILLS_DB = {
     boss_focus: { name: 'きあい', cost: 10, type: 'buff_pow', hitRate: 100, force: 0, gutsDown: 0, effect: 'pow_up', desc: '攻撃力を上昇させる' },
     boss_laser: { name: 'サイコブラスト', aura: 'white', cost: 45, type: 'int', hitRate: 70, force: 2.6, gutsDown: 30, effect: 'confuse_30', desc: '精神力を収束させた衝撃波。さらに技命中時、30%の確率で相手を混乱状態にする（混乱中は毎ターン40%の確率で意味不明になり行動できなくなり、30%の確率で混乱が解除される）' },
     boss_meteor: { name: 'メテオバースト', aura: 'white', cost: 55, type: 'int', hitRate: 70, force: 1.05, gutsDown: 12, effect: null, hitCount: 4, useEffect: 'meteor_spd_up', desc: '巨大な隕石を4連続で放つ大技（4回攻撃・1発ごとに相手GUTS-12）。さらに自身の回避ステータスが1段階上昇する（1回につき10%アップ、最大3回まで累積）' },
+    chrono_kinesis: { name: 'クロノキネシス', aura: 'white', cost: 45, type: 'int', hitRate: 90, force: 1.85, gutsDown: 18, effect: null, hitCount: 2, desc: '時空を歪めて精神エネルギーを叩き込む。相手GUTS-18（2回攻撃扱い・命中判定は1回のみだが、ダメージ判定を2回分まとめて処理する）' },
+    kamikudaku: { name: 'かみくだく', aura: null, cost: 20, type: 'pow', hitRate: 85, force: 1.4, gutsDown: 30, effect: 'def_zero_1t', desc: '強靭な顎で相手をかみくだく。相手GUTS-30。さらに技命中時、相手の次のターンの丈夫さを0にする' },
 
     // --- ハム系統 ---
     one_two_punch: { name: 'ワンツーパンチ', aura: 'green', cost: 15, type: 'pow', hitRate: 90, force: 0.7, gutsDown: 8, effect: null, desc: '素早い連続パンチの基本技。相手GUTS-8' },
@@ -1236,6 +1238,11 @@ function applySkillOnHitEffect(caster, target, sk) {
         target.defDownTurns = 3;
         target.defDownPct = 10;
         logs.push({ short: `🎯 ${target.name} は出血状態になった！`, detail: `🎯 ${target.name} は出血状態になった！（${target.dotTurns}ターンの間、毎ターン最大ライフの${Math.round(target.dotPct * 100)}%の継続ダメージを受け、さらに3ターンの間丈夫さが10%低下する）` });
+    } else if (sk.effect === 'def_zero_1t') {
+        // かみくだく専用：命中すれば必ず発動し、次のターンの間だけ相手の丈夫さを0にする
+        target.defDownTurns = 1;
+        target.defDownPct = 100;
+        logs.push({ short: `💥 ${target.name} の丈夫さが0になった！`, detail: `💥 ${target.name} は骨まで砕かれ、次のターンの間、丈夫さが0になってしまった！` });
     }
     return logs;
 }
@@ -2381,6 +2388,19 @@ const KIN_NEJIKI_BOSSES = {
         desc: 'ちからと丈夫さに全振りした岩石の怪物。ガッツが溜まると「ローリング激突」や「竜巻アタック」で大ダメージを与えてくる。さらに「ゴビステップ」で自身の回避を大きく高めてくるため、回避特化での対策も過信は禁物。',
         statsBase: { maxLife: 260, pow: 78, int: 18, hit: 34, spd: 16, def: 62, gutsSpeed: 12 },
         skills: ['claw_nage', 'boss_roll', 'tornado_attack', 'gobi_step']
+    },
+    // set3の相棒枠：コルトが率いるもう1体の候補。バトルのたびに「ゴビ」「ポリトカ」いずれか一方が
+    // 50%の確率で選ばれて登場する（generateKinNejikiOpponentTeamでランダム抽選）。
+    set3_alt: {
+        name: 'コルトのポリトカ',
+        shortName: 'コルト',
+        title: 'レジェンドブリーダー・コルト',
+        templateId: 'suezo',
+        emoji: '👁️',
+        aura: 'white', // モストと同じ、三竦みに参加しない中立オーラ
+        desc: 'かしこさに極振りしたトリッキーな怪物。「クロノキネシス」の2回攻撃で確実にガッツを奪いながら、「かみくだく」で相手の丈夫さを一時的に0にし、「歌う」の混乱や「サイコキネシス」のマヒで搦め手を仕掛けてくる。',
+        statsBase: { maxLife: 180, pow: 100, int: 100, hit: 65, spd: 40, def: 30, gutsSpeed: 14 },
+        skills: ['utau', 'psychokinesis', 'chrono_kinesis', 'kamikudaku']
     },
     set7: {
         name: 'コルトのモスト',

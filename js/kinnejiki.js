@@ -353,7 +353,11 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, e
     const excludeEquip = excludeEquipIds || [];
 
     if (isNejiki) {
-        const bossKey = (setNumber === 3) ? 'set3' : 'set7';
+        // set3は「コルトのゴビ」「コルトのポリトカ」のどちらか一方が50%の確率で選ばれて登場する。
+        // set7（最終決戦のモスト）は従来通り固定。
+        const bossKey = (setNumber === 3)
+            ? (Math.random() < 0.5 ? 'set3' : 'set3_alt')
+            : 'set7';
         const bossDef = KIN_NEJIKI_BOSSES[bossKey];
         // molds（複数の型）を持つボスは、バトルのたびにいずれか1つの型をランダムで選ぶ。
         // molds未定義のボスは従来通り固定のskills配列をそのまま使う。
@@ -366,8 +370,9 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, e
             monsterBaseName: bossDef.templateId ? (MONSTER_TEMPLATES[bossDef.templateId] || {}).name || bossDef.name : bossDef.name,
             // 専用イラストが用意されているボスは、モン類判定用のmonsterBaseNameとは別に
             // 表示イラスト名を上書きする（例：set3ボスはゴーレム種だが「ゴビ.png」、
+            // set3の相棒枠はスエゾー種だが「ポリトカ.png」、
             // set7ボスは特定種族に属さないが「モスト.png」を使用する）
-            visualName: (bossKey === 'set3') ? 'ゴビ' : (bossKey === 'set7') ? 'モスト' : null,
+            visualName: (bossKey === 'set3') ? 'ゴビ' : (bossKey === 'set3_alt') ? 'ポリトカ' : (bossKey === 'set7') ? 'モスト' : null,
             emoji: bossDef.emoji,
             speciesId: bossDef.templateId,
             aura: bossDef.aura || getRandomAuraKey(),

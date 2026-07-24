@@ -68,7 +68,7 @@ function getDebugBossDefFromSpeciesKey(speciesKey) {
     return { bossKey, bossDef: KIN_NEJIKI_BOSSES[bossKey] };
 }
 // ボスの専用イラスト名（renderKinNejikiBreederVisual等と同じ対応関係）
-const DEBUG_BOSS_VISUAL_NAME = { set3: 'ゴビ', set7: 'モスト' };
+const DEBUG_BOSS_VISUAL_NAME = { set3: 'ゴビ', set3_alt: 'ポリトカ', set7: 'モスト' };
 
 // ボスの技候補プールを返す（molds（複数の型）を持つボスは、全ての型の技を重複なくまとめて返す）
 function getDebugBossSkillPool(bossDef) {
@@ -554,7 +554,9 @@ function setDebugOpponentToBoss(setNumber) {
     const levelEl = document.getElementById('debug-ai-level');
     if (levelEl) levelEl.value = DEBUG_STATE.ai.level;
     renderDebugTeamLists();
-    showToast(setNumber === 7 ? '相手を「コルトのモスト」チームに設定しました。' : '相手を「コルトのゴビ」チームに設定しました。');
+    // set3は「コルトのゴビ」「コルトのポリトカ」のどちらが選ばれたか実際の生成結果から表示する
+    const bossName = (team[0] && team[0].name) || (setNumber === 7 ? 'コルトのモスト' : 'コルトのゴビ');
+    showToast(`相手を「${bossName}」チームに設定しました。`);
 }
 
 // -----------------------------------------------------
