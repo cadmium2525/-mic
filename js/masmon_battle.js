@@ -128,33 +128,29 @@ function updateAutoBattleButtonUI() {
     btn.classList.toggle('border-amber-800', !AUTO_BATTLE_MODE);
 }
 
-// --- オートバトル中の技選択：確殺できる技があればそれを優先しつつ、基本は命中率×威力×回数が
-//     最も高い技を選ぶ。使える技が無ければ防御して次のターンに備える
-//     （簡易的なヒューリスティックで、CPU戦専用のAIほど賢くはない） ---
+// --- オートバトル中の行動選択：敵AIと全く同じ判断ロジック（chooseKinNejikiEnemySkill）を、
+//     プレイヤー自身の自動選択にもそのまま流用する。以前の「命中率×威力」だけの簡易計算は
+//     敵AIより大幅に弱かったため、同じ基準で選ぶようにして強さを揃えている。 ---
 function chooseAutoBattleAction() {
     const p = getPlayerActive();
     const e = getEnemyActive();
     if (!p || !e) return { actionType: 'defend' };
 
-    const affordable = (p.skills || [])
+    const affordableSkills = (p.skills || [])
         .map(skKey => ({ key: skKey, info: getMasmonEffectiveSkill(p, skKey) }))
-        .filter(s => s.info && p.guts >= s.info.cost && !isSkillUseLimitReached(p, s.key));
+        .filter(skObj => skObj.info && p.guts >= skObj.info.cost && !isSkillUseLimitReached(p, skObj.key));
 
-    if (affordable.length === 0) return { actionType: 'defend' };
+    if (affordableSkills.length === 0) return { actionType: 'defend' };
 
-    const attackSkills = affordable.filter(s => s.info.type === 'pow' || s.info.type === 'int');
-    const pool = attackSkills.length > 0 ? attackSkills : affordable;
+    const aiLevel = (MASMON_BATTLE_STATE.kinNejiki && MASMON_BATTLE_STATE.kinNejiki.aiLevel) || 4;
+    const personality = (MASMON_BATTLE_STATE.kinNejiki && MASMON_BATTLE_STATE.kinNejiki.aiPersonality) || 'balanced';
+    const skKey = (typeof chooseKinNejikiEnemySkill === 'function')
+        ? chooseKinNejikiEnemySkill(p, e, affordableSkills, aiLevel, personality)
+        : affordableSkills.slice().sort((a, b) => b.info.cost - a.info.cost)[0].key;
 
-    let best = pool[0];
-    let bestScore = -1;
-    pool.forEach(s => {
-        const score = (s.info.hitRate || 0) * (s.info.force || 0.01) * (s.info.hitCount || 1);
-        if (score > bestScore) {
-            bestScore = score;
-            best = s;
-        }
-    });
-    return { actionType: 'skill', skKey: best.key };
+    if (skKey === '__most_defend__') return { actionType: 'defend' };
+    if (skKey === '__charge__') return { actionType: 'charge' };
+    return { actionType: 'skill', skKey };
 }
 
 function toggleBattleFastMode() {

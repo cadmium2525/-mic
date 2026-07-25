@@ -4,7 +4,7 @@
 // キャッシュのバージョンを上げると、ユーザー環境の古いキャッシュが破棄され、
 // 新しいファイル一式が再取得されます。js/images 等を更新した場合は
 // 必ず CACHE_VERSION の値を変更してください（変更しないと更新が反映されません）。
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v3';
 const CACHE_NAME = `guts-road-cache-${CACHE_VERSION}`;
 
 // 同一オリジンの静的アセット（アプリ本体）。ここに列挙したファイルは
@@ -30,11 +30,17 @@ const PRECACHE_URLS = [
   'js/masmon_realtime.js',
   'js/masmon_realtime_battle.js',
   'js/kinnejiki.js',
+  'js/endless_mode.js',
   'js/pvp_rental.js',
   'js/pvp_preset.js',
   'js/monster_dex.js',
   'js/equipment_dex.js',
+  'js/skill_effects.js',
+  'js/strategy_hub.js',
+  'js/achievements.js',
+  'js/debug_mode.js',
   'js/audio.js',
+  'images/branding/title.png',
   'images/アローヘッド.png',
   'images/キュービ.png',
   'images/ゴビ.png',
@@ -110,7 +116,26 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // それ以外の同一オリジン静的アセットは「まずキャッシュ、なければネットワーク」
+  // JS/CSSは頻繁に更新されるため「まずネットワーク、オフライン時のみキャッシュ」にする。
+  // （cache-firstだと、CACHE_VERSIONを上げ忘れたり、ブラウザ側のハード再読み込みだけでは
+  //   サービスワーカー自身のCache Storageまでは必ずしも消えなかったりする関係で、
+  //   何度更新してもユーザー環境に古いコードが残り続けてしまう問題があったため）
+  if (/\.(js|css)$/.test(url.pathname)) {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res && res.status === 200) {
+            const resClone = res.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req))
+    );
+    return;
+  }
+
+  // それ以外（画像等、更新頻度が低い静的アセット）は従来通り「まずキャッシュ、なければネットワーク」
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) return cached;

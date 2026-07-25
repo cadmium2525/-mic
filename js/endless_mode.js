@@ -142,7 +142,7 @@ function renderEndlessHomeScreen() {
         : `<p class="text-gray-500 text-[10px]">まだチームが編成されていません。</p>`;
 
     container.innerHTML = `
-        <div class="bg-[#2a1b15] border border-purple-900/50 rounded-xl p-3 space-y-2">
+        <div class="bg-[#2a1b15] border-2 border-purple-900/50 rounded-xl p-3 space-y-2 fantasy-btn">
             <div class="grid grid-cols-2 gap-2 text-center">
                 <div class="bg-[#150b07] rounded-lg p-2">
                     <p class="text-gray-400 text-[10px]">現在の連勝数</p>
@@ -155,15 +155,15 @@ function renderEndlessHomeScreen() {
             </div>
         </div>
 
-        <div class="bg-[#2a1b15] border border-purple-900/50 rounded-xl p-3 space-y-2 mt-3">
+        <div class="bg-[#2a1b15] border-2 border-purple-900/50 rounded-xl p-3 space-y-2 mt-3 fantasy-btn">
             <div class="text-xs font-bold text-purple-300">🐾 現在のチーム（${teamCount}/4）</div>
             <div class="space-y-1">${teamListHtml}</div>
             <button onclick="openEndlessTeamBuilderScreen()"
-                class="w-full py-2 bg-purple-800 hover:bg-purple-700 text-white text-xs font-bold rounded-lg active:scale-95 transition-all">✏️ チームを編成する</button>
+                class="fantasy-btn w-full py-2 bg-purple-800 hover:bg-purple-700 text-white text-xs font-bold rounded-lg active:scale-95 transition-all border-purple-600">✏️ チームを編成する</button>
         </div>
 
         <button onclick="startEndlessChallenge()"
-            class="w-full py-3.5 mt-3 bg-gradient-to-r from-purple-600 to-fuchsia-700 hover:from-purple-500 hover:to-fuchsia-600 text-white font-black rounded-xl text-md shadow-lg transform active:scale-95 transition-all pixel-font border-b-4 border-fuchsia-900 flex items-center justify-center space-x-2 ${teamCount !== 4 ? 'opacity-40 pointer-events-none' : ''}">
+            class="fantasy-btn w-full py-3.5 mt-3 bg-gradient-to-r from-purple-600 to-fuchsia-700 hover:from-purple-500 hover:to-fuchsia-600 text-white font-black rounded-xl text-md shadow-lg transform active:scale-95 transition-all pixel-font border-fuchsia-900 flex items-center justify-center space-x-2 ${teamCount !== 4 ? 'opacity-40 pointer-events-none' : ''}">
             <i class="fa-solid fa-infinity"></i>
             <span>挑戦開始！</span>
         </button>

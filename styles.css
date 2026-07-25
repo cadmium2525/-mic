@@ -41,6 +41,41 @@ input, textarea, select {
 .pixel-font {
     font-family: 'DotGothic16', sans-serif;
 }
+/* ===== タイトル画面：ロゴのイメージ（石造り・金の縁取り・冒険者ギルド風）に合わせた装飾 ===== */
+.title-screen-bg {
+    background:
+        radial-gradient(ellipse 140% 90% at 50% 0%, rgba(120, 88, 40, 0.25), transparent 60%),
+        linear-gradient(180deg, rgba(20, 13, 8, 0.35) 0%, rgba(18, 12, 7, 0.55) 45%, rgba(12, 8, 5, 0.92) 100%),
+        url('images/branding/bg.png');
+    background-size: cover;
+    background-position: center top;
+    background-repeat: no-repeat;
+    position: relative;
+    overflow: hidden;
+}
+/* 石壁のような細かいノイズ模様を疑似的に重ねる（軽量なCSSグラデーションのみで表現） */
+.title-screen-bg::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.5;
+    background-image:
+        repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, rgba(255,255,255,0.02) 1px, transparent 1px, transparent 3px),
+        repeating-linear-gradient(90deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 3px);
+}
+.title-logo-img {
+    filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.65));
+}
+/* 木製の看板＋金属の鋲を思わせるボタンの縁取り（各ボタン固有の色はそのまま活かし、質感だけ揃える） */
+.fantasy-btn {
+    position: relative;
+    border-width: 2px !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -2px 4px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+.fantasy-btn:active {
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.45);
+}
 /* スムーズな画面遷移用 */
 .screen {
     display: none;
