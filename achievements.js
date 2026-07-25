@@ -1,0 +1,787 @@
+// =====================================================
+// debug_mode.js
+// テスト専用の隠しデバッグモード。
+// ・通常のプレイ導線（タイトル画面のボタン等）からは一切リンクしていない。
+// ・画面最下部の小さなフッター文言（#secret-debug-trigger）を素早く7回タップした
+//   時だけ開く「隠しコマンド」形式のため、プレイヤーが偶然開いてしまう心配はない。
+// ・できること：
+//    1. 自分側のテストモンスターを、種族・技構成を完全に自由に選んで編成する
+//    2. 対戦相手を「コルトのゴビ」「コルトのモスト」（本編のボス）にワンタップで設定、
+//       または相手側も自由に種族・技を指定して編成する
+//    3. 既存の masmon_battle.js の3vs3バトルエンジンでそのまま模擬戦できる
+//       （本編のガッツファクトリーの周回・ランキングには一切影響しない）
+//    4. 全BGMをワンタップで試聴・停止できる
+//    5. 対戦相手（CPU）のAIレベル（1〜4）とAIタイプ（性格：速攻型／搦め手型／粘り型／バランス型／ランダム）を
+//       指定してバトルできる（ボスプリセット選択時は本編相当のレベルが自動セットされるが、上書き可能）
+//
+// 依存: database.js（MONSTER_TEMPLATES / SKILLS_DB / KIN_NEJIKI_SKILL_POOL / KIN_NEJIKI_BOSSES）、
+//       game_core.js（changeScreen / showToast）、
+//       masmon_battle.js（convertMasmonToBattleUnit / startMasmonBattleCommon）、
+//       kinnejiki.js（generateKinNejikiOpponentTeam / pickKinNejikiAiPersonality）
+// このファイルは上記より後、audio.js より前に読み込むこと。
+// =====================================================
+
+const DEBUG_UNLOCK_STORAGE_KEY = 'mfload_debug_unlocked_v1';
+const DEBUG_TAP_TARGET_COUNT = 7;
+const DEBUG_TAP_WINDOW_MS = 2500;
+
+// 編成中パーティ・ビルダーの状態
+const DEBUG_STATE = {
+    playerTeam: [],
+    opponentTeam: [],
+    opponentIsBossSet: null, // ボスプリセット選択時は 3 or 7、自由編成時は null
+    builder: {
+        player: { speciesId: null, selectedSkills: [], aura: null, equip: null },
+        opponent: { speciesId: null, selectedSkills: [], aura: null, equip: null }
+    },
+    // CPU（対戦相手）のAI設定。aiLevel: 1〜4（数値が高いほど強いロジック）、
+    // aiPersonality: 'random'（バトル開始時にランダムで1つ性格を割り当てる、既定の本編動作）
+    // または 'speedy' / 'control' / 'sustain' / 'balanced' のいずれかを固定指定。
+    ai: { level: 2, personality: 'random' }
+};
+
+// AIレベルの選択肢（数値と説明のペア）
+const DEBUG_AI_LEVEL_OPTIONS = [
+    { value: 1, label: 'Lv1（完全ランダム）' },
+    { value: 2, label: 'Lv2（通常）' },
+    { value: 3, label: 'Lv3（強め・ボス級）' },
+    { value: 4, label: 'Lv4（最強・最終ボス級）' }
+];
+
+// AIタイプ（性格）の選択肢。'random' は本編と同じくバトル開始時に毎回ランダム抽選する。
+const DEBUG_AI_PERSONALITY_OPTIONS = [
+    { value: 'random', label: '🎲 ランダム（本編と同じ）' },
+    { value: 'speedy', label: '⚡ 速攻型（常に最大火力）' },
+    { value: 'control', label: '🧩 搦め手型（ガッツダウン優先）' },
+    { value: 'sustain', label: '🛡️ 粘り型（ライフ40%未満で回復優先）' },
+    { value: 'balanced', label: '⚖️ バランス型（レベル別の標準ロジック）' }
+];
+
+// ボス専用モンスター（コルトのゴビ／コルトのモスト）を種族セレクトに混ぜて選べるようにするための
+// 疑似種族キー。KIN_NEJIKI_BOSSES のキー（set3/set7）と対応させる。
+const DEBUG_BOSS_SPECIES_KEY_PREFIX = '__boss_';
+function isDebugBossSpeciesKey(speciesKey) {
+    return typeof speciesKey === 'string' && speciesKey.startsWith(DEBUG_BOSS_SPECIES_KEY_PREFIX);
+}
+function getDebugBossDefFromSpeciesKey(speciesKey) {
+    const bossKey = speciesKey.slice(DEBUG_BOSS_SPECIES_KEY_PREFIX.length); // 'set3' or 'set7'
+    return { bossKey, bossDef: KIN_NEJIKI_BOSSES[bossKey] };
+}
+// ボスの専用イラスト名（renderKinNejikiBreederVisual等と同じ対応関係）
+const DEBUG_BOSS_VISUAL_NAME = { set3: 'ゴビ', set3_alt: 'ポリトカ', set7: 'モスト' };
+
+// ボスの技候補プールを返す（molds（複数の型）を持つボスは、全ての型の技を重複なくまとめて返す）
+function getDebugBossSkillPool(bossDef) {
+    if (!bossDef) return [];
+    if (bossDef.molds && bossDef.molds.length > 0) {
+        return Array.from(new Set(bossDef.molds.flat()));
+    }
+    return bossDef.skills || [];
+}
+
+
+(function setupSecretDebugTrigger() {
+    let tapCount = 0;
+    let resetTimer = null;
+
+    function handleTap() {
+        tapCount++;
+        if (resetTimer) clearTimeout(resetTimer);
+        resetTimer = setTimeout(() => { tapCount = 0; }, DEBUG_TAP_WINDOW_MS);
+
+        if (tapCount >= DEBUG_TAP_TARGET_COUNT) {
+            tapCount = 0;
+            clearTimeout(resetTimer);
+            try { localStorage.setItem(DEBUG_UNLOCK_STORAGE_KEY, '1'); } catch (e) { /* ignore */ }
+            openDebugScreen();
+        }
+    }
+
+    window.addEventListener('load', () => {
+        const el = document.getElementById('secret-debug-trigger');
+        if (el) el.addEventListener('click', handleTap);
+    });
+})();
+
+// -----------------------------------------------------
+// 画面の開閉
+// -----------------------------------------------------
+function openDebugScreen() {
+    renderDebugSpeciesOptionsInto(document.getElementById('debug-player-species'));
+    renderDebugSpeciesOptionsInto(document.getElementById('debug-opponent-species'));
+    renderDebugAuraOptionsInto(document.getElementById('debug-player-aura'), 'player');
+    renderDebugAuraOptionsInto(document.getElementById('debug-opponent-aura'), 'opponent');
+    renderDebugEquipOptionsInto(document.getElementById('debug-player-equip'));
+    renderDebugEquipOptionsInto(document.getElementById('debug-opponent-equip'));
+    renderDebugEquipStatus('player');
+    renderDebugEquipStatus('opponent');
+    renderDebugAiOptions();
+    renderDebugTeamLists();
+    renderDebugBreederPreviewList();
+    updateDebugKinNejikiRunBadge();
+    changeScreen('screen-debug');
+}
+
+// -----------------------------------------------------
+// CPU（対戦相手）のAI設定セレクトボックスの選択肢を描画する
+// -----------------------------------------------------
+function renderDebugAiOptions() {
+    const levelEl = document.getElementById('debug-ai-level');
+    const personalityEl = document.getElementById('debug-ai-personality');
+    if (levelEl) {
+        levelEl.innerHTML = '';
+        DEBUG_AI_LEVEL_OPTIONS.forEach(({ value, label }) => {
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = label;
+            levelEl.appendChild(opt);
+        });
+        levelEl.value = DEBUG_STATE.ai.level;
+    }
+    if (personalityEl) {
+        personalityEl.innerHTML = '';
+        DEBUG_AI_PERSONALITY_OPTIONS.forEach(({ value, label }) => {
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = label;
+            personalityEl.appendChild(opt);
+        });
+        personalityEl.value = DEBUG_STATE.ai.personality;
+    }
+}
+
+// AIレベルのセレクトが変更された時の反映
+function onDebugAiLevelChange(value) {
+    DEBUG_STATE.ai.level = parseInt(value, 10) || 2;
+}
+
+// AIタイプ（性格）のセレクトが変更された時の反映
+function onDebugAiPersonalityChange(value) {
+    DEBUG_STATE.ai.personality = value || 'random';
+}
+
+// 現在のDEBUG_STATE.aiの内容から、実際にバトルへ渡すaiPersonalityの値を解決する
+// （'random'指定時のみ、本編と同じくその場でランダムに1つ選ぶ）
+function resolveDebugAiPersonality() {
+    if (DEBUG_STATE.ai.personality === 'random') {
+        return (typeof pickKinNejikiAiPersonality === 'function') ? pickKinNejikiAiPersonality() : 'balanced';
+    }
+    return DEBUG_STATE.ai.personality;
+}
+
+// -----------------------------------------------------
+// ブリーダーイラスト確認用の一覧を描画する
+// （KIN_NEJIKI_BREEDER_VISUAL_NAME に登録されている全ブリーダー名を並べる）
+// -----------------------------------------------------
+function renderDebugBreederPreviewList() {
+    const container = document.getElementById('debug-breeder-preview-list');
+    if (!container) return;
+    container.innerHTML = '';
+    Object.keys(KIN_NEJIKI_BREEDER_VISUAL_NAME).forEach(breederName => {
+        const btn = document.createElement('button');
+        btn.className = 'py-1.5 px-1 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[9px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all leading-tight';
+        btn.textContent = breederName;
+        btn.onclick = () => previewDebugBreederVisual(breederName);
+        container.appendChild(btn);
+    });
+}
+
+// 「勝負を仕掛けてきた！」演出画面をバトル無しで表示し、イラストだけ確認できるようにする
+function previewDebugBreederVisual(breederName) {
+    const isNejiki = breederName.includes('コルト');
+    showKinNejikiEncounterScreen(breederName, isNejiki);
+    const startBtn = document.getElementById('kinnejiki-encounter-start-btn');
+    const backBtn = document.getElementById('debug-breeder-preview-back-btn');
+    if (startBtn) startBtn.classList.add('hidden');
+    if (backBtn) backBtn.classList.remove('hidden');
+}
+
+// ブリーダーイラスト確認画面からデバッグ画面へ戻る
+function returnFromDebugBreederPreview() {
+    const startBtn = document.getElementById('kinnejiki-encounter-start-btn');
+    const backBtn = document.getElementById('debug-breeder-preview-back-btn');
+    if (startBtn) startBtn.classList.remove('hidden');
+    if (backBtn) backBtn.classList.add('hidden');
+    changeScreen('screen-debug');
+}
+
+function returnToTitleFromDebug() {
+    changeScreen('screen-title');
+}
+
+// -----------------------------------------------------
+// 種族セレクトボックスの選択肢を描画（自分側・相手側で共通）
+// -----------------------------------------------------
+function renderDebugSpeciesOptionsInto(selectEl) {
+    if (!selectEl) return;
+    selectEl.innerHTML = '<option value="">-- 種族を選択 --</option>';
+    Object.keys(MONSTER_TEMPLATES).forEach(speciesId => {
+        const tmpl = MONSTER_TEMPLATES[speciesId];
+        if (!tmpl) return;
+        const opt = document.createElement('option');
+        opt.value = speciesId;
+        opt.textContent = `${tmpl.emoji || ''} ${tmpl.name}`;
+        selectEl.appendChild(opt);
+    });
+
+    // ガッツファクトリーの専属ボス（コルトのゴビ／コルトのモスト）も種族と同列で選べるようにする
+    const bossGroup = document.createElement('optgroup');
+    bossGroup.label = '── 専属ボス ──';
+    Object.keys(KIN_NEJIKI_BOSSES).forEach(bossKey => {
+        const bossDef = KIN_NEJIKI_BOSSES[bossKey];
+        const opt = document.createElement('option');
+        opt.value = DEBUG_BOSS_SPECIES_KEY_PREFIX + bossKey;
+        opt.textContent = `${bossDef.emoji || ''} ${bossDef.name}（ボス）`;
+        bossGroup.appendChild(opt);
+    });
+    selectEl.appendChild(bossGroup);
+}
+
+// -----------------------------------------------------
+// オーラセレクトボックスの選択肢を描画（自分側・相手側で共通）
+// デバッグ専用ツールのため、モスト専用の「白」も含めて全オーラを選択可能にする。
+// -----------------------------------------------------
+function renderDebugAuraOptionsInto(selectEl, side) {
+    if (!selectEl) return;
+    selectEl.innerHTML = '<option value="">（オーラなし）</option>';
+    Object.values(AURA_TYPES).forEach(aura => {
+        const opt = document.createElement('option');
+        opt.value = aura.key;
+        opt.textContent = `${aura.emoji} ${aura.name}${aura.exclusive ? '（モスト専用）' : ''}`;
+        selectEl.appendChild(opt);
+    });
+    selectEl.value = DEBUG_STATE.builder[side].aura || '';
+}
+
+// オーラセレクトが変更された時の反映
+function onDebugAuraChange(side, auraKey) {
+    DEBUG_STATE.builder[side].aura = auraKey || null;
+}
+
+// -----------------------------------------------------
+// 装備セレクトボックス（自分側・相手側で共通）
+// デバッグツールでは実際に装備した状態でテストしたいという要望のため、
+// 「型」を選ぶとその型が本来持つ装備（ステータス装備／特殊効果装備どちらもありうる）をそのまま反映する。
+// 加えて、このセレクトから「特殊効果装備（EQUIPMENT_DB上でtype: 'special'のもの）」への
+// 差し替えも自由にできるようにする（ステータス装備は種類が多く、テスト用途では特殊効果の検証が
+// 主目的であるため、差し替え候補は特殊効果装備のみに絞っている）。
+// -----------------------------------------------------
+function renderDebugEquipOptionsInto(selectEl) {
+    if (!selectEl) return;
+    selectEl.innerHTML = '<option value="">（装備なし）</option>';
+    Object.values(EQUIPMENT_DB).filter(eq => eq.type === 'special').forEach(eq => {
+        const opt = document.createElement('option');
+        opt.value = eq.id;
+        opt.textContent = `${eq.icon || ''} ${eq.name}`;
+        selectEl.appendChild(opt);
+    });
+}
+
+// 装備セレクトが変更された時の反映（特殊効果装備への差し替え。空欄を選べば装備なしに戻せる）
+function onDebugEquipChange(side, equipId) {
+    const base = equipId ? EQUIPMENT_DB[equipId] : null;
+    DEBUG_STATE.builder[side].equip = base ? buildEquipmentInstanceFromBase(base) : null;
+    renderDebugEquipStatus(side);
+}
+
+// 現在ビルダーが保持している装備の名称を、読み取り専用の表示欄に反映する。
+// （型由来のステータス装備等、差し替えセレクトの選択肢に無いものが装備されている場合も、
+//   ここで名称だけは必ず確認できるようにする）
+function renderDebugEquipStatus(side) {
+    const statusEl = document.getElementById(side === 'player' ? 'debug-player-equip-current' : 'debug-opponent-equip-current');
+    const selectEl = document.getElementById(side === 'player' ? 'debug-player-equip' : 'debug-opponent-equip');
+    const equip = DEBUG_STATE.builder[side].equip;
+    const base = equip ? EQUIPMENT_DB[equip.equipId] : null;
+    if (statusEl) statusEl.textContent = base ? `${base.icon || ''} ${base.name}` : '（装備なし）';
+    // 差し替えセレクトは特殊効果装備のみが選択肢のため、現在の装備がステータス装備等の場合は
+    // 選択肢に存在せず空欄表示になる（実際の装備自体はそのまま保持され続ける）。
+    if (selectEl) selectEl.value = (base && base.type === 'special') ? base.id : '';
+}
+
+// -----------------------------------------------------
+// 「型」（MONSTER_MOLDSに定義された技構成プリセット）を種族選択に応じて選べるようにする。
+// すべてのモンスターの型を暗記していなくても、型を選ぶだけでその型の技構成を一括反映できる
+// （反映後もチェックボックスから個別に加除して調整可能）。
+// -----------------------------------------------------
+
+// 指定種族（または専属ボスの疑似種族キー）の「型」を全て列挙する。
+// 通常種族：MONSTER_MOLDS[種族名] を読み、型番号・（dualStatType種族のみ）ちから/かしこさの別をラベル化する。
+// 専属ボス：KIN_NEJIKI_BOSSES[bossKey].molds（技キー配列そのもの）を型として扱う。
+// 型データが無い種族の場合は空配列を返す。
+function getDebugMoldOptionsForSpecies(speciesId) {
+    if (isDebugBossSpeciesKey(speciesId)) {
+        const { bossDef } = getDebugBossDefFromSpeciesKey(speciesId);
+        if (!bossDef || !bossDef.molds || bossDef.molds.length === 0) return [];
+        return bossDef.molds.map((skills, idx) => ({
+            label: `型${idx + 1}`,
+            skills: [...skills],
+            equipmentName: null
+        }));
+    }
+
+    const tmpl = MONSTER_TEMPLATES[speciesId];
+    if (!tmpl) return [];
+    const molds = MONSTER_MOLDS[tmpl.name];
+    if (!molds || molds.length === 0) return [];
+
+    const isDual = !!tmpl.dualStatType; // ちから特化型／かしこさ特化型を型ごとに2パターン持つ種族かどうか
+    return molds.map((mold, idx) => {
+        const moldNumber = isDual ? Math.floor(idx / 2) + 1 : idx + 1;
+        const statLabel = isDual ? (idx % 2 === 0 ? 'ちから型' : 'かしこさ型') : null;
+        const skillKeys = (mold.skills || []).map(n => findSkillKeyByName(n, speciesId)).filter(Boolean);
+        return {
+            label: `型${moldNumber}${statLabel ? `（${statLabel}）` : ''}`,
+            skills: skillKeys,
+            equipmentName: mold.equipment || null
+        };
+    }).filter(m => m.skills.length > 0);
+}
+
+// 種族選択に応じて「型」ボタンの一覧を描画する（型データが無い種族なら空のまま何も表示しない）
+function renderDebugMoldOptions(side) {
+    const wrapEl = document.getElementById(side === 'player' ? 'debug-player-molds' : 'debug-opponent-molds');
+    if (!wrapEl) return;
+    wrapEl.innerHTML = '';
+
+    const speciesId = DEBUG_STATE.builder[side].speciesId;
+    if (!speciesId) return;
+
+    const molds = getDebugMoldOptionsForSpecies(speciesId);
+    if (molds.length === 0) return;
+
+    molds.forEach(mold => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'py-1 px-1.5 bg-emerald-950 hover:bg-emerald-900 text-emerald-200 text-[9px] font-bold rounded-lg border border-emerald-800 active:scale-95 transition-all leading-tight';
+        btn.textContent = mold.equipmentName ? `${mold.label} 🎒${mold.equipmentName}` : mold.label;
+        btn.onclick = () => applyDebugMoldToBuilder(side, mold);
+        wrapEl.appendChild(btn);
+    });
+}
+
+// 選んだ「型」の技構成・装備を、現在編集中のビルダーへ一括反映する
+// （型に含まれない技は自動でチェックを外す＝完全にその型の技構成へ置き換える。
+//   装備も型が指定する物にそのまま差し替える。型に装備指定が無ければ装備なしにする）
+function applyDebugMoldToBuilder(side, mold) {
+    const skillsWrapEl = document.getElementById(side === 'player' ? 'debug-player-skills' : 'debug-opponent-skills');
+    DEBUG_STATE.builder[side].selectedSkills = [...mold.skills].slice(0, 4);
+    if (skillsWrapEl) {
+        skillsWrapEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            cb.checked = DEBUG_STATE.builder[side].selectedSkills.includes(cb.value);
+        });
+    }
+
+    const equipId = mold.equipmentName ? findEquipmentIdByName(mold.equipmentName) : null;
+    DEBUG_STATE.builder[side].equip = equipId ? buildEquipmentInstanceFromBase(EQUIPMENT_DB[equipId]) : null;
+    renderDebugEquipStatus(side);
+
+    showToast(`${mold.label}の技構成${mold.equipmentName ? '・装備' : ''}を反映しました。（技はチェックボックス、装備は下のセレクトから個別に調整できます）`);
+}
+
+// 種族セレクトが変更されたら、その種族の技候補チェックボックス一覧を描画する
+function onDebugSpeciesChange(side) {
+    const selectEl = document.getElementById(side === 'player' ? 'debug-player-species' : 'debug-opponent-species');
+    const skillsWrapEl = document.getElementById(side === 'player' ? 'debug-player-skills' : 'debug-opponent-skills');
+    if (!selectEl || !skillsWrapEl) return;
+
+    const speciesId = selectEl.value;
+    DEBUG_STATE.builder[side].speciesId = speciesId || null;
+    DEBUG_STATE.builder[side].selectedSkills = [];
+    skillsWrapEl.innerHTML = '';
+    renderDebugMoldOptions(side);
+    if (!speciesId) return;
+
+    const pool = isDebugBossSpeciesKey(speciesId)
+        ? getDebugBossSkillPool(getDebugBossDefFromSpeciesKey(speciesId).bossDef)
+        : (KIN_NEJIKI_SKILL_POOL[speciesId] || []);
+    pool.forEach(skKey => {
+        const sk = SKILLS_DB[skKey];
+        if (!sk) return;
+        const label = document.createElement('label');
+        label.className = 'flex items-center gap-1 text-[9px] text-gray-300 bg-[#1a120b] rounded px-1.5 py-1 cursor-pointer border border-transparent';
+        label.innerHTML = `<input type="checkbox" value="${skKey}" class="accent-amber-500"><span>${sk.name}</span>`;
+        const checkboxEl = label.querySelector('input');
+        checkboxEl.addEventListener('change', () => onDebugSkillCheckboxChange(side, skKey, checkboxEl));
+        skillsWrapEl.appendChild(label);
+    });
+}
+
+// 技チェックボックスの選択（最大4つまで）
+function onDebugSkillCheckboxChange(side, skKey, checkboxEl) {
+    const selected = DEBUG_STATE.builder[side].selectedSkills;
+    const idx = selected.indexOf(skKey);
+    if (checkboxEl.checked) {
+        if (selected.length >= 4) {
+            checkboxEl.checked = false;
+            showToast('技は最大4つまで選択できます。');
+            return;
+        }
+        if (idx === -1) selected.push(skKey);
+    } else if (idx !== -1) {
+        selected.splice(idx, 1);
+    }
+}
+
+// -----------------------------------------------------
+// ビルダーの現在の選択内容から、バトルエンジンに渡せるモンスターオブジェクトを組み立てる
+// （generateKinNejikiRentalMonster が返すオブジェクトと同じ形にする）
+// -----------------------------------------------------
+function buildDebugMonster(side) {
+    const builder = DEBUG_STATE.builder[side];
+    if (!builder.speciesId) {
+        showToast('先に種族を選択してください。');
+        return null;
+    }
+
+    const ownerName = side === 'player' ? (GAME_STATE.playerName || 'ブリーダー') : 'デバッグ対戦相手';
+
+    // --- 専属ボス（コルトのゴビ／コルトのモスト）が選択された場合 ---
+    if (isDebugBossSpeciesKey(builder.speciesId)) {
+        const { bossKey, bossDef } = getDebugBossDefFromSpeciesKey(builder.speciesId);
+        if (!bossDef) return null;
+
+        const defaultSkills = (bossDef.molds && bossDef.molds.length > 0)
+            ? bossDef.molds[Math.floor(Math.random() * bossDef.molds.length)]
+            : (bossDef.skills || []);
+        const skills = builder.selectedSkills.length > 0
+            ? [...builder.selectedSkills]
+            : defaultSkills.slice(0, 4); // 未選択時は既定4技（molds持ちはランダムな型）を自動採用
+
+        return {
+            name: bossDef.name,
+            shortName: bossDef.shortName || null,
+            monsterBaseName: bossDef.templateId ? (MONSTER_TEMPLATES[bossDef.templateId] || {}).name || bossDef.name : bossDef.name,
+            visualName: DEBUG_BOSS_VISUAL_NAME[bossKey] || null,
+            emoji: bossDef.emoji,
+            speciesId: bossDef.templateId,
+            aura: builder.aura || bossDef.aura || null,
+            isAwakened: false,
+            statusEffect: null,
+            difficulty: 'debug',
+            stats: { ...bossDef.statsBase, life: bossDef.statsBase.maxLife },
+            skills,
+            skillEnhancements: {},
+            equip: builder.equip || null,
+            ownerName
+        };
+    }
+
+    // --- 通常種族の場合 ---
+    const tmpl = MONSTER_TEMPLATES[builder.speciesId];
+    if (!tmpl) return null;
+
+    const skills = builder.selectedSkills.length > 0
+        ? [...builder.selectedSkills]
+        : (KIN_NEJIKI_SKILL_POOL[builder.speciesId] || []).slice(0, 4); // 未選択時は既定4技を自動採用
+
+    return {
+        name: tmpl.name,
+        monsterBaseName: tmpl.name,
+        emoji: tmpl.emoji,
+        speciesId: builder.speciesId,
+        aura: builder.aura || null,
+        isAwakened: false,
+        statusEffect: null,
+        difficulty: 'debug',
+        stats: { ...tmpl.stats, life: tmpl.stats.maxLife },
+        skills,
+        skillEnhancements: {},
+        equip: builder.equip || null,
+        ownerName
+    };
+}
+
+function addDebugMonsterToTeam(side) {
+    const team = side === 'player' ? DEBUG_STATE.playerTeam : DEBUG_STATE.opponentTeam;
+    if (team.length >= 3) {
+        showToast('パーティは3体までです。');
+        return;
+    }
+    const mon = buildDebugMonster(side);
+    if (!mon) return;
+    team.push(mon);
+    if (side === 'opponent') DEBUG_STATE.opponentIsBossSet = null; // 自由編成に切り替わったのでボス扱いを解除
+    renderDebugTeamLists();
+}
+
+function removeDebugMonsterFromTeam(side, idx) {
+    const team = side === 'player' ? DEBUG_STATE.playerTeam : DEBUG_STATE.opponentTeam;
+    team.splice(idx, 1);
+    if (side === 'opponent') DEBUG_STATE.opponentIsBossSet = null;
+    renderDebugTeamLists();
+}
+
+function renderDebugTeamLists() {
+    renderDebugTeamListInto('debug-player-team-list', DEBUG_STATE.playerTeam, 'player');
+    renderDebugTeamListInto('debug-opponent-team-list', DEBUG_STATE.opponentTeam, 'opponent');
+}
+
+function renderDebugTeamListInto(containerId, team, side) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
+    el.innerHTML = '';
+    if (team.length === 0) {
+        el.innerHTML = '<div class="text-[9px] text-gray-500">（まだ未選出）</div>';
+        return;
+    }
+    team.forEach((m, idx) => {
+        const skillNames = (m.skills || []).map(sk => (SKILLS_DB[sk] ? SKILLS_DB[sk].name : sk)).join('、');
+        const equipBase = m.equip ? EQUIPMENT_DB[m.equip.equipId] : null;
+        const equipLabel = equipBase ? `🎒${equipBase.name}` : '装備なし';
+        const row = document.createElement('div');
+        row.className = 'flex items-center justify-between bg-[#1a120b] rounded px-2 py-1 text-[9px] gap-2';
+        row.innerHTML = `
+            <div class="min-w-0">
+                <div class="text-amber-200 font-bold">${m.name}</div>
+                <div class="text-gray-500 truncate">${skillNames}</div>
+                <div class="text-emerald-400 truncate">${equipLabel}</div>
+            </div>
+            <button class="text-red-400 font-bold px-2 flex-shrink-0">✕</button>
+        `;
+        row.querySelector('button').addEventListener('click', () => removeDebugMonsterFromTeam(side, idx));
+        el.appendChild(row);
+    });
+}
+
+// -----------------------------------------------------
+// ボスプリセット（本編と全く同じ生成ロジックを再利用：ボス本体＋帯同2体）
+// -----------------------------------------------------
+function setDebugOpponentToBoss(setNumber) {
+    const team = generateKinNejikiOpponentTeam(setNumber, true, [], [], setNumber === 7 ? 43 : 15).filter(Boolean);
+    DEBUG_STATE.opponentTeam = team;
+    DEBUG_STATE.opponentIsBossSet = setNumber;
+    // ボスプリセットに応じた既定のAIレベルを自動セット（本編相当）。AIタイプはユーザーの選択を尊重して変更しない。
+    DEBUG_STATE.ai.level = setNumber === 7 ? 4 : 3;
+    const levelEl = document.getElementById('debug-ai-level');
+    if (levelEl) levelEl.value = DEBUG_STATE.ai.level;
+    renderDebugTeamLists();
+    // set3は「コルトのゴビ」「コルトのポリトカ」のどちらが選ばれたか実際の生成結果から表示する
+    const bossName = (team[0] && team[0].name) || (setNumber === 7 ? 'コルトのモスト' : 'コルトのゴビ');
+    showToast(`相手を「${bossName}」チームに設定しました。`);
+}
+
+// -----------------------------------------------------
+// バトル開始（既存の masmon_battle.js エンジンをそのまま流用する）
+// kinNejiki.inRun は必ず false にし、本編の周回・ランキング・タスクキル判定には
+// 一切影響を与えないようにする。
+// -----------------------------------------------------
+// -----------------------------------------------------
+// 🏁 デバッグ：〇戦目から「本番と全く同じ流れ」でガッツファクトリーのランを開始する。
+// ・①で編成した自分パーティ（DEBUG_STATE.playerTeam）をそのままKIN_NEJIKI_STATE.playerPartyへ流用する。
+// ・set / battleInSet / totalWins を指定した通算戦数から逆算してセットし、
+//   あとは本編と全く同じ advanceToNextKinNejikiBattle() に処理を渡す
+//   （勝てば通常通り交換画面→次バトルへ進み、負ければ通常通り結果画面へ進む）。
+// ・KIN_NEJIKI_STATE.isDebugRun = true を立てることで、ランキング保存・一時セーブの上書き・
+//   モンスター使用率トラッキングを一切行わないようにしている（kinNejikiFinishRun/saveKinNejikiSuspend側で判定）。
+// -----------------------------------------------------
+function startDebugKinNejikiRunFromBattle() {
+    if (DEBUG_STATE.playerTeam.length === 0) {
+        showToast('先に①で自分側パーティを1体以上編成してください。');
+        return;
+    }
+
+    const inputEl = document.getElementById('debug-start-battle-number');
+    let totalBattleNumber = parseInt(inputEl ? inputEl.value : '1', 10);
+    if (!Number.isFinite(totalBattleNumber)) totalBattleNumber = 1;
+    totalBattleNumber = Math.max(1, Math.min(49, totalBattleNumber));
+    if (inputEl) inputEl.value = totalBattleNumber;
+
+    const exchangeInputEl = document.getElementById('debug-start-exchange-count');
+    let exchangeCount = parseInt(exchangeInputEl ? exchangeInputEl.value : '0', 10);
+    if (!Number.isFinite(exchangeCount) || exchangeCount < 0) exchangeCount = 0;
+    if (exchangeInputEl) exchangeInputEl.value = exchangeCount;
+
+    const set = Math.ceil(totalBattleNumber / 7);
+    const battleInSet = ((totalBattleNumber - 1) % 7) + 1;
+
+    KIN_NEJIKI_STATE.active = true;
+    KIN_NEJIKI_STATE.isDebugRun = true; // ランキング保存・一時セーブ上書き・使用率トラッキングを無効化するフラグ
+    KIN_NEJIKI_STATE.set = set;
+    KIN_NEJIKI_STATE.battleInSet = battleInSet;
+    KIN_NEJIKI_STATE.totalWins = totalBattleNumber - 1;
+    KIN_NEJIKI_STATE.exchangeCount = exchangeCount; // ボーナス枠確認用に交換カウントを指定できるようにする
+    // ①の自分側編成をそのままディープコピーして流用する（本編のplayerPartyと同じ形式のため互換）
+    KIN_NEJIKI_STATE.playerParty = DEBUG_STATE.playerTeam.map(m => JSON.parse(JSON.stringify(m)));
+    KIN_NEJIKI_STATE.offer = [];
+    KIN_NEJIKI_STATE.selectedIdx = [];
+    KIN_NEJIKI_STATE.pendingSwap = null;
+    KIN_NEJIKI_STATE.nextBattlePrepared = null;
+    KIN_NEJIKI_STATE.taskKillCount = 0;
+
+    const bonusPreview = Math.floor(exchangeCount / 7);
+    showToast(`🛠️ 通算${totalBattleNumber}戦目（第${set}セット・${battleInSet}戦目）・交換カウント${exchangeCount}（ボーナス${bonusPreview}枠）から開始します（ランキング対象外）`);
+    updateDebugKinNejikiRunBadge();
+    advanceToNextKinNejikiBattle();
+}
+
+// -----------------------------------------------------
+// 🏁 デバッグラン（〇戦目から開始した通しラン）の終了ボタンの表示/非表示を切り替える。
+// KIN_NEJIKI_STATE.isDebugRunの値が変わるたび（開始時・終了時）に呼ぶこと。
+// -----------------------------------------------------
+function updateDebugKinNejikiRunBadge() {
+    const btn = document.getElementById('debug-kinnejiki-run-end-btn');
+    if (btn) btn.classList.toggle('hidden', !KIN_NEJIKI_STATE.isDebugRun);
+}
+
+// -----------------------------------------------------
+// 🏁 デバッグラン（〇戦目から開始した通しラン）を、どの画面（対峙演出／バトル中／交換画面等）に
+// いる状態からでも即座に強制終了し、デバッグ画面へ戻る。
+// ・本編の一時セーブ・ランキング・使用率トラッキングには一切触れない
+//   （そもそもisDebugRun中はこれらへの書き込み自体が別途ブロックされているため、
+//   ここでは進行中の状態をクリアしてデバッグ画面に戻すことだけを行う）。
+// -----------------------------------------------------
+function endDebugKinNejikiRun() {
+    if (!KIN_NEJIKI_STATE.isDebugRun) return;
+
+    // バトルの真っ最中に押された場合は、バトルエンジン側の状態も強制終了させる
+    MASMON_BATTLE_STATE.isBattleEnd = true;
+    MASMON_BATTLE_STATE.isPlayerTurnActive = false;
+    MASMON_BATTLE_STATE.isDebugBattle = false;
+    ACTIVE_BATTLE_MODE = 'adventure';
+    clearKinNejikiBattleFlag(); // タスクキル検知用フラグを解除（本編の一時セーブ自体には触れない）
+
+    KIN_NEJIKI_STATE.active = false;
+    KIN_NEJIKI_STATE.isDebugRun = false;
+    KIN_NEJIKI_STATE.pendingSwap = null;
+    KIN_NEJIKI_STATE.nextBattlePrepared = null;
+    if (typeof KIN_NEJIKI_PENDING_BATTLE !== 'undefined') KIN_NEJIKI_PENDING_BATTLE = null;
+
+    // マスモン団体戦専用のUI残留を防ぐ（既存のendDebugBattle()と同様の後始末）
+    const playerTeamIconsEl = document.getElementById('player-team-icons');
+    const enemyTeamIconsEl = document.getElementById('enemy-team-icons');
+    const battleItemsEl = document.getElementById('battle-items-container');
+    if (playerTeamIconsEl) { playerTeamIconsEl.classList.add('hidden'); playerTeamIconsEl.innerHTML = ''; }
+    if (enemyTeamIconsEl) { enemyTeamIconsEl.classList.add('hidden'); enemyTeamIconsEl.innerHTML = ''; }
+    if (battleItemsEl) { battleItemsEl.classList.add('hidden'); battleItemsEl.innerHTML = ''; }
+    const endturnControlsEl = document.getElementById('battle-endturn-controls');
+    if (endturnControlsEl) endturnControlsEl.classList.remove('hidden');
+    const debugEndBtn = document.getElementById('debug-end-battle-btn');
+    if (debugEndBtn) debugEndBtn.classList.add('hidden');
+
+    if (typeof AudioManager !== 'undefined') AudioManager.playBGM('adventure');
+
+    updateDebugKinNejikiRunBadge();
+    changeScreen('screen-debug');
+    showToast('🛠️ デバッグランを終了しました（ランキング等には影響していません）。');
+}
+
+function launchDebugBattle() {
+    if (DEBUG_STATE.playerTeam.length === 0) {
+        showToast('自分側のパーティを1体以上編成してください。');
+        return;
+    }
+    if (DEBUG_STATE.opponentTeam.length === 0) {
+        showToast('対戦相手を1体以上編成してください。');
+        return;
+    }
+
+    const bossSet = DEBUG_STATE.opponentIsBossSet;
+    const isBoss = !!bossSet;
+
+    MASMON_BATTLE_STATE.mode = 'cpu_team';
+    MASMON_BATTLE_STATE.isDebugBattle = true;
+    MASMON_BATTLE_STATE.playerTeam = DEBUG_STATE.playerTeam.map(m => convertMasmonToBattleUnit(m, m.equip || null));
+    MASMON_BATTLE_STATE.enemyTeam = DEBUG_STATE.opponentTeam.map(m => convertMasmonToBattleUnit(m, m.equip || null));
+    MASMON_BATTLE_STATE.playerMeta = [...DEBUG_STATE.playerTeam];
+    MASMON_BATTLE_STATE.enemyMeta = [...DEBUG_STATE.opponentTeam];
+    MASMON_BATTLE_STATE.playerActiveIdx = 0;
+    MASMON_BATTLE_STATE.enemyActiveIdx = 0;
+    MASMON_BATTLE_STATE.playerItems = { mango: 0, kuri: 0, toro: 0 };
+    MASMON_BATTLE_STATE.playerItemsInitial = { ...MASMON_BATTLE_STATE.playerItems };
+    MASMON_BATTLE_STATE.enemyItems = { mango: 0, kuri: 0, toro: 0 };
+    MASMON_BATTLE_STATE.opponentOwnerName = (DEBUG_STATE.opponentTeam[0] || {}).ownerName || 'デバッグ対戦相手';
+    MASMON_BATTLE_STATE.playerSubstituteHits = 0;
+    MASMON_BATTLE_STATE.enemySubstituteHits = 0;
+    MASMON_BATTLE_STATE.playerFieldStealthRock = false;
+    MASMON_BATTLE_STATE.enemyFieldStealthRock = false;
+    MASMON_BATTLE_STATE.kinNejiki = {
+        inRun: false, // ← 本編の周回進行・ランキング・タスクキル判定には一切関与させない
+        set: bossSet || 1,
+        battleIndex: 1,
+        isNejiki: isBoss, // trueにするとボス戦用BGM（boss/finalboss）が自動再生される
+        aiLevel: DEBUG_STATE.ai.level, // ①のAI設定セレクトで指定した値（ボスプリセット選択時は既定値が自動セットされるが上書き可）
+        aiPersonality: resolveDebugAiPersonality() // 'random'指定時のみその場でランダム抽選、それ以外は固定タイプ
+    };
+
+    const floorText = isBoss
+        ? (bossSet === 7 ? '🛠️ DEBUG: vs コルトのモスト' : '🛠️ DEBUG: vs コルトのゴビ')
+        : '🛠️ DEBUG BATTLE';
+
+    startMasmonBattleCommon(floorText);
+}
+
+// -----------------------------------------------------
+// デバッグバトルを勝敗に関係なく即座に終了し、デバッグ画面へ戻る。
+// 本編の勝敗演出（screen-masmon-battle-result）は経由せず、その場で中断する。
+// -----------------------------------------------------
+function endDebugBattle() {
+    if (!MASMON_BATTLE_STATE.isDebugBattle) return;
+
+    MASMON_BATTLE_STATE.isBattleEnd = true;
+    MASMON_BATTLE_STATE.isPlayerTurnActive = false;
+    MASMON_BATTLE_STATE.isDebugBattle = false;
+    ACTIVE_BATTLE_MODE = 'adventure';
+
+    // マスモン団体戦専用のUI（チームアイコン・持ち込みアイテム欄）を確実に隠し、中身もクリアしておく
+    // （本編の勝敗画面表示時と同様の後始末。次にこの画面を使う時に残留表示されるのを防ぐ）
+    const playerTeamIconsEl = document.getElementById('player-team-icons');
+    const enemyTeamIconsEl = document.getElementById('enemy-team-icons');
+    const battleItemsEl = document.getElementById('battle-items-container');
+    if (playerTeamIconsEl) { playerTeamIconsEl.classList.add('hidden'); playerTeamIconsEl.innerHTML = ''; }
+    if (enemyTeamIconsEl) { enemyTeamIconsEl.classList.add('hidden'); enemyTeamIconsEl.innerHTML = ''; }
+    if (battleItemsEl) { battleItemsEl.classList.add('hidden'); battleItemsEl.innerHTML = ''; }
+    const endturnControlsEl = document.getElementById('battle-endturn-controls');
+    if (endturnControlsEl) endturnControlsEl.classList.remove('hidden');
+    const debugEndBtn = document.getElementById('debug-end-battle-btn');
+    if (debugEndBtn) debugEndBtn.classList.add('hidden');
+
+    if (typeof AudioManager !== 'undefined') AudioManager.playBGM('adventure');
+
+    changeScreen('screen-debug');
+    showToast('デバッグバトルを終了しました。');
+}
+
+// =====================================================
+// ⑤ 全ユーザーのプレイ状況（ガッツファクトリー）
+// 本番のランキングデータ（kinnejiki_ranking）をそのまま読み出して一覧表示する。
+// あくまで開発者確認用の簡易ビューであり、書き込みは一切行わない。
+// =====================================================
+async function renderDebugAllUsersStats() {
+    const container = document.getElementById('debug-all-users-stats');
+    if (!container) return;
+    container.innerHTML = `<p class="text-[10px] text-gray-500">読み込み中…</p>`;
+
+    if (typeof fetchKinNejikiRanking !== 'function') {
+        container.innerHTML = `<p class="text-[10px] text-red-400">fetchKinNejikiRanking が見つかりません</p>`;
+        return;
+    }
+
+    try {
+        const list = await fetchKinNejikiRanking(200);
+        if (!list || list.length === 0) {
+            container.innerHTML = `<p class="text-[10px] text-gray-500">データがありません</p>`;
+            return;
+        }
+        const myPid = (typeof getMyPlayerId === 'function') ? getMyPlayerId() : null;
+        container.innerHTML = list.map(entry => {
+            const isMe = entry.id === myPid;
+            const updated = entry.updatedAt ? new Date(entry.updatedAt).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
+            return `
+                <div class="flex items-center justify-between bg-[#1a120b] rounded px-2 py-1.5 border ${isMe ? 'border-emerald-500' : 'border-amber-900/40'}">
+                    <div class="min-w-0 flex-1">
+                        <div class="text-[10px] font-bold ${isMe ? 'text-emerald-300' : 'text-amber-200'} truncate">${isMe ? '⭐ ' : ''}${entry.name || 'ブリーダー'}</div>
+                        <div class="text-[8px] text-gray-500 truncate">ID: ${entry.id}</div>
+                    </div>
+                    <div class="text-right flex-shrink-0 ml-2">
+                        <div class="text-[9px] text-gray-300">連勝<span class="text-amber-300 font-bold">${entry.bestWins || 0}</span> ${entry.bestCleared ? '👑' : ''}</div>
+                        <div class="text-[9px] text-gray-300">プレイ<span class="text-sky-300 font-bold">${entry.totalRuns || 0}</span>回</div>
+                        <div class="text-[8px] text-gray-600">${updated}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error('[DEBUG] 全ユーザー状況取得エラー:', e);
+        container.innerHTML = `<p class="text-[10px] text-red-400">取得に失敗しました</p>`;
+    }
+}

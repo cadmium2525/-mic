@@ -113,6 +113,7 @@
                             <span id="realtime-action-timer" class="hidden bg-amber-900 text-amber-200 font-bold text-[9px] px-1.5 py-0.5 rounded">⏱️ 30</span>
                             <span class="bg-[#1a120b] px-2 py-0.5 rounded text-white text-[10px] whitespace-nowrap">戦闘ターン: <span id="battle-turn-counter" class="text-amber-400 font-bold">0</span></span>
                             <button id="battle-fast-mode-btn" onclick="toggleBattleFastMode()" class="bg-[#1a120b] hover:bg-[#2a1b15] border border-amber-800 text-gray-300 text-[9px] font-bold px-2 py-0.5 rounded active:scale-95 transition-all">⚡ 高速モード: OFF</button>
+                            <button id="auto-battle-mode-btn" onclick="toggleAutoBattleMode()" class="bg-[#1a120b] hover:bg-[#2a1b15] border border-amber-800 text-gray-300 text-[9px] font-bold px-2 py-0.5 rounded active:scale-95 transition-all">🤖 オートバトル: OFF</button>
                             <button id="debug-end-battle-btn" onclick="endDebugBattle()" class="hidden bg-red-800 hover:bg-red-700 text-white text-[9px] font-bold px-2 py-0.5 rounded active:scale-95 transition-all">🛠️ バトル終了</button>
                         </div>
                     </div>
@@ -681,6 +682,23 @@
                     <div class="w-14"></div>
                 </div>
 
+                <!-- 検索・モン類フィルタ -->
+                <div class="flex p-2 gap-1.5 bg-[#24150e] border-b border-amber-900/50 flex-shrink-0">
+                    <input id="monster-dex-search" type="text" placeholder="🔍 モンスター名で検索"
+                        oninput="onMonsterDexSearchInput(this.value)"
+                        class="flex-1 min-w-0 bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5">
+                    <select id="monster-dex-monclass-select" onchange="onMonsterDexMonClassChange(this.value)"
+                        class="flex-shrink-0 bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5">
+                        <option value="all">モン類：すべて</option>
+                        <option value="beast">🐾 獣族</option>
+                        <option value="monster">👹 怪物</option>
+                        <option value="inorganic">⚙️ 無機</option>
+                        <option value="creation">✨ 創造</option>
+                        <option value="spirit">🪽 幻霊</option>
+                        <option value="demon">😈 魔族</option>
+                    </select>
+                </div>
+
                 <!-- 種族一覧ビュー -->
                 <div class="flex-1 overflow-y-auto p-3 space-y-2" id="monster-dex-list-view"></div>
 
@@ -715,6 +733,20 @@
 
                 <!-- カテゴリ切替タブ -->
                 <div class="flex p-2 gap-1.5 bg-[#24150e] border-b border-amber-900/50 flex-shrink-0" id="equipment-dex-tabs"></div>
+
+                <!-- 検索・レア度フィルタ -->
+                <div class="flex p-2 gap-1.5 bg-[#24150e] border-b border-amber-900/50 flex-shrink-0">
+                    <input id="equipment-dex-search" type="text" placeholder="🔍 装備名で検索"
+                        oninput="onEquipmentDexSearchInput(this.value)"
+                        class="flex-1 min-w-0 bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5">
+                    <select id="equipment-dex-rarity-select" onchange="onEquipmentDexRarityChange(this.value)"
+                        class="flex-shrink-0 bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5">
+                        <option value="all">レア度：すべて</option>
+                        <option value="★☆☆">★☆☆</option>
+                        <option value="★★☆">★★☆</option>
+                        <option value="★★★">★★★</option>
+                    </select>
+                </div>
 
                 <!-- 装備一覧ビュー -->
                 <div class="flex-1 overflow-y-auto p-3 space-y-2" id="equipment-dex-list-view"></div>
@@ -772,6 +804,18 @@
                     <div class="w-14"></div>
                 </div>
                 <div class="flex-1 overflow-y-auto p-3 space-y-2" id="strategy-status-list"></div>
+            </div>
+
+            <!-- ==================== SCREEN: 実績・バッジ ==================== -->
+            <div id="screen-achievements" class="screen flex-col h-full bg-gradient-to-b from-[#2e2410] to-[#1a120b]">
+                <div class="p-3 border-b border-amber-950 flex items-center justify-between bg-[#241c0e] flex-shrink-0">
+                    <button onclick="returnFromAchievementsScreen()" class="text-amber-400 text-[10px] font-bold flex items-center space-x-1">
+                        <i class="fa-solid fa-arrow-left"></i><span>戻る</span>
+                    </button>
+                    <h2 class="text-sm font-black text-white pixel-font">🏆 実績</h2>
+                    <span id="achievements-summary" class="text-[10px] text-amber-300 font-bold">達成 0 / 0</span>
+                </div>
+                <div class="flex-1 overflow-y-auto p-3 space-y-2" id="achievements-list"></div>
             </div>
 
             <!-- ==================== SCREEN 16: ガッツファクトリー 対戦相手対峙演出画面 ==================== -->
@@ -1160,6 +1204,12 @@
             </div>
 
             <div class="border-t border-emerald-900 pt-3">
+                <button onclick="closeAccountModal(); openAchievementsScreen();" class="w-full py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black rounded-xl text-xs shadow transition-all active:scale-95 flex items-center justify-center space-x-1.5">
+                    <i class="fa-solid fa-trophy"></i><span>🏆 実績を見る</span>
+                </button>
+            </div>
+
+            <div class="border-t border-emerald-900 pt-3">
                 <p class="text-[10px] text-gray-400 mb-1">以前のIDで復帰する（別端末や再インストール後など）</p>
                 <input type="text" id="account-restore-id-input" placeholder="p_ から始まるIDを入力"
                     class="w-full bg-[#150b07] border border-emerald-800 text-white text-[11px] font-mono rounded-lg px-2 py-2 focus:outline-none focus:border-emerald-500 placeholder-gray-600">
@@ -1192,6 +1242,7 @@
     <script src="js/monster_dex.js"></script>
     <script src="js/equipment_dex.js"></script>
     <script src="js/strategy_hub.js"></script>
+    <script src="js/achievements.js"></script>
     <script src="js/skill_effects.js"></script>
     <script src="js/debug_mode.js"></script>
     <!-- BGM/SE 管理（他スクリプトの関数をラップするため必ず最後に読み込む） -->
