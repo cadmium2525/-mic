@@ -1028,7 +1028,7 @@ function renderMasmonBattleSkills() {
         if (sk.type === 'int') typeIcon = '🔮';
         if (sk.type.startsWith('buff')) typeIcon = '⭐';
         if (sk.type === 'heal') typeIcon = '💖';
-        if (sk.type === 'substitute') typeIcon = '🌸';
+        if (sk.type === 'substitute') typeIcon = '🧸';
         if (sk.type === 'hazard') typeIcon = '🪨';
         if (sk.type === 'evade') typeIcon = '💨';
 
@@ -1369,7 +1369,7 @@ const SIDE_UI = {
         critEffect: '💥 CRITICAL!! 💥',
         missEffect: '💨 MISS 💨',
         buffEffect: '💪 ちからUP! 💪',
-        substituteEffect: '🌸 みがわり設置! 🌸',
+        substituteEffect: '🧸 みがわり設置! 🧸',
         hazardEffect: '🪨 トラップ設置! 🪨',
         healEffect: '💚 ライフ回復! 💚'
     },
@@ -1383,7 +1383,7 @@ const SIDE_UI = {
         critEffect: '💥 CRITICAL!! 💥',
         missEffect: '💨 回避!! 💨',
         buffEffect: '💪 相手の攻撃UP! 💪',
-        substituteEffect: '🌸 相手がみがわりを設置! 🌸',
+        substituteEffect: '🧸 相手がみがわりを設置! 🧸',
         hazardEffect: '🪨 相手がトラップを設置! 🪨',
         healEffect: '💚 相手回復! 💚'
     }
@@ -1948,8 +1948,8 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
         const defenderSide = side === 'player' ? 'enemy' : 'player';
         steps.push({
             run: () => {
-                showEffect('🌸 身代わり！');
-                addLog(`🌸 桜餅の身代わりが${defender.name}の代わりに攻撃を${consumedSub > 1 ? consumedSub + '回分' : ''}受けた！（身代わりの残り回数: ${remaining}）`);
+                showEffect('🧸 身代わり！');
+                addLog(`🧸 身代わり人形が${defender.name}の代わりに攻撃を${consumedSub > 1 ? consumedSub + '回分' : ''}受けた！（身代わりの残り回数: ${remaining}）`);
                 // みがわりが尽きた場合、この瞬間にモンスター本体の絵へ戻す
                 if (remaining <= 0) renderBattleFieldIcon(defenderSide, defender);
             },
@@ -2261,15 +2261,15 @@ function buildSubstituteSteps(steps, side, unit, sk) {
             const already = MASMON_BATTLE_STATE[stateKey] > 0;
             MASMON_BATTLE_STATE[stateKey] = 2;
             addLog(already
-                ? `🌸 ${unit.name} は新しい桜餅を設置し直した！（身代わりの残り回数が2回に更新された）`
-                : `🌸 ${unit.name} は自身と同じ大きさの桜餅を設置した！（次の攻撃を2回まで防ぐ。モンスターを交換しても場に残り続ける）`);
+                ? `🧸 ${unit.name} は新しい身代わり人形を設置し直した！（身代わりの残り回数が2回に更新された）`
+                : `🧸 ${unit.name} は自身を模したぬいぐるみを設置した！（次の攻撃を2回まで防ぐ。モンスターを交換しても場に残り続ける）`);
             showEffect(cfg.substituteEffect);
 
             const selfDamagePct = (sk && sk.selfDamagePct) || 0;
             if (selfDamagePct > 0) {
                 const selfDamage = Math.max(1, Math.floor(unit.stats.maxLife * selfDamagePct));
                 unit.stats.life = Math.max(0, unit.stats.life - selfDamage);
-                addLog(`💥 ${unit.name} は桜餅を作り出す反動で、自身のライフが ${selfDamage} 減少した！(現在: ${Math.floor(unit.stats.life)})`);
+                addLog(`💥 ${unit.name} はぬいぐるみを作り出す反動で、自身のライフが ${selfDamage} 減少した！(現在: ${Math.floor(unit.stats.life)})`);
             }
 
             updateMasmonBattleStatsUI();

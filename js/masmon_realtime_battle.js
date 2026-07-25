@@ -881,7 +881,7 @@ function renderRealtimeBattleSkills(state) {
         if (sk.type === 'int') typeIcon = '🔮';
         if (sk.type.startsWith('buff')) typeIcon = '⭐';
         if (sk.type === 'heal') typeIcon = '💖';
-        if (sk.type === 'substitute') typeIcon = '🌸';
+        if (sk.type === 'substitute') typeIcon = '🧸';
 
         const enhBadge = isEnhanced
             ? `<span class="text-[8px] bg-purple-900 text-purple-200 px-1 py-0.5 rounded font-bold ml-1">⚔️Lv.${enh.level}</span>`
@@ -1292,7 +1292,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                 // （プラズマでみがわりを1つ削ってから攻撃技を打つことで、みがわりを削りきり相手を攻撃するための仕様）。
                 const consumedSub = Math.min(otherTeam.substituteHits, hitCount);
                 otherTeam.substituteHits -= consumedSub;
-                resultLogs.push(`🌸 桜餅の身代わりが${opp.name}の代わりに攻撃を${consumedSub > 1 ? consumedSub + '回分' : ''}受けた！（身代わりの残り回数: ${otherTeam.substituteHits}）`);
+                resultLogs.push(`🧸 身代わり人形が${opp.name}の代わりに攻撃を${consumedSub > 1 ? consumedSub + '回分' : ''}受けた！（身代わりの残り回数: ${otherTeam.substituteHits}）`);
                 hitCount -= consumedSub;
             }
 
@@ -1466,14 +1466,14 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             const already = actingTeam.substituteHits > 0;
             actingTeam.substituteHits = 2;
             resultLogs.push(already
-                ? `🌸 ${me.name} は新しい桜餅を設置し直した！（身代わりの残り回数が2回に更新された）`
-                : `🌸 ${me.name} は自身と同じ大きさの桜餅を設置した！（次の攻撃を2回まで防ぐ。モンスターを交換しても場に残り続ける）`);
+                ? `🧸 ${me.name} は新しい身代わり人形を設置し直した！（身代わりの残り回数が2回に更新された）`
+                : `🧸 ${me.name} は自身を模したぬいぐるみを設置した！（次の攻撃を2回まで防ぐ。モンスターを交換しても場に残り続ける）`);
 
             const selfDamagePct = sk.selfDamagePct || 0;
             if (selfDamagePct > 0) {
                 const selfDamage = Math.max(1, Math.floor(me.maxLife * selfDamagePct));
                 me.life = Math.max(0, me.life - selfDamage);
-                resultLogs.push(`💥 ${me.name} は桜餅を作り出す反動で、自身のライフが ${selfDamage} 減少した！(現在: ${Math.floor(me.life)})`);
+                resultLogs.push(`💥 ${me.name} はぬいぐるみを作り出す反動で、自身のライフが ${selfDamage} 減少した！(現在: ${Math.floor(me.life)})`);
             }
         }
     } else if (action.kind === 'defend') {

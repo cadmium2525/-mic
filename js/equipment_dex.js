@@ -23,7 +23,7 @@ function openEquipmentDexScreen() {
 }
 
 function returnToTitleFromEquipmentDex() {
-    changeScreen('screen-title');
+    changeScreen('screen-strategy-hub');
 }
 
 // --- レア度（★の数）に応じた色クラス ---

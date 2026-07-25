@@ -92,13 +92,9 @@
                         <i class="fa-solid fa-user-shield"></i>
                         <span>アカウント管理</span>
                     </button>
-                    <button onclick="openMonsterDexScreen()" class="w-full py-2.5 bg-[#1a120b] hover:bg-[#2a1b15] text-amber-300 font-bold rounded-xl text-sm shadow border border-amber-800 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
-                        <i class="fa-solid fa-book"></i>
-                        <span>モンスター図鑑（技一覧）</span>
-                    </button>
-                    <button onclick="openEquipmentDexScreen()" class="w-full py-2.5 bg-[#1a120b] hover:bg-[#2a1b15] text-sky-300 font-bold rounded-xl text-sm shadow border border-sky-800 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
-                        <i class="fa-solid fa-shield-halved"></i>
-                        <span>装備アイテム図鑑</span>
+                    <button onclick="openStrategyHubScreen()" class="w-full py-2.5 bg-[#1a120b] hover:bg-[#2a1b15] text-emerald-300 font-bold rounded-xl text-sm shadow border border-emerald-700 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-book-open-reader"></i>
+                        <span>攻略情報局</span>
                     </button>
                     <p class="text-[10px] text-gray-400">※育成不要！毎回その場で選ぶレンタルモンスターで戦おう！</p>
                 </div>
@@ -678,7 +674,7 @@
             <div id="screen-monster-dex" class="screen flex-col h-full bg-[#1a120b]">
                 <div class="p-3 border-b border-amber-950 flex items-center justify-between bg-[#24150e] flex-shrink-0">
                     <button onclick="returnToTitleFromDex()" class="text-amber-400 text-[10px] font-bold flex items-center space-x-1">
-                        <i class="fa-solid fa-arrow-left"></i><span>タイトルへ</span>
+                        <i class="fa-solid fa-arrow-left"></i><span>情報局へ</span>
                     </button>
                     <h2 class="text-sm font-black text-amber-300 pixel-font">📖 モンスター図鑑</h2>
                     <div class="w-14"></div>
@@ -710,7 +706,7 @@
             <div id="screen-equipment-dex" class="screen flex-col h-full bg-[#1a120b]">
                 <div class="p-3 border-b border-amber-950 flex items-center justify-between bg-[#24150e] flex-shrink-0">
                     <button onclick="returnToTitleFromEquipmentDex()" class="text-amber-400 text-[10px] font-bold flex items-center space-x-1">
-                        <i class="fa-solid fa-arrow-left"></i><span>タイトルへ</span>
+                        <i class="fa-solid fa-arrow-left"></i><span>情報局へ</span>
                     </button>
                     <h2 class="text-sm font-black text-amber-300 pixel-font">🎒 装備アイテム図鑑</h2>
                     <div class="w-14"></div>
@@ -721,6 +717,60 @@
 
                 <!-- 装備一覧ビュー -->
                 <div class="flex-1 overflow-y-auto p-3 space-y-2" id="equipment-dex-list-view"></div>
+            </div>
+
+            <!-- ==================== SCREEN: 攻略情報局 ホーム画面 ==================== -->
+            <div id="screen-strategy-hub" class="screen flex-col h-full bg-gradient-to-b from-[#1a2e22] to-[#1a120b]">
+                <div class="p-3 border-b border-emerald-950 flex items-center justify-between bg-[#132018] flex-shrink-0">
+                    <button onclick="returnToTitleFromStrategyHub()" class="text-emerald-300 text-[10px] font-bold flex items-center space-x-1">
+                        <i class="fa-solid fa-arrow-left"></i><span>タイトルへ</span>
+                    </button>
+                    <h2 class="text-sm font-black text-white pixel-font">📚 攻略情報局</h2>
+                    <div class="w-14"></div>
+                </div>
+                <div class="flex-1 overflow-y-auto p-3 space-y-2.5">
+                    <p class="text-[10px] text-gray-400 leading-relaxed px-1">オーラ・モン類の相性倍率や、状態異常の効果など、このゲームの仕組みをまとめて確認できます。「勝てない…」と感じたら、まずはここをチェック！</p>
+                    <button onclick="renderStrategyMechanicsScreen()" class="w-full py-3 bg-[#1a120b] hover:bg-[#24150e] text-amber-200 font-bold rounded-xl text-sm shadow border border-amber-800 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-scale-balanced"></i>
+                        <span>⚔️ 基本ルール・システム解説</span>
+                    </button>
+                    <button onclick="renderStrategyStatusScreen()" class="w-full py-3 bg-[#1a120b] hover:bg-[#24150e] text-rose-300 font-bold rounded-xl text-sm shadow border border-rose-800 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-skull-crossbones"></i>
+                        <span>🩹 状態異常一覧</span>
+                    </button>
+                    <button onclick="openMonsterDexScreen()" class="w-full py-3 bg-[#1a120b] hover:bg-[#24150e] text-sky-300 font-bold rounded-xl text-sm shadow border border-sky-800 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-book"></i>
+                        <span>📖 モンスター図鑑（技一覧）</span>
+                    </button>
+                    <button onclick="openEquipmentDexScreen()" class="w-full py-3 bg-[#1a120b] hover:bg-[#24150e] text-purple-300 font-bold rounded-xl text-sm shadow border border-purple-800 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-shield-halved"></i>
+                        <span>🎒 装備アイテム図鑑</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- ==================== SCREEN: 攻略情報局 基本ルール・システム解説 ==================== -->
+            <div id="screen-strategy-mechanics" class="screen flex-col h-full bg-[#1a120b]">
+                <div class="p-3 border-b border-amber-950 flex items-center justify-between bg-[#24150e] flex-shrink-0">
+                    <button onclick="returnToStrategyHubFromSub()" class="text-amber-400 text-[10px] font-bold flex items-center space-x-1">
+                        <i class="fa-solid fa-arrow-left"></i><span>情報局へ</span>
+                    </button>
+                    <h2 class="text-sm font-black text-amber-300 pixel-font">⚔️ 基本ルール・システム解説</h2>
+                    <div class="w-14"></div>
+                </div>
+                <div class="flex-1 overflow-y-auto p-3 space-y-2" id="strategy-mechanics-list"></div>
+            </div>
+
+            <!-- ==================== SCREEN: 攻略情報局 状態異常一覧 ==================== -->
+            <div id="screen-strategy-status" class="screen flex-col h-full bg-[#1a120b]">
+                <div class="p-3 border-b border-rose-950 flex items-center justify-between bg-[#24150e] flex-shrink-0">
+                    <button onclick="returnToStrategyHubFromSub()" class="text-rose-300 text-[10px] font-bold flex items-center space-x-1">
+                        <i class="fa-solid fa-arrow-left"></i><span>情報局へ</span>
+                    </button>
+                    <h2 class="text-sm font-black text-rose-200 pixel-font">🩹 状態異常一覧</h2>
+                    <div class="w-14"></div>
+                </div>
+                <div class="flex-1 overflow-y-auto p-3 space-y-2" id="strategy-status-list"></div>
             </div>
 
             <!-- ==================== SCREEN 16: ガッツファクトリー 対戦相手対峙演出画面 ==================== -->
@@ -1134,6 +1184,7 @@
     <script src="js/pvp_preset.js"></script>
     <script src="js/monster_dex.js"></script>
     <script src="js/equipment_dex.js"></script>
+    <script src="js/strategy_hub.js"></script>
     <script src="js/skill_effects.js"></script>
     <script src="js/debug_mode.js"></script>
     <!-- BGM/SE 管理（他スクリプトの関数をラップするため必ず最後に読み込む） -->

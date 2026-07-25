@@ -17,7 +17,7 @@ function showMonsterDexList() {
 }
 
 function returnToTitleFromDex() {
-    changeScreen('screen-title');
+    changeScreen('screen-strategy-hub');
 }
 
 // 詳細ビューの「種族一覧に戻る」ボタンから呼ばれる

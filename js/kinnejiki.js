@@ -795,14 +795,47 @@ function maybeExecuteKinNejikiEnemySwitch() {
 // 画面遷移・進行制御
 // =====================================================
 
+// =====================================================
+// 累計交換回数（アカウント永続・全ラン通算）
+// ・初手の6体から3体を選ぶ操作、および交換画面で実際にモンスターを入れ替えた操作、
+//   それぞれ1回ずつを「交換」としてカウントする（スキップした場合はカウントしない）。
+// ・この累計値が7の倍数に達するたび、次回以降の「初手の配牌」に、通常より1周先の強さの
+//   モンスターがボーナス枠として追加されるようになる（7回→+1枠、14回→+2枠…と上限なく増える）。
+// =====================================================
+
+// --- 交換1回分をカウントし、Firebase（アカウント永続）に加算する ---
+async function incrementKinNejikiExchangeCount() {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return;
+    try {
+        const pid = getMyPlayerId();
+        await firebaseDb.ref(`kinnejiki_ranking/${pid}/totalExchangeCount`).transaction(current => (current || 0) + 1);
+    } catch (e) {
+        console.error('[ガッツファクトリー] 累計交換回数の更新エラー:', e);
+    }
+}
+
+// --- 現在の累計交換回数を取得する（初手の配牌にボーナス枠を混ぜるかどうかの判定に使う） ---
+async function fetchKinNejikiTotalExchangeCount() {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return 0;
+    try {
+        const pid = getMyPlayerId();
+        const snap = await firebaseDb.ref(`kinnejiki_ranking/${pid}/totalExchangeCount`).once('value');
+        return snap.val() || 0;
+    } catch (e) {
+        console.error('[ガッツファクトリー] 累計交換回数の取得エラー:', e);
+        return 0;
+    }
+}
+
+
 // --- タイトルから「ガッツファクトリー」の説明画面へ ---
 function startKinNejikiEntry() {
     updateKinNejikiResumeButtonVisibility();
     changeScreen('screen-kinnejiki-title');
 }
 
-// --- ランを開始し、最初の6体提示を生成 ---
-function beginKinNejikiRun() {
+// --- ランを開始し、最初の6体提示を生成（累計交換回数に応じて1周先のボーナス枠を追加する） ---
+async function beginKinNejikiRun() {
     clearKinNejikiSuspendSave(); // 新規に挑戦を始める場合、古い一時セーブは破棄する
     clearKinNejikiBattleFlag(); // 前回の挑戦から残っているかもしれないバトル中フラグもクリアする
     KIN_NEJIKI_STATE.active = true;
@@ -814,7 +847,23 @@ function beginKinNejikiRun() {
     KIN_NEJIKI_STATE.pendingSwap = null;
     KIN_NEJIKI_STATE.nextBattlePrepared = null;
     KIN_NEJIKI_STATE.taskKillCount = 0;
-    KIN_NEJIKI_STATE.offer = generateKinNejikiOffer(1);
+
+    // 累計交換回数（アカウント永続）に応じて、初手の配牌にボーナス枠（1周先＝セット2相当の強さ）を追加する
+    const totalExchangeCount = await fetchKinNejikiTotalExchangeCount();
+    const bonusSlotCount = Math.floor(totalExchangeCount / 7);
+    const baseOffer = generateKinNejikiOffer(1);
+    let bonusOffer = [];
+    if (bonusSlotCount > 0) {
+        const usedSpecies = baseOffer.map(m => m && m.speciesId).filter(Boolean);
+        bonusOffer = generateKinNejikiOffer(2, usedSpecies, [], bonusSlotCount, true);
+        bonusOffer.forEach(m => { if (m) m.isBonusSlot = true; });
+    }
+    KIN_NEJIKI_STATE.offer = [...baseOffer, ...bonusOffer];
+
+    if (bonusSlotCount > 0) {
+        showToast(`⭐ 累計交換${totalExchangeCount}回達成！初手の配牌に1周先のボーナスモンスターが${bonusSlotCount}体混ざっています！`);
+    }
+
     renderKinNejikiSelectScreen();
     changeScreen('screen-kinnejiki-select');
 }
@@ -950,7 +999,7 @@ function renderKinNejikiSelectScreen() {
         if (!m) return;
         const isSelected = KIN_NEJIKI_STATE.selectedIdx.includes(idx);
         const card = document.createElement('div');
-        card.className = `bg-[#2a1b15] border rounded-xl p-2.5 cursor-pointer active:scale-[0.98] transition-all ${isSelected ? 'border-amber-400 shadow-[0_0_6px_2px_rgba(251,191,36,0.4)]' : 'border-amber-900/50'}`;
+        card.className = `bg-[#2a1b15] border rounded-xl p-2.5 cursor-pointer active:scale-[0.98] transition-all ${isSelected ? 'border-amber-400 shadow-[0_0_6px_2px_rgba(251,191,36,0.4)]' : (m.isBonusSlot ? 'border-fuchsia-500/70' : 'border-amber-900/50')}`;
         // タップ＝選択トグル、長押し＝詳細モーダル表示（両方を1つのヘルパーにまとめて管理する）
 
         const skillNames = buildSkillListWithAuraText(m.skills);
@@ -959,6 +1008,7 @@ function renderKinNejikiSelectScreen() {
         const monClassKey = getMonClassKeyForName(m.monsterBaseName);
         const monClassInfo = monClassKey ? MON_CLASS_TYPES[monClassKey] : null;
         const auraBadge = aura ? `<span class="ml-1 px-1 py-0.5 rounded text-[8px] font-bold text-slate-900 ${aura.colorClass}">${aura.emoji}${monClassInfo ? monClassInfo.emoji : ''}</span>` : '';
+        const bonusBadge = m.isBonusSlot ? `<span class="ml-1 px-1 py-0.5 rounded text-[8px] font-bold text-white bg-fuchsia-600">⭐1周先ボーナス</span>` : '';
 
         const iconWrap = document.createElement('div');
         iconWrap.className = 'w-10 h-10 flex items-center justify-center text-2xl flex-shrink-0 bg-[#1a120b] rounded-full border border-amber-900/40 overflow-hidden';
@@ -967,7 +1017,7 @@ function renderKinNejikiSelectScreen() {
         card.innerHTML = `
             <div class="flex items-center space-x-2">
                 <div class="flex-1 min-w-0">
-                    <div class="text-xs font-bold text-amber-200">${m.name} ${auraBadge} ${isSelected ? '✅' : ''}</div>
+                    <div class="text-xs font-bold text-amber-200">${m.name} ${auraBadge}${bonusBadge} ${isSelected ? '✅' : ''}</div>
                     <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def}</div>
                     <div class="text-[9px] text-gray-500 mt-0.5">技: ${skillNames}</div>
                     <div class="text-[9px] text-purple-300 mt-0.5">装備: ${equipText}</div>
@@ -1018,6 +1068,7 @@ function confirmKinNejikiParty() {
     if (KIN_NEJIKI_STATE.selectedIdx.length !== 3) return;
     KIN_NEJIKI_STATE.playerParty = KIN_NEJIKI_STATE.selectedIdx.map(idx => JSON.parse(JSON.stringify(KIN_NEJIKI_STATE.offer[idx])));
     KIN_NEJIKI_STATE.playerParty.forEach(m => { if (m) trackKinNejikiMonsterUsage(m.speciesId); });
+    incrementKinNejikiExchangeCount(); // 初手の3体選択も「交換1回」としてカウントする
     advanceToNextKinNejikiBattle();
 }
 
@@ -1323,6 +1374,7 @@ function confirmKinNejikiSwap() {
     cloned.ownerName = 'あなた';
     KIN_NEJIKI_STATE.playerParty[kinNejikiSwapMineIdx] = cloned;
     trackKinNejikiMonsterUsage(cloned.speciesId);
+    incrementKinNejikiExchangeCount(); // 実際に交換した場合のみ「交換1回」としてカウントする（スキップ時はカウントしない）
     showToast(`【${cloned.name}】を仲間に迎え入れた！`);
     showKinNejikiOrderStep();
 }
