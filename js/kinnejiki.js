@@ -802,7 +802,7 @@ function maybeExecuteKinNejikiEnemySwitch() {
 // ・初手の6体から3体を選ぶ操作、および交換画面で実際にモンスターを入れ替えた操作、
 //   それぞれ1回ずつを「交換」としてカウントする（スキップした場合はカウントしない）。
 // ・この値が7の倍数に達するたび、以降の交換画面（倒した相手からの入れ替え）に、通常の3体候補とは
-//   別枠で、1周先の強さのボーナスモンスターが追加されるようになる（7回→+1枠、14回→+2枠…と上限なく増える）。
+//   別枠で、1セット先の強さのボーナスモンスターが追加されるようになる（7回→+1枠、14回→+2枠…と上限なく増える）。
 // ・「初手の配牌」自体はラン開始時（交換回数が必ず0の瞬間）にしか発生しないため、ボーナス枠は
 //   対象にならない。ボーナスが実際に反映されるのは、交換画面（kinNejikiHandleBattleEnd内）から。
 // =====================================================
@@ -819,7 +819,7 @@ function startKinNejikiEntry() {
     changeScreen('screen-kinnejiki-title');
 }
 
-// --- ランを開始し、最初の6体提示を生成（累計交換回数に応じて1周先のボーナス枠を追加する） ---
+// --- ランを開始し、最初の6体提示を生成する（交換回数は必ず0から始まるため、ここではボーナス枠は付かない） ---
 function beginKinNejikiRun() {
     clearKinNejikiSuspendSave(); // 新規に挑戦を始める場合、古い一時セーブは破棄する
     clearKinNejikiBattleFlag(); // 前回の挑戦から残っているかもしれないバトル中フラグもクリアする
@@ -979,7 +979,7 @@ function renderKinNejikiSelectScreen() {
         const monClassKey = getMonClassKeyForName(m.monsterBaseName);
         const monClassInfo = monClassKey ? MON_CLASS_TYPES[monClassKey] : null;
         const auraBadge = aura ? `<span class="ml-1 px-1 py-0.5 rounded text-[8px] font-bold text-slate-900 ${aura.colorClass}">${aura.emoji}${monClassInfo ? monClassInfo.emoji : ''}</span>` : '';
-        const bonusBadge = m.isBonusSlot ? `<span class="ml-1 px-1 py-0.5 rounded text-[8px] font-bold text-white bg-fuchsia-600">⭐1周先ボーナス</span>` : '';
+        const bonusBadge = m.isBonusSlot ? `<span class="ml-1 px-1 py-0.5 rounded text-[8px] font-bold text-white bg-fuchsia-600">⭐1セット先ボーナス</span>` : '';
 
         const iconWrap = document.createElement('div');
         iconWrap.className = 'w-10 h-10 flex items-center justify-center text-2xl flex-shrink-0 bg-[#1a120b] rounded-full border border-amber-900/40 overflow-hidden';
@@ -1265,7 +1265,7 @@ function kinNejikiHandleBattleEnd(isWin) {
     );
 
     // 交換回数が7の倍数に達している場合、通常の3体候補（倒した相手チーム）とは別枠で、
-    // 1周先の強さのボーナスモンスターを交換画面の候補に追加する。
+    // 1セット先の強さのボーナスモンスターを交換画面の候補に追加する。
     const bonusSlotCount = Math.floor((KIN_NEJIKI_STATE.exchangeCount || 0) / 7);
     if (bonusSlotCount > 0) {
         const usedSpecies = defeatedTeam.map(m => m && m.speciesId).filter(Boolean);
@@ -1275,7 +1275,7 @@ function kinNejikiHandleBattleEnd(isWin) {
             m.isBonusSlot = true;
             KIN_NEJIKI_STATE.pendingSwap.defeatedTeam.push(m);
         });
-        showToast(`⭐ 交換${KIN_NEJIKI_STATE.exchangeCount}回達成！交換候補に1周先のボーナスモンスターが${bonusSlotCount}体追加されています！`);
+        showToast(`⭐ 交換${KIN_NEJIKI_STATE.exchangeCount}回達成！交換候補に1セット先のボーナスモンスターが${bonusSlotCount}体追加されています！`);
     }
 
     renderKinNejikiSwapScreen();
@@ -1315,7 +1315,7 @@ function renderKinNejikiSwapLists() {
             // タップ＝選択トグル、長押し＝詳細モーダル表示（両方を1つのヘルパーにまとめて管理する）
             const skillNames = buildSkillListWithAuraText(m.skills || []);
             const visualId = `kinnejiki-swap-visual-${keyPrefix}-${idx}`;
-            const bonusBadge = m.isBonusSlot ? `<span class="ml-1 px-1 py-0.5 rounded text-[8px] font-bold text-white bg-fuchsia-600">⭐1周先ボーナス</span>` : '';
+            const bonusBadge = m.isBonusSlot ? `<span class="ml-1 px-1 py-0.5 rounded text-[8px] font-bold text-white bg-fuchsia-600">⭐1セット先ボーナス</span>` : '';
 
             const auraInfo = m.aura ? AURA_TYPES[m.aura] : null;
             const monClassKeySwap = getMonClassKeyForName(m.monsterBaseName);
