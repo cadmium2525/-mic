@@ -8,7 +8,6 @@
 // =====================================================
 
 const ACHIEVEMENT_DEFS = [
-    { id: 'first_clear', emoji: '🏆', name: '初クリア', desc: 'ガッツファクトリーを1回クリアする', check: stats => !!stats.kin.bestCleared },
     { id: 'kin_streak_10', emoji: '🔥', name: '連勝10（ガッツファクトリー）', desc: 'ガッツファクトリーで10連勝する', check: stats => stats.kin.bestWins >= 10 },
     { id: 'kin_streak_25', emoji: '🔥', name: '連勝25（ガッツファクトリー）', desc: 'ガッツファクトリーで25連勝する', check: stats => stats.kin.bestWins >= 25 },
     { id: 'kin_streak_49', emoji: '👑', name: '完全制覇（ガッツファクトリー）', desc: 'ガッツファクトリーを49連勝（全セットクリア）する', check: stats => stats.kin.bestWins >= 49 },
