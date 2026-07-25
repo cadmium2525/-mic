@@ -890,6 +890,12 @@
                                 class="w-16 bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5 text-center">
                             <span class="text-[10px] text-gray-400 flex-shrink-0">戦目から</span>
                         </div>
+                        <div class="flex gap-1.5 items-center">
+                            <span class="text-[10px] text-gray-400 flex-shrink-0">交換カウント</span>
+                            <input id="debug-start-exchange-count" type="number" min="0" value="0"
+                                class="w-16 bg-[#1a120b] border border-fuchsia-800 text-white text-xs rounded-lg px-2 py-1.5 text-center">
+                            <span class="text-[9px] text-gray-500 flex-shrink-0">（7の倍数でボーナス枠確認用）</span>
+                        </div>
                         <button onclick="startDebugKinNejikiRunFromBattle()"
                             class="w-full py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg active:scale-95 transition-all">🏁 この戦目から開始</button>
                     </div>

@@ -586,6 +586,11 @@ function startDebugKinNejikiRunFromBattle() {
     totalBattleNumber = Math.max(1, Math.min(49, totalBattleNumber));
     if (inputEl) inputEl.value = totalBattleNumber;
 
+    const exchangeInputEl = document.getElementById('debug-start-exchange-count');
+    let exchangeCount = parseInt(exchangeInputEl ? exchangeInputEl.value : '0', 10);
+    if (!Number.isFinite(exchangeCount) || exchangeCount < 0) exchangeCount = 0;
+    if (exchangeInputEl) exchangeInputEl.value = exchangeCount;
+
     const set = Math.ceil(totalBattleNumber / 7);
     const battleInSet = ((totalBattleNumber - 1) % 7) + 1;
 
@@ -594,6 +599,7 @@ function startDebugKinNejikiRunFromBattle() {
     KIN_NEJIKI_STATE.set = set;
     KIN_NEJIKI_STATE.battleInSet = battleInSet;
     KIN_NEJIKI_STATE.totalWins = totalBattleNumber - 1;
+    KIN_NEJIKI_STATE.exchangeCount = exchangeCount; // ボーナス枠確認用に交換カウントを指定できるようにする
     // ①の自分側編成をそのままディープコピーして流用する（本編のplayerPartyと同じ形式のため互換）
     KIN_NEJIKI_STATE.playerParty = DEBUG_STATE.playerTeam.map(m => JSON.parse(JSON.stringify(m)));
     KIN_NEJIKI_STATE.offer = [];
@@ -602,7 +608,8 @@ function startDebugKinNejikiRunFromBattle() {
     KIN_NEJIKI_STATE.nextBattlePrepared = null;
     KIN_NEJIKI_STATE.taskKillCount = 0;
 
-    showToast(`🛠️ 通算${totalBattleNumber}戦目（第${set}セット・${battleInSet}戦目）から開始します（ランキング対象外）`);
+    const bonusPreview = Math.floor(exchangeCount / 7);
+    showToast(`🛠️ 通算${totalBattleNumber}戦目（第${set}セット・${battleInSet}戦目）・交換カウント${exchangeCount}（ボーナス${bonusPreview}枠）から開始します（ランキング対象外）`);
     updateDebugKinNejikiRunBadge();
     advanceToNextKinNejikiBattle();
 }

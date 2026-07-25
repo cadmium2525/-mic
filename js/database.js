@@ -459,8 +459,9 @@ const MOVE_SPEED_RANK_STEP = (function () {
 function getEffectiveMoveSpeed(unit) {
     if (!unit) return 0;
     const baseSpeed = (unit.stats ? unit.stats.moveSpeed : unit.moveSpeed) || 0;
-    if (!unit.isParalyzed) return baseSpeed;
-    return Math.max(0, baseSpeed - MOVE_SPEED_RANK_STEP * 3);
+    const paralyzePenalty = unit.isParalyzed ? (MOVE_SPEED_RANK_STEP * 3) : 0;
+    const moveSpeedDownPenalty = MOVE_SPEED_RANK_STEP * (unit.moveSpeedDownStacks || 0);
+    return Math.max(0, baseSpeed - paralyzePenalty - moveSpeedDownPenalty);
 }
 
 // =====================================================
@@ -513,6 +514,7 @@ function clearBattleStatModifiersOnSwitch(unit) {
     unit.gobiStepActive = false;
     unit.spdUpStacks = 0;
     unit.spdDownStacks = 0;
+    unit.moveSpeedDownStacks = 0;
     // 猛毒（isPoisoned）はバトル終了まで治らないため、ここでは解除しない。
     // ただし交代すると蓄積したダメージ量はリセットされ、次に受けるダメージは1/16からやり直しになる。
     // （やけど isBurned／ねむり sleepTurns も他の状態異常と同様、控えに戻っても引き継がれるためリセットしない。
@@ -691,7 +693,7 @@ const SKILLS_DB = {
     dai_kaiten_otoshi: { name: '大回転落とし', aura: 'green', cost: 50, type: 'pow', hitRate: 78, force: 2.8, gutsDown: 18, critBonus: 0, effect: 'def_down_15', desc: '巨体で大きく回転し、渾身の力で相手を叩き落とす切り札。相手GUTS-18。さらに命中した場合、衝撃で30%の確率で相手の丈夫さを15%低下させる（最大3回まで累積・交代するまで持続）' },
     kaeru_no_uta: { name: 'かえるのうた', aura: 'green', cost: 40, type: 'int', hitRate: 93, force: 0.2, gutsDown: 42, critBonus: 0.10, effect: 'confuse_30', desc: '独特な鳴き声の合唱で相手の闘志を大きく削ぐ高命中技。相手GUTS-42。さらに命中した場合、30%の確率で相手を混乱状態にする（混乱中は毎ターン40%の確率で意味不明になり行動できなくなり、30%の確率で混乱が解除される）' },
     bakudan_nage: { name: 'ばくだん投げ', aura: 'red', cost: 28, type: 'int', hitRate: 80, force: 2.05, gutsDown: 30, critBonus: 0.03, effect: 'burn_30', desc: '爆弾を模した重い物体を放り投げる大技。相手GUTS-30。さらに技命中時30%の確率でやけど状態にする（バトル終了まで治らず、毎ターン終了時に最大ライフの1/16のダメージを受ける）' },
-    nen_eki: { name: '粘液', aura: 'green', cost: 30, type: 'int', hitRate: 85, force: 1.1, gutsDown: 20, effect: 'spd_down_stage1', desc: '粘り気の強い体液を吹きかける。相手GUTS-20。さらに命中した場合、相手の移動速度を1段階下げる（1回につき10%低下・最大3段階・相手が交代するまでの間持続）' },
+    nen_eki: { name: '粘液', aura: 'green', cost: 30, type: 'int', hitRate: 85, force: 1.1, gutsDown: 20, effect: 'movespeed_down_stage1', desc: '粘り気の強い体液を吹きかける。相手GUTS-20。さらに命中した場合、相手の移動速度を1段階下げる（1回につき1段階低下・最大3段階・相手が交代するまでの間持続）' },
 
     // --- ヒノトリ系統 ---
     kuchibashi: { name: 'くちばし', aura: null, cost: 16, type: 'pow', hitRate: 78, force: 0.5, gutsDown: 4, critBonus: 0, effect: null, desc: '鋭いくちばしで相手を鋭くつつく基本技。相手GUTS-4' },
@@ -1069,7 +1071,7 @@ function applySkillOnHitEffect(caster, target, sk) {
     // ---------- 「ガッツファクトリー」新規種族技用の追加効果 ----------
     } else if (sk.effect === 'blind_2') {
         target.blindTurns = 2;
-        logs.push({ short: `💨 ${target.name} の命中率が下がった！`, detail: `💨 ${target.name} は強烈な臭気で目が眩んだ！（2ターンの間、命中率が-15低下する）` });
+        logs.push({ short: `💨 ${target.name} の命中率が下がった！`, detail: `💨 ${target.name} は強烈な臭気で目が眩んだ！（2ターンの間、命中率を15%下げる）` });
     } else if (sk.effect === 'def_down_15') {
         // 以前は「命中すれば必ず3ターンの間-15%」だったが、
         // 「命中時30%の確率で発動・発動すれば交代するまで持続」という仕様に変更。
@@ -1097,12 +1099,25 @@ function applySkillOnHitEffect(caster, target, sk) {
             logs.push({ short: `💥 ${target.name} の回避・丈夫さが低下した！`, detail: `💥 ${target.name} の回避と丈夫さが下がった！（回避が${formatStatDropDetail(target, 'spd', 20)}、丈夫さが${formatStatDropDetail(target, 'def', 20)}低下・累積${target.evasionDefDownStacks}/3・相手が交代するまでの間持続）` });
         }
     } else if (sk.effect === 'spd_down_stage1') {
-        // 粘液専用：命中すれば必ず発動し、相手の移動速度（回避）を1段階（1回につき10%）低下させる（3回まで重複可・交代するまで持続）
+        // 回避（命中判定にのみ関わるステータス）を1段階（1回につき10%）低下させる（3回まで重複可・交代するまで持続）
+        // 注意：「回避」ステータス（stats.spd）は行動順を決める「移動速度」（moveSpeedRank／A〜Fランク）とは
+        // 完全に別のパラメータ。名前が紛らわしいが、ここで下がるのは命中判定にのみ関わる回避であり、
+        // 行動順には一切影響しない。（現在この効果を使用する技は無いが、将来の技のために残してある）
         if ((target.spdDownStacks || 0) >= 3) {
-            logs.push({ short: `（${target.name} には追加効果なし）`, detail: `（${target.name} はすでに移動速度低下の効果が上限（3段階）に達しているため、追加の効果は発生しなかった）` });
+            logs.push({ short: `（${target.name} には追加効果なし）`, detail: `（${target.name} はすでに回避低下の効果が上限（3段階）に達しているため、追加の効果は発生しなかった）` });
         } else {
             target.spdDownStacks = Math.min(3, (target.spdDownStacks || 0) + 1);
-            logs.push({ short: `🐌 ${target.name} の移動速度が下がった！`, detail: `🐌 ${target.name} の粘液にまみれ、移動速度が${formatStatDropDetail(target, 'spd', 10)}下がった！（累積${target.spdDownStacks}/3段階・相手が交代するまでの間持続）` });
+            logs.push({ short: `🐌 ${target.name} の回避が下がった！`, detail: `🐌 ${target.name} の回避が${formatStatDropDetail(target, 'spd', 10)}下がった！（累積${target.spdDownStacks}/3段階・相手が交代するまでの間持続）` });
+        }
+    } else if (sk.effect === 'movespeed_down_stage1') {
+        // 粘液専用：命中すれば必ず発動し、行動順を決める「移動速度」（moveSpeedRank／A〜Fランク）そのものを
+        // 1段階（ランク間の刻み幅ぶん）低下させる（3回まで重複可・交代するまで持続）。
+        // 「回避」ステータス（spd_down_stage1）とは完全に別物で、こちらは実際に行動順に影響する。
+        if ((target.moveSpeedDownStacks || 0) >= 3) {
+            logs.push({ short: `（${target.name} には追加効果なし）`, detail: `（${target.name} はすでに移動速度低下の効果が上限（3段階）に達しているため、追加の効果は発生しなかった）` });
+        } else {
+            target.moveSpeedDownStacks = Math.min(3, (target.moveSpeedDownStacks || 0) + 1);
+            logs.push({ short: `🐌 ${target.name} の移動速度が下がった！`, detail: `🐌 ${target.name} の粘液にまみれ、移動速度が1段階下がった！（累積${target.moveSpeedDownStacks}/3段階・行動順が相手より後になりやすくなる・相手が交代するまでの間持続）` });
         }
     } else if (sk.effect === 'dot_mine') {
         target.dotTurns = (typeof sk.dotTurns === 'number') ? sk.dotTurns : 3;

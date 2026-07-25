@@ -26,6 +26,8 @@ const KIN_NEJIKI_STATE = {
     nextBattlePrepared: null,
     // タスクキル（バトル中のアプリ強制終了）を検知した回数。3回で強制ゲームオーバーとする。
     taskKillCount: 0,
+    // 交換回数（1ラン内のみ有効。7の倍数に達すると、以降の交換画面にボーナス枠が追加される）
+    exchangeCount: 0,
     // true の間は「デバッグモードから途中の戦目を指定して開始したラン」を示す。
     // ランキング保存・一時セーブの上書き・モンスター使用率トラッキングを一切行わないようにするためのフラグ。
     isDebugRun: false
@@ -796,35 +798,18 @@ function maybeExecuteKinNejikiEnemySwitch() {
 // =====================================================
 
 // =====================================================
-// 累計交換回数（アカウント永続・全ラン通算）
+// 交換回数（1ラン内のみ有効・ゲームオーバーや新規ランで0にリセットされる）
 // ・初手の6体から3体を選ぶ操作、および交換画面で実際にモンスターを入れ替えた操作、
 //   それぞれ1回ずつを「交換」としてカウントする（スキップした場合はカウントしない）。
-// ・この累計値が7の倍数に達するたび、次回以降の「初手の配牌」に、通常より1周先の強さの
-//   モンスターがボーナス枠として追加されるようになる（7回→+1枠、14回→+2枠…と上限なく増える）。
+// ・この値が7の倍数に達するたび、以降の交換画面（倒した相手からの入れ替え）に、通常の3体候補とは
+//   別枠で、1周先の強さのボーナスモンスターが追加されるようになる（7回→+1枠、14回→+2枠…と上限なく増える）。
+// ・「初手の配牌」自体はラン開始時（交換回数が必ず0の瞬間）にしか発生しないため、ボーナス枠は
+//   対象にならない。ボーナスが実際に反映されるのは、交換画面（kinNejikiHandleBattleEnd内）から。
 // =====================================================
 
-// --- 交換1回分をカウントし、Firebase（アカウント永続）に加算する ---
-async function incrementKinNejikiExchangeCount() {
-    if (typeof initFirebase !== 'function' || !initFirebase()) return;
-    try {
-        const pid = getMyPlayerId();
-        await firebaseDb.ref(`kinnejiki_ranking/${pid}/totalExchangeCount`).transaction(current => (current || 0) + 1);
-    } catch (e) {
-        console.error('[ガッツファクトリー] 累計交換回数の更新エラー:', e);
-    }
-}
-
-// --- 現在の累計交換回数を取得する（初手の配牌にボーナス枠を混ぜるかどうかの判定に使う） ---
-async function fetchKinNejikiTotalExchangeCount() {
-    if (typeof initFirebase !== 'function' || !initFirebase()) return 0;
-    try {
-        const pid = getMyPlayerId();
-        const snap = await firebaseDb.ref(`kinnejiki_ranking/${pid}/totalExchangeCount`).once('value');
-        return snap.val() || 0;
-    } catch (e) {
-        console.error('[ガッツファクトリー] 累計交換回数の取得エラー:', e);
-        return 0;
-    }
+// --- 交換1回分をカウントする（1ラン内のみ有効） ---
+function incrementKinNejikiExchangeCount() {
+    KIN_NEJIKI_STATE.exchangeCount = (KIN_NEJIKI_STATE.exchangeCount || 0) + 1;
 }
 
 
@@ -835,7 +820,7 @@ function startKinNejikiEntry() {
 }
 
 // --- ランを開始し、最初の6体提示を生成（累計交換回数に応じて1周先のボーナス枠を追加する） ---
-async function beginKinNejikiRun() {
+function beginKinNejikiRun() {
     clearKinNejikiSuspendSave(); // 新規に挑戦を始める場合、古い一時セーブは破棄する
     clearKinNejikiBattleFlag(); // 前回の挑戦から残っているかもしれないバトル中フラグもクリアする
     KIN_NEJIKI_STATE.active = true;
@@ -847,23 +832,9 @@ async function beginKinNejikiRun() {
     KIN_NEJIKI_STATE.pendingSwap = null;
     KIN_NEJIKI_STATE.nextBattlePrepared = null;
     KIN_NEJIKI_STATE.taskKillCount = 0;
+    KIN_NEJIKI_STATE.exchangeCount = 0; // 交換回数は新規ランのたびに必ず0から始まる
 
-    // 累計交換回数（アカウント永続）に応じて、初手の配牌にボーナス枠（1周先＝セット2相当の強さ）を追加する
-    const totalExchangeCount = await fetchKinNejikiTotalExchangeCount();
-    const bonusSlotCount = Math.floor(totalExchangeCount / 7);
-    const baseOffer = generateKinNejikiOffer(1);
-    let bonusOffer = [];
-    if (bonusSlotCount > 0) {
-        const usedSpecies = baseOffer.map(m => m && m.speciesId).filter(Boolean);
-        bonusOffer = generateKinNejikiOffer(2, usedSpecies, [], bonusSlotCount, true);
-        bonusOffer.forEach(m => { if (m) m.isBonusSlot = true; });
-    }
-    KIN_NEJIKI_STATE.offer = [...baseOffer, ...bonusOffer];
-
-    if (bonusSlotCount > 0) {
-        showToast(`⭐ 累計交換${totalExchangeCount}回達成！初手の配牌に1周先のボーナスモンスターが${bonusSlotCount}体混ざっています！`);
-    }
-
+    KIN_NEJIKI_STATE.offer = generateKinNejikiOffer(1);
     renderKinNejikiSelectScreen();
     changeScreen('screen-kinnejiki-select');
 }
@@ -1293,6 +1264,20 @@ function kinNejikiHandleBattleEnd(isWin) {
         next.set, next.battleInSet, next.isNejiki, exclusions.species, exclusions.equip
     );
 
+    // 交換回数が7の倍数に達している場合、通常の3体候補（倒した相手チーム）とは別枠で、
+    // 1周先の強さのボーナスモンスターを交換画面の候補に追加する。
+    const bonusSlotCount = Math.floor((KIN_NEJIKI_STATE.exchangeCount || 0) / 7);
+    if (bonusSlotCount > 0) {
+        const usedSpecies = defeatedTeam.map(m => m && m.speciesId).filter(Boolean);
+        const bonusCandidates = generateKinNejikiOffer(next.set + 1, usedSpecies, exclusions.equip, bonusSlotCount, true);
+        bonusCandidates.forEach(m => {
+            if (!m) return;
+            m.isBonusSlot = true;
+            KIN_NEJIKI_STATE.pendingSwap.defeatedTeam.push(m);
+        });
+        showToast(`⭐ 交換${KIN_NEJIKI_STATE.exchangeCount}回達成！交換候補に1周先のボーナスモンスターが${bonusSlotCount}体追加されています！`);
+    }
+
     renderKinNejikiSwapScreen();
     changeScreen('screen-kinnejiki-swap');
 }
@@ -1326,10 +1311,11 @@ function renderKinNejikiSwapLists() {
             if (!m) return;
             const isSelected = idx === selectedIdx;
             const card = document.createElement('div');
-            card.className = `bg-[#2a1b15] border rounded-xl p-2 cursor-pointer active:scale-[0.98] transition-all flex items-center space-x-2 ${isSelected ? 'border-emerald-400 shadow-[0_0_6px_2px_rgba(52,211,153,0.4)]' : 'border-amber-900/50'}`;
+            card.className = `bg-[#2a1b15] border rounded-xl p-2 cursor-pointer active:scale-[0.98] transition-all flex items-center space-x-2 ${isSelected ? 'border-emerald-400 shadow-[0_0_6px_2px_rgba(52,211,153,0.4)]' : (m.isBonusSlot ? 'border-fuchsia-500/70' : 'border-amber-900/50')}`;
             // タップ＝選択トグル、長押し＝詳細モーダル表示（両方を1つのヘルパーにまとめて管理する）
             const skillNames = buildSkillListWithAuraText(m.skills || []);
             const visualId = `kinnejiki-swap-visual-${keyPrefix}-${idx}`;
+            const bonusBadge = m.isBonusSlot ? `<span class="ml-1 px-1 py-0.5 rounded text-[8px] font-bold text-white bg-fuchsia-600">⭐1周先ボーナス</span>` : '';
 
             const auraInfo = m.aura ? AURA_TYPES[m.aura] : null;
             const monClassKeySwap = getMonClassKeyForName(m.monsterBaseName);
@@ -1344,7 +1330,7 @@ function renderKinNejikiSwapLists() {
                 <div id="${visualId}" class="flex-shrink-0 w-12 h-12 flex items-center justify-center text-2xl"></div>
                 <div class="flex-1 min-w-0">
                     <div class="flex items-center justify-between">
-                        <div class="text-xs font-bold text-amber-200">${m.name}</div>
+                        <div class="text-xs font-bold text-amber-200">${m.name}${bonusBadge}</div>
                         <div class="text-[8px] text-purple-300 font-bold flex-shrink-0 ml-1">${auraText}</div>
                     </div>
                     <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def}</div>
