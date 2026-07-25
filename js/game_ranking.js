@@ -73,7 +73,25 @@ function openAccountModal() {
     const restoreInput = document.getElementById('account-restore-id-input');
     if (restoreInput) restoreInput.value = '';
     document.getElementById('account-modal').classList.remove('hidden');
+    switchAccountModalTab('id');
     loadAndRenderAccountStats();
+}
+
+// --- アカウント管理モーダル内のタブ切り替え ---
+function switchAccountModalTab(tabName) {
+    const tabs = ['id', 'stats', 'restore'];
+    tabs.forEach(name => {
+        const content = document.getElementById('account-tab-content-' + name);
+        const btn = document.getElementById('account-tab-btn-' + name);
+        if (!content || !btn) return;
+        if (name === tabName) {
+            content.classList.remove('hidden');
+            btn.classList.add('active');
+        } else {
+            content.classList.add('hidden');
+            btn.classList.remove('active');
+        }
+    });
 }
 
 // --- プレイ記録（ガッツファクトリー／PvP／モンスター使用率）を取得して描画する ---

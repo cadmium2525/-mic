@@ -1171,51 +1171,74 @@
 
     <!-- アカウント管理モーダル（端末固有IDの表示・別端末IDでの復帰） -->
     <div id="account-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeAccountModal()">
-        <div class="bg-[#2a1b15] w-full max-w-xs p-4 rounded-2xl border-2 border-emerald-600 space-y-3 shadow-2xl" onclick="event.stopPropagation()">
-            <h4 class="text-base font-black text-white pixel-font flex items-center space-x-2 border-b border-emerald-800 pb-2">
+        <div class="bg-[#2a1b15] w-full max-w-xs rounded-2xl border-2 border-emerald-600 shadow-2xl flex flex-col max-h-[85vh]" onclick="event.stopPropagation()">
+            <h4 class="text-base font-black text-white pixel-font flex items-center space-x-2 border-b border-emerald-800 px-4 pt-4 pb-2 shrink-0">
                 <i class="fa-solid fa-user-shield text-emerald-400"></i>
                 <span>アカウント管理</span>
             </h4>
 
-            <div>
-                <p class="text-[10px] text-gray-400 mb-1">現在のアカウントID（PvPレートやランキングはこのIDに紐づいています）</p>
-                <div class="flex space-x-1.5">
-                    <input type="text" id="account-my-id-display" readonly
-                        class="flex-1 min-w-0 bg-[#150b07] border border-emerald-800 text-emerald-300 text-[11px] font-mono rounded-lg px-2 py-2 focus:outline-none">
-                    <button onclick="copyMyPlayerId()" class="shrink-0 px-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-lg text-[11px] transition-all active:scale-95">
-                        コピー
+            <!-- タブ切り替えボタン -->
+            <div class="flex px-3 pt-2 gap-1 shrink-0">
+                <button id="account-tab-btn-id" onclick="switchAccountModalTab('id')"
+                    class="account-tab-btn flex-1 py-2 rounded-t-lg text-[11px] font-bold transition-all flex items-center justify-center space-x-1">
+                    <i class="fa-solid fa-id-card"></i><span>ID</span>
+                </button>
+                <button id="account-tab-btn-stats" onclick="switchAccountModalTab('stats')"
+                    class="account-tab-btn flex-1 py-2 rounded-t-lg text-[11px] font-bold transition-all flex items-center justify-center space-x-1">
+                    <i class="fa-solid fa-chart-simple"></i><span>プレイ記録</span>
+                </button>
+                <button id="account-tab-btn-restore" onclick="switchAccountModalTab('restore')"
+                    class="account-tab-btn flex-1 py-2 rounded-t-lg text-[11px] font-bold transition-all flex items-center justify-center space-x-1">
+                    <i class="fa-solid fa-rotate-left"></i><span>復帰</span>
+                </button>
+            </div>
+
+            <!-- タブ内容（ここだけスクロール） -->
+            <div class="px-4 pb-3 pt-2 overflow-y-auto flex-1 min-h-0">
+
+                <!-- タブ1: 現在のID -->
+                <div id="account-tab-content-id" class="account-tab-content space-y-2">
+                    <p class="text-[10px] text-gray-400 mb-1">現在のアカウントID（PvPレートやランキングはこのIDに紐づいています）</p>
+                    <div class="flex space-x-1.5">
+                        <input type="text" id="account-my-id-display" readonly
+                            class="flex-1 min-w-0 bg-[#150b07] border border-emerald-800 text-emerald-300 text-[11px] font-mono rounded-lg px-2 py-2 focus:outline-none">
+                        <button onclick="copyMyPlayerId()" class="shrink-0 px-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-lg text-[11px] transition-all active:scale-95">
+                            コピー
+                        </button>
+                    </div>
+                    <p class="text-[9px] text-amber-400 mt-1.5 leading-relaxed">⚠️ このIDはブラウザに保存されています。キャッシュ・データを消去すると引き継げなくなるので、控えておくことをおすすめします。</p>
+                </div>
+
+                <!-- タブ2: プレイ記録・実績 -->
+                <div id="account-tab-content-stats" class="account-tab-content space-y-3 hidden">
+                    <div>
+                        <p class="text-[10px] text-gray-400 mb-1.5 flex items-center justify-between">
+                            <span>📊 プレイ記録</span>
+                            <button onclick="loadAndRenderAccountStats()" class="text-[9px] text-emerald-400 underline">更新</button>
+                        </p>
+                        <div id="account-stats-container" class="text-[10px] leading-relaxed">
+                            <p class="text-gray-500">読み込み中…</p>
+                        </div>
+                    </div>
+                    <button onclick="closeAccountModal(); openAchievementsScreen();" class="w-full py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black rounded-xl text-xs shadow transition-all active:scale-95 flex items-center justify-center space-x-1.5">
+                        <i class="fa-solid fa-trophy"></i><span>🏆 実績を見る</span>
                     </button>
                 </div>
-                <p class="text-[9px] text-amber-400 mt-1.5 leading-relaxed">⚠️ このIDはブラウザに保存されています。キャッシュ・データを消去すると引き継げなくなるので、控えておくことをおすすめします。</p>
-            </div>
 
-            <div class="border-t border-emerald-900 pt-3">
-                <p class="text-[10px] text-gray-400 mb-1.5 flex items-center justify-between">
-                    <span>📊 プレイ記録</span>
-                    <button onclick="loadAndRenderAccountStats()" class="text-[9px] text-emerald-400 underline">更新</button>
-                </p>
-                <div id="account-stats-container" class="text-[10px] leading-relaxed">
-                    <p class="text-gray-500">読み込み中…</p>
+                <!-- タブ3: 以前のIDで復帰 -->
+                <div id="account-tab-content-restore" class="account-tab-content space-y-2 hidden">
+                    <p class="text-[10px] text-gray-400 mb-1">以前のIDで復帰する（別端末や再インストール後など）</p>
+                    <input type="text" id="account-restore-id-input" placeholder="p_ から始まるIDを入力"
+                        class="w-full bg-[#150b07] border border-emerald-800 text-white text-[11px] font-mono rounded-lg px-2 py-2 focus:outline-none focus:border-emerald-500 placeholder-gray-600">
+                    <button onclick="restoreMyPlayerId()" class="w-full mt-2 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs shadow transition-all active:scale-95">
+                        このIDで復帰する
+                    </button>
+                    <p class="text-[9px] text-gray-500 mt-1.5 leading-relaxed">※復帰すると現在のこの端末のIDは上書きされ、入力したIDのランキング・レート・対戦履歴を引き継ぎます。</p>
                 </div>
+
             </div>
 
-            <div class="border-t border-emerald-900 pt-3">
-                <button onclick="closeAccountModal(); openAchievementsScreen();" class="w-full py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black rounded-xl text-xs shadow transition-all active:scale-95 flex items-center justify-center space-x-1.5">
-                    <i class="fa-solid fa-trophy"></i><span>🏆 実績を見る</span>
-                </button>
-            </div>
-
-            <div class="border-t border-emerald-900 pt-3">
-                <p class="text-[10px] text-gray-400 mb-1">以前のIDで復帰する（別端末や再インストール後など）</p>
-                <input type="text" id="account-restore-id-input" placeholder="p_ から始まるIDを入力"
-                    class="w-full bg-[#150b07] border border-emerald-800 text-white text-[11px] font-mono rounded-lg px-2 py-2 focus:outline-none focus:border-emerald-500 placeholder-gray-600">
-                <button onclick="restoreMyPlayerId()" class="w-full mt-2 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs shadow transition-all active:scale-95">
-                    このIDで復帰する
-                </button>
-                <p class="text-[9px] text-gray-500 mt-1.5 leading-relaxed">※復帰すると現在のこの端末のIDは上書きされ、入力したIDのランキング・レート・対戦履歴を引き継ぎます。</p>
-            </div>
-
-            <button onclick="closeAccountModal()" class="w-full py-2 bg-[#1a120b] hover:bg-[#150b07] text-gray-300 font-bold rounded-xl text-xs transition-all border border-gray-700">
+            <button onclick="closeAccountModal()" class="w-full py-2 bg-[#1a120b] hover:bg-[#150b07] text-gray-300 font-bold rounded-xl text-xs transition-all border border-gray-700 mx-4 mb-4 shrink-0" style="width: calc(100% - 2rem);">
                 閉じる
             </button>
         </div>

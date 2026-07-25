@@ -114,6 +114,18 @@ input, textarea, select {
     border-radius: 3px;
 }
 
+/* ===== アカウント管理モーダル：タブ切り替えボタン ===== */
+.account-tab-btn {
+    background: #1a120b;
+    color: #9ca3af;
+    border: 1px solid #064e3b;
+    border-bottom: none;
+}
+.account-tab-btn.active {
+    background: #0d3b2e;
+    color: #6ee7b7;
+}
+
 /* 状態変化のスムーズな点滅アニメーション */
 @keyframes smoothBlink {
     0%, 100% { opacity: 0.15; }
