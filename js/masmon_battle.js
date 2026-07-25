@@ -95,13 +95,52 @@ function getEnemyActive() { return MASMON_BATTLE_STATE.enemyTeam[MASMON_BATTLE_S
 // 「技名表示 → 命中/エフェクト → ダメージ表示 → 追加効果表示 → 少し待機 → 次ターン」
 // という一連の流れを、ポケモンシリーズのバトル演出を目安に、間を空けて順番に見せる。
 // =====================================================
-const BATTLE_STEP_DELAY = {
+// --- 高速モード：オンにするとバトルの演出の「間」が全て半分（2倍速）になる ---
+// localStorageに保存し、次回以降も設定を引き継ぐ。
+let BATTLE_FAST_MODE = (typeof localStorage !== 'undefined' && localStorage.getItem('mfload_battle_fast_mode') === '1');
+
+// 高速モードの状態に応じて、渡されたミリ秒を半分にする（BATTLE_STEP_DELAY以外の単発setTimeoutで使う）
+function scaledBattleDelay(ms) {
+    return BATTLE_FAST_MODE ? Math.round(ms / 2) : ms;
+}
+
+function toggleBattleFastMode() {
+    BATTLE_FAST_MODE = !BATTLE_FAST_MODE;
+    try { localStorage.setItem('mfload_battle_fast_mode', BATTLE_FAST_MODE ? '1' : '0'); } catch (e) { /* ignore */ }
+    updateBattleFastModeButtonUI();
+}
+
+function updateBattleFastModeButtonUI() {
+    const btn = document.getElementById('battle-fast-mode-btn');
+    if (!btn) return;
+    btn.textContent = `⚡ 高速モード: ${BATTLE_FAST_MODE ? 'ON' : 'OFF'}`;
+    btn.classList.toggle('bg-amber-700', BATTLE_FAST_MODE);
+    btn.classList.toggle('text-white', BATTLE_FAST_MODE);
+    btn.classList.toggle('border-amber-500', BATTLE_FAST_MODE);
+    btn.classList.toggle('bg-[#1a120b]', !BATTLE_FAST_MODE);
+    btn.classList.toggle('text-gray-300', !BATTLE_FAST_MODE);
+    btn.classList.toggle('border-amber-800', !BATTLE_FAST_MODE);
+}
+
+// 実際の待ち時間の基準値（この値自体は変更しない。参照は必ずBATTLE_STEP_DELAY経由で行うこと）
+const BATTLE_STEP_DELAY_BASE = {
     afterSkillName: 550,  // 技名表示の後
     afterHitEffect: 550,  // HIT/MISS/クリティカルの演出の後
     afterDamage: 650,     // ダメージ数値表示の後
     perExtraLog: 550,     // 追加効果（ガッツダウン・状態異常・ドレイン等）1件ごと
     beforeNextTurn: 500   // 全ての演出が終わってから次のターンに移るまでの間
 };
+
+// BATTLE_STEP_DELAY.xxx で参照するたびに、高速モードなら自動的に半分の値を返すProxy。
+// 既存のコード（BATTLE_STEP_DELAY.afterSkillName 等）を一切書き換えずに、
+// 高速モードのオン・オフを全ての演出の「間」へ一括で反映させるための仕組み。
+const BATTLE_STEP_DELAY = new Proxy(BATTLE_STEP_DELAY_BASE, {
+    get(target, prop) {
+        const val = target[prop];
+        if (typeof val !== 'number') return val;
+        return BATTLE_FAST_MODE ? Math.round(val / 2) : val;
+    }
+});
 
 // 「⚠️ ENEMY TURN ⚠️」バナー（showEffectで表示）が完全に消え切るまでの時間。
 // showEffect側の「800ms表示→300msでフェードアウト（#battle-effect-overlayのduration-300）」と
@@ -247,6 +286,7 @@ function startMasmonBattleCommon(floorText) {
 
     document.getElementById('battle-floor-indicator').textContent = floorText;
     document.getElementById('battle-turn-counter').textContent = MASMON_BATTLE_STATE.turn;
+    updateBattleFastModeButtonUI();
     const debugEndBtn = document.getElementById('debug-end-battle-btn');
     if (debugEndBtn) debugEndBtn.classList.toggle('hidden', !MASMON_BATTLE_STATE.isDebugBattle);
 
@@ -1612,7 +1652,7 @@ function submitMasmonPlayerAction(action) {
         }
 
         MASMON_BATTLE_STATE.pendingEnemyAction = enemyAction;
-        setTimeout(() => resolveMasmonTurn(), 500);
+        setTimeout(() => resolveMasmonTurn(), scaledBattleDelay(500));
     });
 }
 
@@ -2356,14 +2396,14 @@ function handleMasmonBattleWin() {
     addLog(isTeam ? `🎉 勝利！ 相手チームを全滅させた！` : `🎉 勝利！ ${MASMON_BATTLE_STATE.enemyTeam[0].name} を倒した！`);
     showEffect('🏆 WIN!! 🏆');
     if (MASMON_BATTLE_STATE.kinNejiki && MASMON_BATTLE_STATE.kinNejiki.inRun && typeof kinNejikiHandleBattleEnd === 'function') {
-        setTimeout(() => kinNejikiHandleBattleEnd(true), 1500);
+        setTimeout(() => kinNejikiHandleBattleEnd(true), scaledBattleDelay(1500));
         return;
     }
     if (MASMON_BATTLE_STATE.endless && MASMON_BATTLE_STATE.endless.inRun && typeof endlessHandleBattleEnd === 'function') {
-        setTimeout(() => endlessHandleBattleEnd(true), 1500);
+        setTimeout(() => endlessHandleBattleEnd(true), scaledBattleDelay(1500));
         return;
     }
-    setTimeout(() => showMasmonBattleResult(true), 1500);
+    setTimeout(() => showMasmonBattleResult(true), scaledBattleDelay(1500));
 }
 
 function handleMasmonBattleLose() {
@@ -2374,14 +2414,14 @@ function handleMasmonBattleLose() {
     addLog(isTeam ? `💀 敗北… あなたのチームは全滅してしまった…` : `💀 敗北… ${MASMON_BATTLE_STATE.playerTeam[0].name} は倒れてしまった…`);
     showEffect('💀 LOSE... 💀');
     if (MASMON_BATTLE_STATE.kinNejiki && MASMON_BATTLE_STATE.kinNejiki.inRun && typeof kinNejikiHandleBattleEnd === 'function') {
-        setTimeout(() => kinNejikiHandleBattleEnd(false), 1500);
+        setTimeout(() => kinNejikiHandleBattleEnd(false), scaledBattleDelay(1500));
         return;
     }
     if (MASMON_BATTLE_STATE.endless && MASMON_BATTLE_STATE.endless.inRun && typeof endlessHandleBattleEnd === 'function') {
-        setTimeout(() => endlessHandleBattleEnd(false), 1500);
+        setTimeout(() => endlessHandleBattleEnd(false), scaledBattleDelay(1500));
         return;
     }
-    setTimeout(() => showMasmonBattleResult(false), 1500);
+    setTimeout(() => showMasmonBattleResult(false), scaledBattleDelay(1500));
 }
 
 function showMasmonBattleResult(isWin) {

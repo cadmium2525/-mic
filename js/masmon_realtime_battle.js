@@ -315,6 +315,7 @@ function enterRealtimeBattleScreen(state) {
     document.getElementById('battle-floor-indicator').textContent = isTeam
         ? `🌐🛡️ リアルタイム団体戦 vs ${oppName}`
         : `🌐 リアルタイム対戦 vs ${oppName}`;
+    if (typeof updateBattleFastModeButtonUI === 'function') updateBattleFastModeButtonUI();
 
     const myFirst = getRealtimeActiveUnit(state, REALTIME_BATTLE.mySlot);
     const oppFirst = getRealtimeActiveUnit(state, REALTIME_BATTLE.oppSlot);
@@ -1891,7 +1892,7 @@ async function handleRealtimeBattleEnd(state) {
         console.error('[PvPレート] 反映処理エラー:', e);
     }
 
-    setTimeout(() => showRealtimeBattleResult(state, isWin, reasonText), 1200);
+    setTimeout(() => showRealtimeBattleResult(state, isWin, reasonText), typeof scaledBattleDelay === 'function' ? scaledBattleDelay(1200) : 1200);
 }
 
 function showRealtimeBattleResult(state, isWin, reasonText) {

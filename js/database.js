@@ -1204,7 +1204,7 @@ function applySkillOnHitEffect(caster, target, sk) {
         logs.push({ short: `😵 ${caster.name} は目を回してしまった！`, detail: `😵 ${caster.name} は勢い余って目を回してしまった！（1ターンの間、自身の命中率が低下する）` });
     } else if (sk.effect === 'hitdown_stack_3') {
         target.hitDownStacks = Math.min(3, (target.hitDownStacks || 0) + 1);
-        logs.push({ short: `🏜️ ${target.name} の命中率が低下した！`, detail: `🏜️ ${target.name} の命中率が低下した！（命中が${formatStatDropDetail(target, 'hit', 10)}低下・累積 ${target.hitDownStacks}/3 ・交代するまで持続）` });
+        logs.push({ short: `🏜️ ${target.name} の命中率が低下した！`, detail: `🏜️ ${target.name} の命中率が低下した！（命中率が10%低下・累積 ${target.hitDownStacks}/3 ・交代するまで持続）` });
     } else if (sk.effect === 'selfcrit_up_3') {
         // 以前は「命中すれば必ず3ターンの間クリティカル率+25%」だったが、
         // ターン数による制限を撤廃し、1体につき3回まで重複可能な永続バフ（交代するまで持続）に変更。
@@ -1229,7 +1229,7 @@ function applySkillOnHitEffect(caster, target, sk) {
             target.stunnerDebuffApplied = true;
             target.permaHitDownPct = (target.permaHitDownPct || 0) + 10;
             target.permaDefDownPct = (target.permaDefDownPct || 0) + 15;
-            logs.push({ short: `⚡ ${target.name} の体勢が崩れた！`, detail: `⚡ ${target.name} は体勢を大きく崩された！（交代するまで、命中が${formatStatDropDetail(target, 'hit', 10)}・丈夫さが${formatStatDropDetail(target, 'def', 15)}低下する）` });
+            logs.push({ short: `⚡ ${target.name} の体勢が崩れた！`, detail: `⚡ ${target.name} は体勢を大きく崩された！（交代するまで、命中率が10%・丈夫さが${formatStatDropDetail(target, 'def', 15)}低下する）` });
         }
     } else if (sk.effect === 'dot_mine_hitdown10_3t') {
         // メテオドライブ：継続ダメージ＋3ターンの命中率-10%
@@ -1237,7 +1237,7 @@ function applySkillOnHitEffect(caster, target, sk) {
         target.dotPct = (typeof sk.dotPct === 'number') ? sk.dotPct : 0.08;
         target.hitDownTempTurns = 3;
         target.hitDownTempPct = 10;
-        logs.push({ short: `☄️ ${target.name} は出血状態になった！`, detail: `☄️ ${target.name} は出血状態になった！（${target.dotTurns}ターンの間、毎ターン最大ライフの${Math.round(target.dotPct * 100)}%の継続ダメージを受け、さらに3ターンの間命中が${formatStatDropDetail(target, 'hit', 10)}低下する）` });
+        logs.push({ short: `☄️ ${target.name} は出血状態になった！`, detail: `☄️ ${target.name} は出血状態になった！（${target.dotTurns}ターンの間、毎ターン最大ライフの${Math.round(target.dotPct * 100)}%の継続ダメージを受け、さらに3ターンの間命中率が10%低下する）` });
     } else if (sk.effect === 'dot_mine_aura_bonus') {
         // ライジングレイヴ：継続ダメージ。オーラ有利時はさらに+8%上乗せ
         target.dotTurns = (typeof sk.dotTurns === 'number') ? sk.dotTurns : 3;
