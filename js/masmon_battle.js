@@ -104,6 +104,59 @@ function scaledBattleDelay(ms) {
     return BATTLE_FAST_MODE ? Math.round(ms / 2) : ms;
 }
 
+// --- オートバトル：ONの間、プレイヤーの技を自動選択して周回を高速で消化できる（PvEのみ・PvP対戦では使えない） ---
+let AUTO_BATTLE_MODE = (typeof localStorage !== 'undefined' && localStorage.getItem('mfload_auto_battle_mode') === '1');
+
+function toggleAutoBattleMode() {
+    AUTO_BATTLE_MODE = !AUTO_BATTLE_MODE;
+    try { localStorage.setItem('mfload_auto_battle_mode', AUTO_BATTLE_MODE ? '1' : '0'); } catch (e) { /* ignore */ }
+    updateAutoBattleButtonUI();
+}
+
+function updateAutoBattleButtonUI() {
+    const btn = document.getElementById('auto-battle-mode-btn');
+    if (!btn) return;
+    // PvP対戦中はオートバトルを使わせない（相手がいる対戦で技を勝手に選ぶのは不適切なため）
+    const isPvp = (typeof ACTIVE_BATTLE_MODE !== 'undefined' && ACTIVE_BATTLE_MODE === 'realtime');
+    btn.classList.toggle('hidden', isPvp);
+    btn.textContent = `🤖 オートバトル: ${AUTO_BATTLE_MODE ? 'ON' : 'OFF'}`;
+    btn.classList.toggle('bg-sky-700', AUTO_BATTLE_MODE);
+    btn.classList.toggle('text-white', AUTO_BATTLE_MODE);
+    btn.classList.toggle('border-sky-500', AUTO_BATTLE_MODE);
+    btn.classList.toggle('bg-[#1a120b]', !AUTO_BATTLE_MODE);
+    btn.classList.toggle('text-gray-300', !AUTO_BATTLE_MODE);
+    btn.classList.toggle('border-amber-800', !AUTO_BATTLE_MODE);
+}
+
+// --- オートバトル中の技選択：確殺できる技があればそれを優先しつつ、基本は命中率×威力×回数が
+//     最も高い技を選ぶ。使える技が無ければ防御して次のターンに備える
+//     （簡易的なヒューリスティックで、CPU戦専用のAIほど賢くはない） ---
+function chooseAutoBattleAction() {
+    const p = getPlayerActive();
+    const e = getEnemyActive();
+    if (!p || !e) return { actionType: 'defend' };
+
+    const affordable = (p.skills || [])
+        .map(skKey => ({ key: skKey, info: getMasmonEffectiveSkill(p, skKey) }))
+        .filter(s => s.info && p.guts >= s.info.cost && !isSkillUseLimitReached(p, s.key));
+
+    if (affordable.length === 0) return { actionType: 'defend' };
+
+    const attackSkills = affordable.filter(s => s.info.type === 'pow' || s.info.type === 'int');
+    const pool = attackSkills.length > 0 ? attackSkills : affordable;
+
+    let best = pool[0];
+    let bestScore = -1;
+    pool.forEach(s => {
+        const score = (s.info.hitRate || 0) * (s.info.force || 0.01) * (s.info.hitCount || 1);
+        if (score > bestScore) {
+            bestScore = score;
+            best = s;
+        }
+    });
+    return { actionType: 'skill', skKey: best.key };
+}
+
 function toggleBattleFastMode() {
     BATTLE_FAST_MODE = !BATTLE_FAST_MODE;
     try { localStorage.setItem('mfload_battle_fast_mode', BATTLE_FAST_MODE ? '1' : '0'); } catch (e) { /* ignore */ }
@@ -287,6 +340,7 @@ function startMasmonBattleCommon(floorText) {
     document.getElementById('battle-floor-indicator').textContent = floorText;
     document.getElementById('battle-turn-counter').textContent = MASMON_BATTLE_STATE.turn;
     updateBattleFastModeButtonUI();
+    updateAutoBattleButtonUI();
     const debugEndBtn = document.getElementById('debug-end-battle-btn');
     if (debugEndBtn) debugEndBtn.classList.toggle('hidden', !MASMON_BATTLE_STATE.isDebugBattle);
 
@@ -688,6 +742,15 @@ function openPostVictorySwitchModal(candidates, onDone) {
     };
 
     modal.classList.remove('hidden');
+
+    // 高速周回用オートバトル中は、この確認ダイアログで止まってしまわないよう自動で「いいえ」を選ぶ
+    if (typeof AUTO_BATTLE_MODE !== 'undefined' && AUTO_BATTLE_MODE) {
+        setTimeout(() => {
+            if (!modal.classList.contains('hidden')) {
+                document.getElementById('post-victory-switch-no').click();
+            }
+        }, typeof scaledBattleDelay === 'function' ? scaledBattleDelay(600) : 600);
+    }
 }
 
 // -----------------------------------------------------
@@ -818,6 +881,19 @@ function finishMasmonPlayerTurnSetup(confusionResult) {
 
     toggleMasmonSkillButtons(true);
     renderBattleItems();
+
+    // オートバトルON中は、ボタンが有効になった直後に自動で行動を選ぶ（CPU戦のみ・PvPでは発動しない）
+    if (AUTO_BATTLE_MODE && ACTIVE_BATTLE_MODE === 'masmon' && !MASMON_BATTLE_STATE.isDebugBattle) {
+        setTimeout(() => {
+            if (!MASMON_BATTLE_STATE.isPlayerTurnActive || MASMON_BATTLE_STATE.isBattleEnd) return;
+            const action = chooseAutoBattleAction();
+            if (action.actionType === 'skill') {
+                executeMasmonPlayerSkill(action.skKey);
+            } else {
+                executeMasmonDefend();
+            }
+        }, scaledBattleDelay(600));
+    }
 }
 
 function toggleMasmonSkillButtons(enable) {

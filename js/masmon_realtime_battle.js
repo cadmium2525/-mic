@@ -316,6 +316,7 @@ function enterRealtimeBattleScreen(state) {
         ? `🌐🛡️ リアルタイム団体戦 vs ${oppName}`
         : `🌐 リアルタイム対戦 vs ${oppName}`;
     if (typeof updateBattleFastModeButtonUI === 'function') updateBattleFastModeButtonUI();
+    if (typeof updateAutoBattleButtonUI === 'function') updateAutoBattleButtonUI();
 
     const myFirst = getRealtimeActiveUnit(state, REALTIME_BATTLE.mySlot);
     const oppFirst = getRealtimeActiveUnit(state, REALTIME_BATTLE.oppSlot);

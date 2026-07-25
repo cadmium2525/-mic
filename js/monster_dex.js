@@ -6,9 +6,30 @@
 // まとめて表示する。バトルには関与しない、閲覧専用の画面。
 // =====================================================
 
+const MONSTER_DEX_STATE = {
+    search: '',
+    monClass: 'all' // 'all' | monClass key
+};
+
 function openMonsterDexScreen() {
+    MONSTER_DEX_STATE.search = '';
+    MONSTER_DEX_STATE.monClass = 'all';
+    const searchEl = document.getElementById('monster-dex-search');
+    if (searchEl) searchEl.value = '';
+    const monClassEl = document.getElementById('monster-dex-monclass-select');
+    if (monClassEl) monClassEl.value = 'all';
     renderMonsterDexList();
     changeScreen('screen-monster-dex');
+}
+
+function onMonsterDexSearchInput(value) {
+    MONSTER_DEX_STATE.search = (value || '').trim();
+    renderMonsterDexList();
+}
+
+function onMonsterDexMonClassChange(value) {
+    MONSTER_DEX_STATE.monClass = value || 'all';
+    renderMonsterDexList();
 }
 
 // 詳細ビューの「種族一覧に戻る」ボタンから呼ばれる（画面遷移はせず、同じ画面内でビューを切り替える）
@@ -34,7 +55,22 @@ function renderMonsterDexList() {
     const container = document.getElementById('monster-dex-list-view');
     container.innerHTML = '';
 
-    KIN_NEJIKI_SPECIES_POOL.forEach(speciesId => {
+    const searchTerm = (MONSTER_DEX_STATE.search || '').toLowerCase();
+    const monClassFilter = MONSTER_DEX_STATE.monClass || 'all';
+    const filteredSpecies = KIN_NEJIKI_SPECIES_POOL.filter(speciesId => {
+        const tmpl = MONSTER_TEMPLATES[speciesId];
+        if (!tmpl) return false;
+        if (monClassFilter !== 'all' && tmpl.monClass !== monClassFilter) return false;
+        if (searchTerm && !tmpl.name.toLowerCase().includes(searchTerm)) return false;
+        return true;
+    });
+
+    if (filteredSpecies.length === 0) {
+        container.innerHTML = '<div class="text-center text-gray-500 text-xs py-8">該当するモンスターはいません。</div>';
+        return;
+    }
+
+    filteredSpecies.forEach(speciesId => {
         const tmpl = MONSTER_TEMPLATES[speciesId];
         if (!tmpl) return;
 

@@ -6,7 +6,9 @@
 // =====================================================
 
 const EQUIPMENT_DEX_STATE = {
-    filter: 'all' // 'all' | 'stat' | 'special'
+    filter: 'all', // 'all' | 'stat' | 'special'
+    rarity: 'all', // 'all' | '★☆☆' | '★★☆' | '★★★'
+    search: ''
 };
 
 const EQUIPMENT_DEX_FILTERS = [
@@ -15,11 +17,34 @@ const EQUIPMENT_DEX_FILTERS = [
     { key: 'special', label: '特殊効果' }
 ];
 
+const EQUIPMENT_DEX_RARITY_FILTERS = [
+    { key: 'all', label: 'レア度：すべて' },
+    { key: '★☆☆', label: '★☆☆' },
+    { key: '★★☆', label: '★★☆' },
+    { key: '★★★', label: '★★★' }
+];
+
 function openEquipmentDexScreen() {
     EQUIPMENT_DEX_STATE.filter = 'all';
+    EQUIPMENT_DEX_STATE.rarity = 'all';
+    EQUIPMENT_DEX_STATE.search = '';
+    const searchEl = document.getElementById('equipment-dex-search');
+    if (searchEl) searchEl.value = '';
+    const rarityEl = document.getElementById('equipment-dex-rarity-select');
+    if (rarityEl) rarityEl.value = 'all';
     renderEquipmentDexTabs();
     renderEquipmentDexList();
     changeScreen('screen-equipment-dex');
+}
+
+function onEquipmentDexSearchInput(value) {
+    EQUIPMENT_DEX_STATE.search = (value || '').trim();
+    renderEquipmentDexList();
+}
+
+function onEquipmentDexRarityChange(value) {
+    EQUIPMENT_DEX_STATE.rarity = value || 'all';
+    renderEquipmentDexList();
 }
 
 function returnToTitleFromEquipmentDex() {
@@ -74,8 +99,12 @@ function renderEquipmentDexList() {
     container.innerHTML = '';
 
     const filter = EQUIPMENT_DEX_STATE.filter;
+    const rarityFilter = EQUIPMENT_DEX_STATE.rarity;
+    const searchTerm = (EQUIPMENT_DEX_STATE.search || '').toLowerCase();
     const entries = Object.values(EQUIPMENT_DB)
         .filter(base => filter === 'all' || base.type === filter)
+        .filter(base => rarityFilter === 'all' || base.rarity === rarityFilter)
+        .filter(base => !searchTerm || base.name.toLowerCase().includes(searchTerm))
         // レア度が高い順・同レア度内では名前順に並べる
         .sort((a, b) => {
             const starDiff = (b.rarity.match(/★/g) || []).length - (a.rarity.match(/★/g) || []).length;

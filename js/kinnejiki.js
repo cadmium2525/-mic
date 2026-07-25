@@ -1244,6 +1244,11 @@ function kinNejikiHandleBattleEnd(isWin) {
     }
 
     KIN_NEJIKI_STATE.totalWins++;
+    // 実績の連勝バッジ（10/25/49）を、ちょうど到達した瞬間にその場で知らせる
+    const KIN_STREAK_BADGE_THRESHOLDS = [10, 25, 49];
+    if (KIN_STREAK_BADGE_THRESHOLDS.includes(KIN_NEJIKI_STATE.totalWins) && typeof showToast === 'function') {
+        showToast(`🎉 実績解除：連勝${KIN_NEJIKI_STATE.totalWins}${KIN_NEJIKI_STATE.totalWins === 49 ? '（完全制覇！）' : ''}！`);
+    }
     const defeatedTeam = [...MASMON_BATTLE_STATE.enemyMeta];
     KIN_NEJIKI_STATE.pendingSwap = {
         defeatedTeam,
