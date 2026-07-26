@@ -28,7 +28,8 @@ const MYROOM_BACKGROUNDS = {
             { id: 'right_shelf', xPct: 78, yPct: 34, label: '右の棚' },
             { id: 'floor_crate', xPct: 82, yPct: 49, label: '床のクレート' }
         ],
-        wanderBounds: { xMin: 10, xMax: 90, yMin: 60, yMax: 88 }
+        wanderBounds: { xMin: 10, xMax: 90, yMin: 60, yMax: 88 },
+        tokenSizePx: 84 // 小屋は奥行きが浅いぶん、モンスターを少し大きめに表示する
     },
     B: {
         id: 'B',
@@ -40,7 +41,8 @@ const MYROOM_BACKGROUNDS = {
             { id: 'right_fence', xPct: 86, yPct: 79, label: '右手前の柵' },
             { id: 'center_ground', xPct: 50, yPct: 66, label: '中央の地面' }
         ],
-        wanderBounds: { xMin: 8, xMax: 92, yMin: 48, yMax: 90 }
+        wanderBounds: { xMin: 8, xMax: 92, yMin: 48, yMax: 90 },
+        tokenSizePx: 56 // ちょうど良いサイズなので現状維持
     }
 };
 const MYROOM_DEFAULT_BACKGROUND_ID = 'A';
@@ -373,13 +375,17 @@ function spawnMyRoomMonsterToken(placementKey, info, floor) {
     const tmpl = MONSTER_TEMPLATES[info.speciesId];
     if (!tmpl) return;
 
-    const bounds = getCurrentMyRoomBackground().wanderBounds;
+    const bg = getCurrentMyRoomBackground();
+    const bounds = bg.wanderBounds;
     const startX = bounds.xMin + Math.random() * (bounds.xMax - bounds.xMin);
     const startY = bounds.yMin + Math.random() * (bounds.yMax - bounds.yMin);
 
     const token = document.createElement('div');
-    token.className = 'myroom-monster-token absolute w-14 h-14 cursor-pointer pointer-events-auto';
+    token.className = 'myroom-monster-token absolute cursor-pointer pointer-events-auto';
     token.style.position = 'absolute'; // renderMonsterVisual側が「未設定ならrelativeにする」処理を持つため、先に明示しておく
+    const tokenSize = bg.tokenSizePx || 56;
+    token.style.width = `${tokenSize}px`;
+    token.style.height = `${tokenSize}px`;
     token.style.left = `${startX}%`;
     token.style.top = `${startY}%`;
     token.style.transform = 'translate(-50%,-50%)';

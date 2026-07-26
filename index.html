@@ -1114,9 +1114,7 @@
                         <i class="fa-solid fa-arrow-left"></i><span>タイトルへ</span>
                     </button>
                     <h2 class="text-sm font-black text-amber-300 pixel-font">🔮 祈りの神殿</h2>
-                    <div class="flex items-center space-x-1 text-cyan-300 text-xs font-black">
-                        💎<span id="gacha-diamond-balance">-</span>
-                    </div>
+                    <div class="w-14"></div>
                 </div>
 
                 <!-- 神殿ビジュアル（背景・台座・ドラッグする円盤石） -->
@@ -1142,7 +1140,7 @@
                     <!-- 結果発表パネル -->
                     <div id="gacha-reveal-panel" class="absolute inset-0 bg-black/88 hidden flex-col items-center justify-center p-4 z-40">
                         <p class="text-amber-300 font-black text-xs pixel-font tracking-widest mb-3">✨ 結果発表 ✨</p>
-                        <div id="gacha-reveal-grid" class="grid grid-cols-3 gap-2 max-w-xs w-full max-h-[60vh] overflow-y-auto"></div>
+                        <div id="gacha-reveal-grid" class="grid grid-cols-3 gap-2 max-w-xs w-full max-h-[60vh] overflow-y-auto overscroll-contain" style="-webkit-overflow-scrolling: touch;"></div>
                         <button onclick="closeGachaReveal()" class="mt-4 px-8 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-900 font-black rounded-xl text-xs shadow active:scale-95 transition-all">
                             閉じる
                         </button>
@@ -1150,7 +1148,10 @@
                 </div>
 
                 <!-- 引く回数の切り替え -->
-                <div class="p-3 bg-[#1a120b] border-t border-amber-950 flex-shrink-0">
+                <div class="p-3 bg-[#1a120b] border-t border-amber-950 flex-shrink-0 space-y-2">
+                    <div class="flex items-center justify-center space-x-1 text-cyan-300 text-xs font-black">
+                        <span>💎 所持ダイヤ：</span><span id="gacha-diamond-balance">-</span>
+                    </div>
                     <div class="flex gap-2">
                         <button id="gacha-mode-btn-1" onclick="setGachaPullMode(1)"
                             class="gacha-mode-btn flex-1 py-2 rounded-xl text-xs font-black transition-all active:scale-95">
@@ -1173,9 +1174,7 @@
                         <i class="fa-solid fa-arrow-left"></i><span>タイトルへ</span>
                     </button>
                     <h2 class="text-sm font-black text-amber-300 pixel-font">🏠 マイルーム</h2>
-                    <button onclick="openMyRoomInventoryModal()" class="text-amber-400 text-[10px] font-bold flex items-center space-x-1">
-                        <i class="fa-solid fa-box-archive"></i><span>所持品</span>
-                    </button>
+                    <div class="w-14"></div>
                 </div>
 
                 <!-- 初回特典チケットの案内バナー（未使用チケットがある間だけ表示） -->
@@ -1202,6 +1201,9 @@
                         </button>
                         <button onclick="openMyRoomBackgroundPicker()" class="py-2.5 px-3 bg-[#2a1b15] hover:bg-[#3c2a21] text-amber-300 font-bold rounded-xl text-xs border border-amber-800 active:scale-95 transition-all flex items-center justify-center">
                             <i class="fa-solid fa-image"></i>
+                        </button>
+                        <button onclick="openMyRoomInventoryModal()" class="py-2.5 px-3 bg-[#2a1b15] hover:bg-[#3c2a21] text-amber-300 font-bold rounded-xl text-xs border border-amber-800 active:scale-95 transition-all flex items-center justify-center">
+                            <i class="fa-solid fa-box-archive"></i>
                         </button>
                     </div>
                     <p class="text-[9px] text-gray-500 text-center">棚・地面をタップすると家具を置けます。配置中のモンスターをタップすると床から外せます。</p>
