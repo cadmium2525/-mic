@@ -18,21 +18,17 @@
 
 // --- 桜の舞：自身が横回転（rotateY）しながら、周囲にさくらの花びらが舞う ---
 function playSakuranomaiMotion(side) {
-    const animTarget = getSpriteAnimTargetEl(side);
-    if (animTarget) {
-        animTarget.style.willChange = 'transform';
-        try {
-            animTarget.animate([
-                { transform: 'perspective(500px) rotateY(0deg)' },
-                { transform: 'perspective(500px) rotateY(180deg)', offset: 0.5 },
-                { transform: 'perspective(500px) rotateY(360deg)' }
-            ], { duration: 700 * EFFECT_SPEED_MULTIPLIER, easing: 'ease-in-out' });
-        } catch (e) { /* Web Animations API 非対応環境では何もしない */ }
-    }
+    // 絵柄本体とオーラ着色を一緒に回す（本体だけ回すと着色が回らずズレてしまうため）
+    animateSpriteLayers(side, [
+        { transform: 'perspective(500px) rotateY(0deg)' },
+        { transform: 'perspective(500px) rotateY(180deg)', offset: 0.5 },
+        { transform: 'perspective(500px) rotateY(360deg)' }
+    ], { duration: 700 * EFFECT_SPEED_MULTIPLIER, easing: 'ease-in-out' });
+
     const casterContainer = getBattleSpriteContainerEl(side);
     spawnSelfParticleRing(casterContainer, '🌸', 6, 20, 650 * EFFECT_SPEED_MULTIPLIER);
 }
-registerCustomSkillMotion('sakuranomai', playSakuranomaiMotion);
+registerCustomSkillMotion('sakuranomai', playSakuranomaiMotion, 'モッチー');
 
 // --- ガッチョ：ピンクの🖐️で2回攻撃。位置を少しずつずらしながら2回表示 ---
 function playGacchoMotion(side) {
@@ -55,7 +51,7 @@ function playGacchoMotion(side) {
         }, i * 230 * EFFECT_SPEED_MULTIPLIER);
     });
 }
-registerCustomSkillMotion('gaccho', playGacchoMotion);
+registerCustomSkillMotion('gaccho', playGacchoMotion, 'モッチー');
 
 // --- さくら吹雪：モッチーから複数のさくらが飛んでいき、敵の位置で舞う ---
 function playSakurafubukiMotion(side) {
@@ -88,7 +84,7 @@ function playSakurafubukiMotion(side) {
         });
     }
 }
-registerCustomSkillMotion('sakurafubuki', playSakurafubukiMotion);
+registerCustomSkillMotion('sakurafubuki', playSakurafubukiMotion, 'モッチー');
 
 // --- 超ローリンモッチ・もっさま共通：技の間だけ「丸まった状態」の専用イラストに差し替えるヘルパー ---
 //   通常の立ち姿画像のまま transform で無理やり丸めていた（borderRadiusを50%にするなど）と、
@@ -181,7 +177,7 @@ function playChoRollinmochiMotion(side) {
         });
     }, duration * 0.78);
 }
-registerCustomSkillMotion('cho_rollinmochi', playChoRollinmochiMotion);
+registerCustomSkillMotion('cho_rollinmochi', playChoRollinmochiMotion, 'モッチー');
 
 // --- もっさま：ジャンプ→空中で丸まりながら移動→相手の上から落下する ---
 function playMossamaMotion(side) {
@@ -228,7 +224,7 @@ function playMossamaMotion(side) {
         });
     }, duration * 0.79);
 }
-registerCustomSkillMotion('mossama', playMossamaMotion);
+registerCustomSkillMotion('mossama', playMossamaMotion, 'モッチー');
 
 // --- 八重ざくら：自身の周囲にさくらの花びら＋キラキラが舞う（回復演出） ---
 function playYaezakuraMotion(side) {
@@ -237,4 +233,4 @@ function playYaezakuraMotion(side) {
     spawnSelfParticleRing(casterContainer, '🌸', 6, 20, 750 * EFFECT_SPEED_MULTIPLIER);
     spawnSelfParticleRing(casterContainer, '✨', 5, 15, 650 * EFFECT_SPEED_MULTIPLIER, 38);
 }
-registerCustomSkillMotion('yaezakura', playYaezakuraMotion);
+registerCustomSkillMotion('yaezakura', playYaezakuraMotion, 'モッチー');

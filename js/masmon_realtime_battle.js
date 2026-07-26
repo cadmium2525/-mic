@@ -545,9 +545,12 @@ function triggerRealtimeCombatEffects(entry) {
 
     // 技発動時の視覚エフェクト（技名からイメージしたパーティクルを再生。skill_effects.js）
     // ログの技キーは同期されないため、「◯◯の【技名】！」の技名部分から引く。
-    const skillNameMatch = text.match(/の【(.+?)】！$/);
+    // 技名は種族をまたいで重複することがある（例：「かみつき」）ため、
+    // 前半の「◯◯」＝使用したモンスター名も一緒に渡して、種族専用モーションを取り違えないようにする。
+    const skillNameMatch = text.match(/^(.*)の【(.+?)】！$/);
     if (skillNameMatch && typeof playSkillVisualEffectByName === 'function') {
-        playSkillVisualEffectByName(skillNameMatch[1], isMyAction ? 'player' : 'enemy');
+        const casterName = (skillNameMatch[1] || '').trim();
+        playSkillVisualEffectByName(skillNameMatch[2], isMyAction ? 'player' : 'enemy', casterName);
     }
 
     // ダメージ命中（通常／クリティカル）

@@ -363,3 +363,9 @@ input, textarea, select {
 #myroom-visitor-notice {
     background: linear-gradient(to right, #0e7490, #0369a1);
 }
+
+/* ===== デバッグモード：マイルーム時間帯の固定ボタン ===== */
+.debug-myroom-time-btn-active {
+    background: #b45309 !important;
+    box-shadow: 0 0 0 2px #fcd34d inset;
+}

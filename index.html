@@ -1130,6 +1130,18 @@
                         <button onclick="debugResetMyRoomPlacement()" class="w-full py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">🔄 マイルームの設置状態をリセット</button>
 
                         <div class="bg-[#1a120b] rounded-lg p-2 space-y-1 mt-2">
+                            <p class="text-[9px] text-gray-400 font-bold">🕒 マイルームの時間帯を固定する（テスト用）</p>
+                            <div class="grid grid-cols-2 gap-1.5">
+                                <button id="debug-myroom-time-btn-morning" onclick="debugSetMyRoomTimeOverride('morning')" class="debug-myroom-time-btn py-1.5 bg-[#241b12] hover:bg-[#33261a] text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">🌅 朝</button>
+                                <button id="debug-myroom-time-btn-day" onclick="debugSetMyRoomTimeOverride('day')" class="debug-myroom-time-btn py-1.5 bg-[#241b12] hover:bg-[#33261a] text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">☀️ 昼</button>
+                                <button id="debug-myroom-time-btn-evening" onclick="debugSetMyRoomTimeOverride('evening')" class="debug-myroom-time-btn py-1.5 bg-[#241b12] hover:bg-[#33261a] text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">🌇 夕方</button>
+                                <button id="debug-myroom-time-btn-night" onclick="debugSetMyRoomTimeOverride('night')" class="debug-myroom-time-btn py-1.5 bg-[#241b12] hover:bg-[#33261a] text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">🌙 夜</button>
+                            </div>
+                            <button id="debug-myroom-time-btn-auto" onclick="debugClearMyRoomTimeOverride()" class="debug-myroom-time-btn w-full py-1.5 bg-[#241b12] hover:bg-[#33261a] text-emerald-300 text-[10px] font-bold rounded-lg active:scale-95 transition-all">🔄 自動（現在時刻）に戻す</button>
+                            <p id="debug-myroom-time-status" class="text-[9px] text-gray-500">現在：自動（実際の時刻に連動）</p>
+                        </div>
+
+                        <div class="bg-[#1a120b] rounded-lg p-2 space-y-1 mt-2">
                             <p class="text-[9px] text-gray-400 font-bold">💕 絆ポイントを付与（種族・オーラは上のセレクトを使用）</p>
                             <div class="flex gap-1.5">
                                 <input id="debug-bond-amount" type="number" value="20" class="w-16 bg-[#241b12] border border-fuchsia-800 text-white text-[10px] rounded-lg px-2 py-1.5 text-center">
@@ -1786,6 +1798,7 @@
     <script src="js/achievements.js"></script>
     <script src="js/skill_effects.js"></script>
     <script src="js/monster_motion_mochi.js"></script>
+    <script src="js/monster_motion_suezo.js"></script>
     <script src="js/debug_mode.js"></script>
     <!-- BGM/SE 管理（他スクリプトの関数をラップするため必ず最後に読み込む） -->
     <script src="js/audio.js"></script>

@@ -67,7 +67,10 @@ const MYROOM_STATE = {
     // フレンドのマイルームを閲覧している間はtrue。閲覧中は配置の変更・保存・交流を一切行わない。
     visitorMode: false,
     visitorName: null,
-    timeOfDayTimer: null // 時間帯（朝／昼／夕／夜）の切り替わりを監視するタイマー
+    timeOfDayTimer: null, // 時間帯（朝／昼／夕／夜）の切り替わりを監視するタイマー
+    // デバッグモードから時間帯を固定するための上書き値（'morning'|'day'|'evening'|'night'|null）。
+    // nullの間は今まで通り実際の時刻から自動判定する。
+    debugTimeOverride: null
 };
 
 // =====================================================
@@ -84,7 +87,12 @@ const MYROOM_TIME_PERIODS = [
 ];
 
 // --- 現在時刻（0〜23時）から該当する時間帯を返す ---
+//   デバッグモードで時間帯が固定されている場合は、実時刻より優先してその時間帯を返す。
 function getMyRoomTimePeriod(hour) {
+    if (MYROOM_STATE.debugTimeOverride) {
+        const forced = MYROOM_TIME_PERIODS.find(p => p.id === MYROOM_STATE.debugTimeOverride);
+        if (forced) return forced;
+    }
     const h = (hour === undefined || hour === null) ? new Date().getHours() : hour;
     return MYROOM_TIME_PERIODS.find(p => {
         // 夜のように日付をまたぐ区間（20時〜翌5時）は、開始 > 終了 の形になるため判定を分ける

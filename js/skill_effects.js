@@ -107,14 +107,39 @@ const SKILL_EFFECT_CONFIGS = {
 // ・登録された技は、汎用エフェクト（絵文字の点滅）より優先してこちらが再生される。
 // =====================================================
 const CUSTOM_SKILL_MOTIONS = {};        // 技キー → モーション関数
-const CUSTOM_SKILL_MOTIONS_BY_NAME = {}; // 技名 → モーション関数（PvPリアルタイム対戦のログ再生用）
+// 技名 → { byOwner: { モンスター名: モーション関数 }, fallback: モーション関数|null }
+// PvPリアルタイム対戦は技キーが同期されず「◯◯の【技名】！」というログ文字列しか届かないため、
+// 技名から引けるようにしておく必要がある。
+// ただし技名は種族をまたいで重複することがある（例：「かみつき」はスエゾー・ディノ・ライガー・
+// ボスの4種類が別々の技として持っている）。この場合に技名だけで引いてしまうと、
+// スエゾー用に作ったモーションがディノやライガーでも再生されてしまう。
+// そこでログに含まれる「使用したモンスターの名前」で引き分けられるようにしている。
+const CUSTOM_SKILL_MOTIONS_BY_NAME = {};
 
 // --- 技キー単位でカスタムモーションを登録する。専用ファイル側から呼び出して使う ---
-function registerCustomSkillMotion(skKey, motionFn) {
+// ownerSpeciesName: そのモーションの持ち主のモンスター名（例：'スエゾー'）。
+//   技名が他種族と重複していても取り違えないようにするために使う。
+//   省略した場合、技名が一意ならその技名でも引けるようになる（従来どおりの挙動）。
+function registerCustomSkillMotion(skKey, motionFn, ownerSpeciesName) {
     CUSTOM_SKILL_MOTIONS[skKey] = motionFn;
-    if (typeof SKILLS_DB !== 'undefined' && SKILLS_DB[skKey] && SKILLS_DB[skKey].name) {
-        CUSTOM_SKILL_MOTIONS_BY_NAME[SKILLS_DB[skKey].name] = motionFn;
+
+    if (typeof SKILLS_DB === 'undefined' || !SKILLS_DB[skKey] || !SKILLS_DB[skKey].name) return;
+    const skillName = SKILLS_DB[skKey].name;
+
+    if (!CUSTOM_SKILL_MOTIONS_BY_NAME[skillName]) {
+        CUSTOM_SKILL_MOTIONS_BY_NAME[skillName] = { byOwner: {}, fallback: null };
     }
+    const entry = CUSTOM_SKILL_MOTIONS_BY_NAME[skillName];
+
+    if (ownerSpeciesName) {
+        entry.byOwner[ownerSpeciesName] = motionFn;
+    }
+
+    // 同じ技名を持つ技が他にもある場合、技名だけではどの種族の技か決められない。
+    // その場合は「技名だけで引く」経路を無効化し、汎用エフェクトに任せる
+    // （持ち主が分かっている場合は上のbyOwnerから正しく引ける）。
+    const sameNameKeys = Object.keys(SKILLS_DB).filter(k => SKILLS_DB[k] && SKILLS_DB[k].name === skillName);
+    entry.fallback = (sameNameKeys.length === 1) ? motionFn : null;
 }
 
 // --- バトル画面の陣営アイコン／スプライト枠を side から取得する共通ヘルパー群 ---
@@ -129,6 +154,38 @@ function getSpriteAnimTargetEl(side) {
     const iconEl = getBattleIconEl(side);
     if (!iconEl) return null;
     return iconEl.querySelector('img.monster-visual-img') || iconEl;
+}
+
+// --- スプライトの「見た目を構成する全レイヤー」を取得する ---
+// オーラ着色は、絵柄本体（img）とは別のオーバーレイ要素として重ねているだけなので、
+// 本体だけをtransformで動かすと「色付けだけがその場に残る」状態になってしまう。
+// スプライト自体を動かすカスタムモーションでは、必ずこの関数で全レイヤーを取得し、
+// 同じアニメーションを一括で適用すること。
+function getSpriteVisualLayers(side) {
+    const iconEl = getBattleIconEl(side);
+    if (!iconEl) return [];
+    const layers = [
+        iconEl.querySelector('img.monster-visual-img'),
+        iconEl.querySelector('.monster-visual-aura-tint')
+    ].filter(Boolean);
+    // 画像が読み込めていない（絵文字で代替表示している）場合はアイコン自体を動かす
+    return layers.length > 0 ? layers : [iconEl];
+}
+
+// --- スプライトの全レイヤーに、まったく同じキーフレームでアニメーションを適用する ---
+// 絵柄とオーラ着色が常にぴったり重なったまま一緒に動くようにするための共通ヘルパー。
+// 戻り値は代表となるアニメーション（onfinishでの後処理用）。非対応環境ではnullを返す。
+function animateSpriteLayers(side, keyframes, options) {
+    const layers = getSpriteVisualLayers(side);
+    let mainAnim = null;
+    layers.forEach((el, i) => {
+        el.style.willChange = 'transform';
+        try {
+            const anim = el.animate(keyframes, options);
+            if (i === 0) mainAnim = anim;
+        } catch (e) { /* Web Animations API 非対応環境では動かないだけ */ }
+    });
+    return mainAnim;
 }
 function otherSide(side) {
     return side === 'player' ? 'enemy' : 'player';
@@ -416,10 +473,18 @@ function playSkillVisualEffect(skKey, side) {
 }
 
 // --- PvPリアルタイム対戦（masmon_realtime_battle.js）用：技名から再生 ---
-function playSkillVisualEffectByName(skillName, side) {
-    if (CUSTOM_SKILL_MOTIONS_BY_NAME[skillName]) {
-        CUSTOM_SKILL_MOTIONS_BY_NAME[skillName](side);
-        return;
+function playSkillVisualEffectByName(skillName, side, casterName) {
+    const entry = CUSTOM_SKILL_MOTIONS_BY_NAME[skillName];
+    if (entry) {
+        // 使用したモンスターが分かっていれば、その種族専用のモーションを優先して再生する
+        const byOwner = casterName ? entry.byOwner[casterName] : null;
+        const motionFn = byOwner || entry.fallback;
+        if (motionFn) {
+            motionFn(side);
+            return;
+        }
+        // ここに来るのは「技名が他種族と重複していて、かつ持ち主が特定できなかった」場合。
+        // 誤って別種族のモーションを再生してしまうより、下の汎用エフェクトに任せる方が安全。
     }
     const effType = SKILL_NAME_EFFECT_TYPE[skillName];
     if (!effType) return;

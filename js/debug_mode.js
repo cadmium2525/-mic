@@ -122,6 +122,7 @@ function openDebugScreen() {
     renderDebugAchievementPreviewList();
     debugRefreshDiamondBalance();
     renderDebugGachaOptions();
+    updateDebugMyRoomTimeButtonStates();
     changeScreen('screen-debug');
 }
 
@@ -999,6 +1000,59 @@ async function debugResetMyRoomPlacement() {
         } catch (e) { console.error('[DEBUG] マイルームリセットエラー:', e); }
     }
     if (typeof showToast === 'function') showToast('🔄 マイルームの設置状態をリセットしました');
+}
+
+// --- マイルームの時間帯（朝／昼／夕方／夜）をデバッグ用に固定する ---
+//   実際の端末時刻を無視してその時間帯に固定するので、灯り家具の点灯や色味の切り替えを
+//   時刻を待たずにその場で確認できる。periodIdはMYROOM_TIME_PERIODSのidと同じもの。
+function debugSetMyRoomTimeOverride(periodId) {
+    if (typeof MYROOM_STATE === 'undefined' || typeof MYROOM_TIME_PERIODS === 'undefined') return;
+    const period = MYROOM_TIME_PERIODS.find(p => p.id === periodId);
+    if (!period) return;
+
+    MYROOM_STATE.debugTimeOverride = periodId;
+    updateDebugMyRoomTimeButtonStates();
+
+    // マイルーム画面を開いている場合は、時刻を待たずにその場で見た目を反映する
+    if (typeof GAME_STATE !== 'undefined' && GAME_STATE.currentScreen === 'screen-myroom') {
+        if (typeof applyMyRoomTimeOfDay === 'function') applyMyRoomTimeOfDay();
+        if (typeof renderMyRoomFurnitureItems === 'function') renderMyRoomFurnitureItems();
+    }
+    if (typeof showToast === 'function') showToast(`🛠️ マイルームの時間帯を「${period.emoji} ${period.name}」に固定しました`);
+}
+
+// --- 時間帯の固定を解除し、実際の端末時刻での自動判定に戻す ---
+function debugClearMyRoomTimeOverride() {
+    if (typeof MYROOM_STATE === 'undefined') return;
+    MYROOM_STATE.debugTimeOverride = null;
+    updateDebugMyRoomTimeButtonStates();
+
+    if (typeof GAME_STATE !== 'undefined' && GAME_STATE.currentScreen === 'screen-myroom') {
+        if (typeof applyMyRoomTimeOfDay === 'function') applyMyRoomTimeOfDay();
+        if (typeof renderMyRoomFurnitureItems === 'function') renderMyRoomFurnitureItems();
+    }
+    if (typeof showToast === 'function') showToast('🔄 マイルームの時間帯を現在時刻の自動判定に戻しました');
+}
+
+// --- どの時間帯ボタンが選択中かを、ボタンの見た目に反映する ---
+function updateDebugMyRoomTimeButtonStates() {
+    const current = (typeof MYROOM_STATE !== 'undefined') ? MYROOM_STATE.debugTimeOverride : null;
+    ['morning', 'day', 'evening', 'night'].forEach(id => {
+        const btn = document.getElementById(`debug-myroom-time-btn-${id}`);
+        if (btn) btn.classList.toggle('debug-myroom-time-btn-active', current === id);
+    });
+    const autoBtn = document.getElementById('debug-myroom-time-btn-auto');
+    if (autoBtn) autoBtn.classList.toggle('debug-myroom-time-btn-active', !current);
+
+    const statusEl = document.getElementById('debug-myroom-time-status');
+    if (statusEl) {
+        if (current && typeof MYROOM_TIME_PERIODS !== 'undefined') {
+            const period = MYROOM_TIME_PERIODS.find(p => p.id === current);
+            statusEl.textContent = period ? `固定中：${period.emoji} ${period.name}` : '';
+        } else {
+            statusEl.textContent = '現在：自動（実際の時刻に連動）';
+        }
+    }
 }
 
 async function debugAddBond() {
