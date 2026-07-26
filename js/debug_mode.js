@@ -862,6 +862,16 @@ function debugPreviewKinNejikiDiamonds() {
     if (typeof showToast === 'function') showToast(`🛠️ 通算${wins}勝の場合の獲得ダイヤ試算：${amount}個`);
 }
 
+async function debugResetLaunchBonus() {
+    if (typeof initFirebase === 'function' && initFirebase()) {
+        try {
+            const pid = getMyPlayerId();
+            await firebaseDb.ref(`player_currency/${pid}/launchBonusClaimed`).remove();
+        } catch (e) { console.error('[DEBUG] 初回ログイン特典リセットエラー:', e); }
+    }
+    if (typeof showToast === 'function') showToast('🔄 初回ログイン特典をリセットしました（次回アプリ起動時に再度受け取れます）');
+}
+
 // -----------------------------------------------------
 // ⑧ ガチャ／マイルーム 所持データテスト
 // -----------------------------------------------------

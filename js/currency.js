@@ -168,6 +168,34 @@ async function refreshDiamondBalanceDisplays() {
     return balance;
 }
 
+// =====================================================
+// 初回ログイン特典：ダイヤ1,500個プレゼント
+// ・今回の更新を起点に、まだ受け取っていない全プレイヤー（既存・新規問わず）に
+//   次回起動時1回だけ自動で付与する。
+// ・player_currency/{pid}/launchBonusClaimed フラグで、既に受け取ったかどうかを管理する
+//   （このフラグが無い＝まだ未受領のプレイヤー、という判定にしているため、
+//   　更新前から遊んでいた既存プレイヤーにも次回起動時に自動で行き渡る）
+// =====================================================
+const LAUNCH_DIAMOND_BONUS_AMOUNT = 1500;
+
+async function checkFirstLoginDiamondBonus() {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return;
+    const pid = getMyPlayerId();
+    try {
+        const ref = firebaseDb.ref(`player_currency/${pid}/launchBonusClaimed`);
+        const snap = await ref.once('value');
+        if (snap.val()) return; // 既に受け取り済み
+        await ref.set(true);
+        await awardDiamonds(LAUNCH_DIAMOND_BONUS_AMOUNT);
+        if (typeof refreshDiamondBalanceDisplays === 'function') refreshDiamondBalanceDisplays();
+        if (typeof showToast === 'function') {
+            showToast(`🎁 初回ログイン特典！ダイヤを${LAUNCH_DIAMOND_BONUS_AMOUNT.toLocaleString()}個プレゼント！`);
+        }
+    } catch (e) {
+        console.error('[ダイヤ] 初回ログイン特典の付与エラー:', e);
+    }
+}
+
 // --- ガッツファクトリーのラン終了時に呼び出す：獲得ダイヤを計算・付与し、獲得量を返す ---
 async function awardKinNejikiRunDiamonds(totalWins) {
     const amount = computeKinNejikiDiamondsForWins(totalWins);

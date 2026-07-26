@@ -233,6 +233,7 @@ window.addEventListener('load', () => {
     if (typeof checkEndlessModeUnlockAndUpdateHomeButton === 'function') checkEndlessModeUnlockAndUpdateHomeButton();
     if (typeof refreshAchievementBadge === 'function') refreshAchievementBadge();
     if (typeof refreshDiamondBalanceDisplays === 'function') refreshDiamondBalanceDisplays();
+    if (typeof checkFirstLoginDiamondBonus === 'function') checkFirstLoginDiamondBonus();
 });
 
 // 画面遷移
