@@ -739,6 +739,7 @@ function spawnMyRoomMonsterToken(placementKey, info, floor) {
     token.onclick = () => openMyRoomMonsterOptions(placementKey);
     floor.appendChild(token);
     MYROOM_STATE.monsterTokenEls[placementKey] = token;
+    updateMyRoomMonsterZIndex(token); // Y座標が低い（奥にいるように見える）ほど手前に表示する重なり順を反映
 
     if (walkSpriteConfig) {
         renderMyRoomWalkSprite(token, walkSpriteConfig, info.auraKey);
@@ -928,12 +929,44 @@ function wanderMyRoomMonsterStep(placementKey, token, onArrive) {
     token.style.left = `${targetX}%`;
     token.style.top = `${targetY}%`;
 
+    // 移動中も含めて、Y座標が低い（奥にいるように見える）ほど手前に表示されるよう重なり順を追従させる
+    animateMyRoomMonsterZIndex(token, duration);
+
     // 移動している間だけ歩行スプライトのコマ送りを再生し、目的地に着いたら指定の静止ポーズで止める
     setMyRoomWalkSpriteWalking(placementKey, token, true);
     MYROOM_STATE.wanderTimers[placementKey] = setTimeout(() => {
         setMyRoomWalkSpriteWalking(placementKey, token, false);
         onArrive();
     }, duration);
+}
+
+// --- モンスターの重なり順（z-index）を、その時点の画面上のY座標から算出して反映する ---
+//   Y座標が低い（画面の上の方にいる）モンスターほど手前に表示されるようにする。
+//   getBoundingClientRectで実際の描画位置を見ているため、CSSトランジションで移動している
+//   途中（style.top自体はもう目的地の値になっている）でも、今まさに見えている位置を基準にできる。
+function updateMyRoomMonsterZIndex(token) {
+    if (!token || !token.isConnected) return;
+    const floor = token.parentElement;
+    if (!floor) return;
+    const floorRect = floor.getBoundingClientRect();
+    if (floorRect.height <= 0) return;
+    const tokenRect = token.getBoundingClientRect();
+    const centerY = tokenRect.top + tokenRect.height / 2 - floorRect.top;
+    const yPct = (centerY / floorRect.height) * 100;
+    token.style.zIndex = String(Math.round((100 - yPct) * 100));
+}
+
+// --- 移動アニメーションの間、requestAnimationFrameで重なり順を継続的に更新し続ける ---
+function animateMyRoomMonsterZIndex(token, durationMs) {
+    const startedAt = performance.now();
+    const tick = (now) => {
+        if (!token.isConnected) return;
+        updateMyRoomMonsterZIndex(token);
+        if (now - startedAt < durationMs) {
+            requestAnimationFrame(tick);
+        }
+    };
+    requestAnimationFrame(tick);
 }
 
 function stopAllMyRoomWander() {
@@ -1199,6 +1232,7 @@ function pauseMyRoomMonsterForInteraction(placementKey) {
             token.style.top = `${yPct}%`;
         }
     }
+    updateMyRoomMonsterZIndex(token); // 静止させた位置に合わせて重なり順も更新しておく
 
     // 歩行スプライトを使うモンスターは、指定の静止ポーズに切り替える
     setMyRoomWalkSpriteWalking(placementKey, token, false);

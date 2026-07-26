@@ -263,3 +263,20 @@ input, textarea, select {
 .animate-status-blink {
     animation: smoothBlink 1.4s infinite ease-in-out;
 }
+
+/* ===== 起動時の「Now loading」画面 ===== */
+#app-loading-overlay {
+    transition: opacity 0.45s ease;
+    opacity: 1;
+}
+#app-loading-overlay.app-loading-overlay-hide {
+    opacity: 0;
+    pointer-events: none;
+}
+.app-loading-spin {
+    animation: appLoadingSpin 1.6s linear infinite;
+}
+@keyframes appLoadingSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}

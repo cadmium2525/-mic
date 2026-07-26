@@ -261,7 +261,89 @@ window.addEventListener('load', () => {
     if (typeof checkFirstLoginDiamondBonus === 'function') checkFirstLoginDiamondBonus();
     if (typeof checkDailyLoginBonus === 'function') checkDailyLoginBonus();
     if (typeof checkAndCelebrateNewAchievements === 'function') checkAndCelebrateNewAchievements();
+
+    // 起動演出（①タイトルロゴ→②メニューボタンが重なった状態から1つずつスライド展開→③名前入力欄フェードイン）を
+    // 「Now loading」画面のフェードアウトに合わせて再生する
+    playTitleBootIntro();
 });
+
+// --- 「Now loading」画面をフェードアウトさせて取り除く ---
+function hideAppLoadingOverlay() {
+    const overlay = document.getElementById('app-loading-overlay');
+    if (!overlay) return;
+    overlay.classList.add('app-loading-overlay-hide');
+    setTimeout(() => overlay.remove(), 500);
+}
+
+// --- 起動時のタイトル演出 ---
+//   ① タイトルロゴをフェードイン
+//   ② メニューボタンを、最初の1つに重なった状態から1つずつ下へスライドさせながら展開
+//   ③ ブリーダー名入力欄をフェードイン
+//   「Now loading」画面がまだ覆っている間に演出前の状態（非表示・重なった状態）を作っておくので、
+//   画面が切り替わる瞬間に一瞬チラつく、といったことは起きない。
+function playTitleBootIntro() {
+    const logoEl = document.querySelector('.title-logo-img');
+    const buttonsContainer = document.getElementById('title-menu-buttons');
+    const nameInputBox = document.getElementById('title-name-input-box');
+
+    if (logoEl) {
+        logoEl.style.transition = 'none';
+        logoEl.style.opacity = '0';
+    }
+
+    let items = [];
+    if (buttonsContainer) {
+        // 現時点で非表示（エンドレスモード解放前など）の項目は演出の対象から外す
+        items = Array.from(buttonsContainer.children).filter(el => getComputedStyle(el).display !== 'none');
+        if (items.length > 0) {
+            const baseTop = items[0].offsetTop;
+            items.forEach(el => {
+                el.style.transition = 'none';
+                el.style.opacity = '0';
+                el.style.transform = `translateY(${baseTop - el.offsetTop}px)`; // 1つ目のボタンの位置に重なるよう引き上げておく
+            });
+        }
+    }
+
+    if (nameInputBox) {
+        nameInputBox.style.transition = 'none';
+        nameInputBox.style.opacity = '0';
+    }
+
+    // 上記の初期状態を確実に反映させてから、「Now loading」を消して演出を開始する
+    requestAnimationFrame(() => {
+        hideAppLoadingOverlay();
+
+        // ① タイトルロゴ表示
+        setTimeout(() => {
+            if (logoEl) {
+                logoEl.style.transition = 'opacity 0.5s ease-out';
+                logoEl.style.opacity = '1';
+            }
+        }, 150);
+
+        // ② メニューボタンが1つに重なった状態から、1つずつスライドしながら展開していく
+        const MENU_STAGGER_MS = 110;
+        setTimeout(() => {
+            items.forEach((el, i) => {
+                setTimeout(() => {
+                    el.style.transition = 'transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.35s ease-out';
+                    el.style.transform = 'translateY(0)';
+                    el.style.opacity = '1';
+                }, i * MENU_STAGGER_MS);
+            });
+        }, 650);
+
+        // ③ メニュー展開が落ち着いた頃合いで、ブリーダー名入力欄をフェードイン
+        const menuRevealTotalMs = 650 + items.length * MENU_STAGGER_MS + 450;
+        setTimeout(() => {
+            if (nameInputBox) {
+                nameInputBox.style.transition = 'opacity 0.5s ease-out';
+                nameInputBox.style.opacity = '1';
+            }
+        }, menuRevealTotalMs);
+    });
+}
 
 // 画面遷移
 function changeScreen(screenId) {

@@ -234,6 +234,11 @@ function resumeKinNejikiRun() {
     // 交換回数（ボーナス枠の判定に使う）も復元する。以前はここが抜けていたため、
     // 再開のたびに交換カウントが0に戻り、ボーナス枠が出現しなくなる不具合があった。
     KIN_NEJIKI_STATE.exchangeCount = saved.exchangeCount || 0;
+    // 復元した値を、表示中の画面（もしあれば）にも即座に反映しておく。
+    // ※ saved.exchangeCount が無い（=このフィールドが増える前に作られた古い一時セーブ）場合は、
+    //   復元しようがないため0から再スタートになる。これはデータ仕様上の一度きりの過渡的な挙動であり、
+    //   このフィールドを含む状態で保存された一時セーブであれば、以後は正しく引き継がれる。
+    updateKinNejikiExchangeCountDisplay();
 
     showToast(`セーブデータから再開します（通算${saved.totalWins}勝・第${saved.set}セット）`);
     advanceToNextKinNejikiBattle();

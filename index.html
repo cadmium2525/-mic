@@ -39,6 +39,25 @@
     <!-- 全体コンテナ (モバイルに最適なアスペクト比、かつ画面最下部に空白の余裕を持たせる) -->
     <div id="game-container" class="w-full max-w-md mx-auto flex flex-col bg-[#3c2a21] shadow-2xl relative overflow-hidden border-x border-[#1a120b]" style="height: 100%;">
 
+        <!-- ゲーム起動中のローディング画面（全アセット読み込み完了＝window.loadで自動的にフェードアウトする） -->
+        <div id="app-loading-overlay" class="absolute inset-0 z-[999] flex flex-col items-center justify-center bg-[#120b07]">
+            <img src="images/gacha/円盤石.png" alt="" class="w-16 h-16 mb-4 app-loading-spin">
+            <p class="text-amber-200 font-bold text-sm tracking-wide pixel-font">Now loading<span id="app-loading-dots">.</span></p>
+        </div>
+        <script>
+            // 「Now loading」のドット数（.→..→...→.→..の繰り返し）を、他のスクリプト読み込みを待たずに
+            // ここで即座に開始する（読み込みが遅い環境でも、なるべく早くアニメーションが動き出すように）
+            (function () {
+                var dotsEl = document.getElementById('app-loading-dots');
+                if (!dotsEl) return;
+                var n = 1;
+                setInterval(function () {
+                    n = (n % 3) + 1;
+                    dotsEl.textContent = '.'.repeat(n);
+                }, 450);
+            })();
+        </script>
+
         <!-- サウンド設定ボタン（全画面共通・常時表示） -->
         <button onclick="openAudioSettingsModal()" aria-label="サウンド設定"
             class="absolute top-2 right-2 z-40 w-8 h-8 flex items-center justify-center bg-[#1a120b]/80 hover:bg-[#2a1b15] border border-amber-800 rounded-full shadow-lg text-amber-300 text-sm transition-all active:scale-90">
@@ -71,11 +90,12 @@
 
                 <div class="space-y-2 mt-2 relative z-10">
                     <!-- プレイヤー名入力 -->
-                    <div class="bg-[#1a120b]/90 p-2 rounded-lg border-2 border-amber-900 fantasy-btn">
+                    <div id="title-name-input-box" class="bg-[#1a120b]/90 p-2 rounded-lg border-2 border-amber-900 fantasy-btn">
                         <label class="text-xs text-amber-300 font-bold block mb-1">🎮 ブリーダー名を入力してください</label>
                         <input type="text" id="player-name-input" maxlength="12" placeholder="名前（最大12文字）" onchange="updatePlayerNameFromInput()"
                             class="w-full bg-[#24150e] border border-amber-800 text-white text-sm font-bold rounded-lg px-3 py-2 focus:outline-none focus:border-amber-500 placeholder-gray-600">
                     </div>
+                    <div id="title-menu-buttons" class="space-y-2">
                     <button onclick="startKinNejikiEntry()" class="fantasy-btn w-full py-3.5 bg-gradient-to-r from-yellow-500 to-amber-600 hover:from-yellow-400 hover:to-amber-500 text-slate-900 font-black rounded-xl text-md shadow-lg transform active:scale-95 transition-all pixel-font border-amber-800 flex items-center justify-center space-x-2">
                         <i class="fa-solid fa-crown"></i>
                         <span>ガッツファクトリーに挑戦！</span>
@@ -110,7 +130,7 @@
                         <i class="fa-solid fa-book-open-reader"></i>
                         <span>攻略情報局</span>
                     </button>
-                    <p class="text-[10px] text-amber-200/50">※育成不要！毎回その場で選ぶレンタルモンスターで戦おう！</p>
+                    </div>
                 </div>
             </div>
 
