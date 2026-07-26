@@ -234,6 +234,7 @@ window.addEventListener('load', () => {
     if (typeof refreshAchievementBadge === 'function') refreshAchievementBadge();
     if (typeof refreshDiamondBalanceDisplays === 'function') refreshDiamondBalanceDisplays();
     if (typeof checkFirstLoginDiamondBonus === 'function') checkFirstLoginDiamondBonus();
+    if (typeof checkAndCelebrateNewAchievements === 'function') checkAndCelebrateNewAchievements();
 });
 
 // 画面遷移

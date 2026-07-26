@@ -825,13 +825,19 @@ function debugPreviewAllAchievementCelebrations() {
 }
 
 // --- 「演出済み」「実績画面で確認済み」のlocalStorage記録を消し、バッジ・演出の再テストをしやすくする ---
-function debugResetAchievementNotifications() {
+async function debugResetAchievementNotifications() {
     try {
         localStorage.removeItem('mfload_achv_notified');
         localStorage.removeItem('mfload_achv_viewed');
     } catch (e) { /* ignore */ }
+    if (typeof initFirebase === 'function' && initFirebase()) {
+        try {
+            const pid = getMyPlayerId();
+            await firebaseDb.ref(`player_currency/${pid}/achvDiamondsClaimed`).remove();
+        } catch (e) { console.error('[DEBUG] 実績ダイヤ受領済みフラグのリセットエラー:', e); }
+    }
     if (typeof refreshAchievementBadge === 'function') refreshAchievementBadge();
-    if (typeof showToast === 'function') showToast('🔄 実績の演出・確認済み記録をリセットしました（次回解除判定時から再度バッジ・演出が出ます）');
+    if (typeof showToast === 'function') showToast('🔄 実績の演出・確認済み記録・ダイヤ受領済みフラグをリセットしました');
 }
 
 // -----------------------------------------------------

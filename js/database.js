@@ -1684,7 +1684,7 @@ const EQUIPMENT_DB = {
     haste_boots:     { id: 'haste_boots',     name: '韋駄天の靴',       icon: '👢', rarity: '★★★', mode: 'hard', type: 'special', effect: 'preemptiveStrike', chance: 0.25, desc: '移動速度に関わらず、25%の確率で先制攻撃できる。' },
     sprout_charm:    { id: 'sprout_charm',    name: '癒しの若葉',       icon: '🌱', rarity: '★★★', mode: 'hard', type: 'special', effect: 'turnRegen', healFraction: 1 / 16, desc: '自ターン開始時、最大ライフの1/16を回復する。' },
     deathmatch_weight:{ id: 'deathmatch_weight', name: '死闘の重錘',    icon: '⚫', rarity: '★★★', mode: 'hard', type: 'special', effect: 'recoilForceUp', lifeCostFraction: 1 / 10, forceMultiplier: 2, desc: '攻撃するたびに最大ライフの1/10のダメージを受けるが、技の威力が2倍になる。' },
-    tortoise_shell:  { id: 'tortoise_shell',  name: '大亀の甲羅',       icon: '🐢', rarity: '★★★', mode: 'hard', type: 'special', effect: 'alwaysLast', desc: '必ず後攻になる。ただし、優先度のある技を使う場合はこの効果を受けない。' }
+    tortoise_shell:  { id: 'tortoise_shell',  name: '大亀の甲羅',       icon: '🐢', rarity: '★★★', mode: 'hard', type: 'special', effect: 'alwaysLast', statBonus: { def: 60 }, desc: '必ず後攻になる（優先度のある技を使う場合を除く）。その代わり、自身の丈夫さが60アップする。' }
 };
 
 // --- 装備ベースデータ1件から実際の所持インスタンス（個体値ロール済み）を生成する共通ヘルパー ---
@@ -1737,12 +1737,22 @@ function getEquipmentDisplayDesc(instance) {
 }
 
 // --- 装備がユニットのステータスに与えるボーナス（{pow,int,hit,spd,def,maxLife}）を取得 ---
+// ・type:'stat'の装備は statKey/range からランダムに決まったrolledValue分を加算
+// ・さらに、type問わず base.statBonus（固定値。特殊効果装備に追加の固定ボーナスを持たせる場合に使う。
+// 　例：大亀の甲羅＝「必ず後攻」という特殊効果に加えて丈夫さ+60の固定ボーナスを持つ）があれば加算する
 function getEquipmentStatBonuses(instance) {
     const bonuses = { pow: 0, int: 0, hit: 0, spd: 0, def: 0, maxLife: 0 };
     if (!instance) return bonuses;
     const base = EQUIPMENT_DB[instance.equipId];
-    if (!base || base.type !== 'stat') return bonuses;
-    bonuses[base.statKey] = instance.rolledValue || 0;
+    if (!base) return bonuses;
+    if (base.type === 'stat') {
+        bonuses[base.statKey] = instance.rolledValue || 0;
+    }
+    if (base.statBonus) {
+        Object.keys(base.statBonus).forEach(key => {
+            if (key in bonuses) bonuses[key] += base.statBonus[key];
+        });
+    }
     return bonuses;
 }
 

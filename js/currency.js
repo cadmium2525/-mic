@@ -158,6 +158,32 @@ async function spendMyRoomTicket() {
     }
 }
 
+// --- 実績のダイヤ報酬「受領済みリスト」（サーバー側で管理。端末を変えても二重付与されない） ---
+async function fetchClaimedAchievementDiamondIds() {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return {};
+    try {
+        const pid = getMyPlayerId();
+        const snap = await firebaseDb.ref(`player_currency/${pid}/achvDiamondsClaimed`).once('value');
+        return snap.val() || {};
+    } catch (e) {
+        console.error('[実績報酬] 受領済み一覧取得エラー:', e);
+        return {};
+    }
+}
+
+async function markAchievementDiamondsClaimed(achievementIds) {
+    if (!achievementIds || achievementIds.length === 0) return;
+    if (typeof initFirebase !== 'function' || !initFirebase()) return;
+    try {
+        const pid = getMyPlayerId();
+        const updates = {};
+        achievementIds.forEach(id => { updates[id] = true; });
+        await firebaseDb.ref(`player_currency/${pid}/achvDiamondsClaimed`).update(updates);
+    } catch (e) {
+        console.error('[実績報酬] 受領済みフラグ保存エラー:', e);
+    }
+}
+
 // --- タイトル画面・ガチャ画面のダイヤ残高表示をまとめて更新する ---
 async function refreshDiamondBalanceDisplays() {
     const balance = await fetchMyDiamondBalance();
