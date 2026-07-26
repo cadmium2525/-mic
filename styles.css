@@ -144,27 +144,20 @@ input, textarea, select {
     filter: brightness(1.2);
 }
 
-/* --- マイルーム専用：デュラハンの歩行スプライトシート（5列×5行・全25コマ） ---
-   このアニメーションはマイルーム内でのみ使用し、バトル等の通常表示（renderMonsterVisual）は
-   従来どおり静止画（images/デュラハン.png）のままにする。
-   コマ送り（background-position / mask-position）はJS側（myroom.js）が1コマずつ切り替える。
-   停止時に必ず指定済みの自然なポーズで止められるよう、CSSアニメーションではなくJS制御にしている。 */
-.myroom-durahan-sprite,
-.myroom-durahan-sprite-tint {
+/* --- マイルーム専用：モンスターの歩行スプライトシート（○○_歩行.png） ---
+   画像パスやコマ割り（列数・行数）はモンスターごとに異なるため、ここでは構造的な指定のみ行い、
+   background-image / background-size / mask-image / mask-size はJS側（myroom.js）で
+   モンスターごとに設定する。コマ送り（background-position / mask-position）もJS側が担当する。
+   このスプライトはマイルーム内でのみ使用し、バトル等の通常表示（renderMonsterVisual）は
+   従来どおり静止画のままにする。 */
+.myroom-walk-sprite,
+.myroom-walk-sprite-tint {
     background-repeat: no-repeat;
-    background-size: 500% 500%;
     background-position: 0% 0%;
 }
-.myroom-durahan-sprite {
-    background-image: url('images/myroom/デュラハン_歩行.png');
-}
-.myroom-durahan-sprite-tint {
-    -webkit-mask-image: url('images/myroom/デュラハン_歩行.png');
-    mask-image: url('images/myroom/デュラハン_歩行.png');
+.myroom-walk-sprite-tint {
     -webkit-mask-repeat: no-repeat;
     mask-repeat: no-repeat;
-    -webkit-mask-size: 500% 500%;
-    mask-size: 500% 500%;
     -webkit-mask-mode: alpha;
     mask-mode: alpha;
 }
