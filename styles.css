@@ -133,6 +133,9 @@ input, textarea, select {
 .myroom-furniture-item:active {
     filter: brightness(1.15);
 }
+.myroom-furniture-item-active {
+    filter: drop-shadow(0 0 10px rgba(255, 200, 80, 0.9)) brightness(1.1);
+}
 
 .myroom-monster-token {
     transition: filter 0.2s ease-out;

@@ -101,6 +101,55 @@ const MYROOM_FOOD_TYPES = [
 const MYROOM_BOND_PET_AMOUNT = 1;
 const MYROOM_BOND_LIKED_FOOD_AMOUNT = 3;
 const MYROOM_BOND_DISLIKED_FOOD_AMOUNT = 0;
+const MYROOM_DAILY_PET_LIMIT = 5;
+const MYROOM_DAILY_FEED_LIMIT = 3;
+
+// --- 端末のローカル日付を「YYYY-MM-DD」文字列で返す（1日ごとの上限リセット判定用） ---
+function getMyRoomTodayDateString() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// --- 指定した組み合わせ（種族＋オーラ）の、今日の撫でる／エサ回数を取得する ---
+async function fetchMyRoomDailyInteraction(bondKey) {
+    const empty = { date: null, petCount: 0, feedCount: 0 };
+    if (typeof initFirebase !== 'function' || !initFirebase()) return empty;
+    try {
+        const pid = getMyPlayerId();
+        const snap = await firebaseDb.ref(`player_myroom/${pid}/dailyInteraction/${bondKey}`).once('value');
+        const val = snap.val();
+        if (!val || val.date !== getMyRoomTodayDateString()) return empty; // 日付が変わっていればリセット扱い
+        return { date: val.date, petCount: val.petCount || 0, feedCount: val.feedCount || 0 };
+    } catch (e) {
+        console.error('[マイルーム] 本日の交流回数取得エラー:', e);
+        return empty;
+    }
+}
+
+// --- 「撫でる」または「エサ」を1回消費できるか判定し、できれば回数を+1して保存する ---
+// type: 'pet' | 'feed'。上限に達している場合は success:false を返し、何も変更しない。
+async function tryConsumeMyRoomInteraction(bondKey, type) {
+    const current = await fetchMyRoomDailyInteraction(bondKey);
+    const limit = type === 'pet' ? MYROOM_DAILY_PET_LIMIT : MYROOM_DAILY_FEED_LIMIT;
+    const currentCount = type === 'pet' ? current.petCount : current.feedCount;
+    if (currentCount >= limit) return { success: false, remaining: 0, limit };
+
+    const next = {
+        date: getMyRoomTodayDateString(),
+        petCount: type === 'pet' ? current.petCount + 1 : current.petCount,
+        feedCount: type === 'feed' ? current.feedCount + 1 : current.feedCount
+    };
+    if (typeof initFirebase === 'function' && initFirebase()) {
+        try {
+            const pid = getMyPlayerId();
+            await firebaseDb.ref(`player_myroom/${pid}/dailyInteraction/${bondKey}`).set(next);
+        } catch (e) {
+            console.error('[マイルーム] 本日の交流回数保存エラー:', e);
+        }
+    }
+    const usedCount = type === 'pet' ? next.petCount : next.feedCount;
+    return { success: true, remaining: limit - usedCount, limit };
+}
 
 // --- 絆ポイント（種族＋オーラの組み合わせ単位で管理。床から外しても引き継がれる） ---
 async function fetchMyRoomBond(bondKey) {
@@ -571,12 +620,26 @@ function openMyRoomFurnitureOptions(instanceKey) {
     if (nameEl) nameEl.textContent = def ? def.name : '家具';
     if (iconEl) renderFurnitureIcon(iconEl, def, { imgClassName: 'w-full h-full object-contain' });
 
+    // 調整中のアイテムを見失わないよう、手前に持ってきてハイライトする
+    const el = document.querySelector(`.myroom-furniture-item[data-instance-key="${CSS.escape(instanceKey)}"]`);
+    if (el) {
+        el.style.zIndex = '45';
+        el.classList.add('myroom-furniture-item-active');
+    }
+
     modal.classList.remove('hidden');
 }
 
 function closeMyRoomFurnitureOptions() {
     const modal = document.getElementById('myroom-furniture-options-modal');
     if (modal) modal.classList.add('hidden');
+    if (MYROOM_STATE.activeFurnitureKey) {
+        const el = document.querySelector(`.myroom-furniture-item[data-instance-key="${CSS.escape(MYROOM_STATE.activeFurnitureKey)}"]`);
+        if (el) {
+            el.style.zIndex = '';
+            el.classList.remove('myroom-furniture-item-active');
+        }
+    }
     MYROOM_STATE.activeFurnitureKey = null;
 }
 
@@ -845,6 +908,15 @@ async function openMyRoomMonsterOptions(placementKey) {
 
     modal.classList.remove('hidden');
     refreshMyRoomMonsterOptionsBondDisplay();
+    refreshMyRoomMonsterOptionsDailyCounts(`${active.info.speciesId}_${active.info.auraKey}`);
+}
+
+async function refreshMyRoomMonsterOptionsDailyCounts(bondKey) {
+    const el = document.getElementById('myroom-monster-options-daily-counts');
+    if (!el) return;
+    el.textContent = '…';
+    const current = await fetchMyRoomDailyInteraction(bondKey);
+    el.textContent = `本日の残り　撫でる:${MYROOM_DAILY_PET_LIMIT - current.petCount}/${MYROOM_DAILY_PET_LIMIT}　エサ:${MYROOM_DAILY_FEED_LIMIT - current.feedCount}/${MYROOM_DAILY_FEED_LIMIT}`;
 }
 
 function closeMyRoomMonsterOptions() {
@@ -867,27 +939,46 @@ async function petMyRoomMonster() {
     const active = getActiveMyRoomMonsterInfo();
     if (!active) return;
     const bondKey = `${active.info.speciesId}_${active.info.auraKey}`;
+
+    const result = await tryConsumeMyRoomInteraction(bondKey, 'pet');
+    if (!result.success) {
+        if (typeof showToast === 'function') showToast(`今日はもう十分に撫でました（1日${MYROOM_DAILY_PET_LIMIT}回まで）。また明日！`);
+        return;
+    }
+
     await addMyRoomBond(bondKey, MYROOM_BOND_PET_AMOUNT);
-    showMyRoomMonsterReaction(active.key, '🥰');
-    refreshMyRoomMonsterOptionsBondDisplay();
+    const key = active.key;
+    closeMyRoomMonsterOptions();
+    showMyRoomMonsterReaction(key, '🥰💕');
+    if (typeof showToast === 'function') showToast(`なでなで♪ 絆+${MYROOM_BOND_PET_AMOUNT}（本日あと${result.remaining}回）`);
 }
 
 async function feedMyRoomMonster(foodId) {
     const active = getActiveMyRoomMonsterInfo();
     if (!active) return;
+    const bondKey = `${active.info.speciesId}_${active.info.auraKey}`;
+
+    const result = await tryConsumeMyRoomInteraction(bondKey, 'feed');
+    if (!result.success) {
+        if (typeof showToast === 'function') showToast(`今日はもうお腹いっぱいみたい（1日${MYROOM_DAILY_FEED_LIMIT}回まで）。また明日！`);
+        return;
+    }
+
     const tmpl = MONSTER_TEMPLATES[active.info.speciesId];
     const classKey = tmpl && typeof getMonClassKeyForName === 'function' ? getMonClassKeyForName(tmpl.name) : null;
     const food = MYROOM_FOOD_TYPES.find(f => f.id === foodId);
     const liked = !!(food && classKey && food.likedByClass === classKey);
-    const bondKey = `${active.info.speciesId}_${active.info.auraKey}`;
     const amount = liked ? MYROOM_BOND_LIKED_FOOD_AMOUNT : MYROOM_BOND_DISLIKED_FOOD_AMOUNT;
 
     await addMyRoomBond(bondKey, amount);
-    showMyRoomMonsterReaction(active.key, liked ? '😋💕' : '😒💢');
+    const key = active.key;
+    closeMyRoomMonsterOptions();
+    showMyRoomMonsterReaction(key, liked ? '😋💕' : '😒💢');
     if (typeof showToast === 'function') {
-        showToast(liked ? `🍽️ 大喜びで食べた！絆+${MYROOM_BOND_LIKED_FOOD_AMOUNT}` : '🍽️ あまり好きな味じゃなかったみたい…');
+        showToast(liked
+            ? `🍽️ 大喜びで食べた！絆+${MYROOM_BOND_LIKED_FOOD_AMOUNT}（本日あと${result.remaining}回）`
+            : `🍽️ あまり好きな味じゃなかったみたい…（本日あと${result.remaining}回）`);
     }
-    refreshMyRoomMonsterOptionsBondDisplay();
 }
 
 function removeActiveMyRoomMonster() {

@@ -9,6 +9,9 @@
 // 他の js ファイルより先に読み込まれる前提。
 // =====================================================
 
+// --- バージョン・最終更新日（タイトル画面左下に小さく表示。更新のたびにここを書き換える） ---
+const GAME_VERSION_INFO = { version: 'v1.0.0', updatedAt: '2026-07-26' };
+
 // --- ブリーダー名の永続化（LocalStorage） ---
 function loadStoredPlayerName() {
     try {
@@ -231,6 +234,11 @@ window.addEventListener('load', () => {
     }
     if (typeof initFirebase === 'function') initFirebase();
     if (typeof checkEndlessModeUnlockAndUpdateHomeButton === 'function') checkEndlessModeUnlockAndUpdateHomeButton();
+    const versionEl = document.getElementById('title-version-display');
+    if (versionEl && typeof GAME_VERSION_INFO !== 'undefined') {
+        const dateLabel = (GAME_VERSION_INFO.updatedAt || '').replace(/-/g, '/');
+        versionEl.textContent = `${GAME_VERSION_INFO.version}（${dateLabel} 更新）`;
+    }
     if (typeof refreshAchievementBadge === 'function') refreshAchievementBadge();
     if (typeof refreshDiamondBalanceDisplays === 'function') refreshDiamondBalanceDisplays();
     if (typeof checkFirstLoginDiamondBonus === 'function') checkFirstLoginDiamondBonus();

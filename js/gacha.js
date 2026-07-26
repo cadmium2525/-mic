@@ -29,7 +29,7 @@ const GACHA_STATE = {
 const GACHA_FURNITURE_POOL = [
     { id: 'furniture_wood_chair', name: '木の椅子', emoji: '🪑', rarity: 1 },
     { id: 'furniture_lantern', name: '灯りのランタン', emoji: '🏮', rarity: 1 },
-    { id: 'furniture_potted_plant', name: '観葉植物', emoji: '🪴', rarity: 1 },
+    { id: 'furniture_potted_plant', name: '観葉植物', emoji: '🪴', image: 'images/furniture/観葉植物.png', rarity: 1 },
     { id: 'furniture_bookshelf', name: '古びた本棚', emoji: '📚', rarity: 1 },
     { id: 'furniture_candle', name: '燭台', emoji: '🕯️', rarity: 1 },
     { id: 'furniture_rug', name: 'ふかふかのラグ', emoji: '🟫', rarity: 2 },
@@ -48,6 +48,14 @@ const GACHA_FURNITURE_POOL = [
     { id: 'furniture_scarecrow', name: 'かかし', emoji: '🎎', image: 'images/furniture/かかし.png', rarity: 2 },
     { id: 'furniture_hot_cauldron', name: 'お湯', emoji: '♨️', image: 'images/furniture/お湯.png', rarity: 2 },
     { id: 'furniture_signpost', name: '看板', emoji: '🪧', image: 'images/furniture/看板.png', rarity: 1 },
+    // --- マイルームA（小屋）向けに追加した専用イラスト付きアイテム ---
+    { id: 'furniture_stacked_crates', name: '積み上げた荷物', emoji: '📦', image: 'images/furniture/積み上げた荷物.png', rarity: 2 },
+    { id: 'furniture_bulletin_board', name: '掲示板', emoji: '📋', image: 'images/furniture/掲示板.png', rarity: 2 },
+    { id: 'furniture_straw_sack', name: '藁袋', emoji: '🌾', image: 'images/furniture/藁袋.png', rarity: 1 },
+    { id: 'furniture_straw_rug', name: '藁のラグ', emoji: '🟨', image: 'images/furniture/藁のラグ.png', rarity: 1 },
+    { id: 'furniture_indoor_feed_a', name: '屋内餌A', emoji: '🍬', image: 'images/furniture/屋内餌A.png', rarity: 1 },
+    { id: 'furniture_indoor_feed_b', name: '屋内餌B', emoji: '🍬', image: 'images/furniture/屋内餌B.png', rarity: 1 },
+    { id: 'furniture_hanging_plant', name: '吊るした植物', emoji: '🌿', image: 'images/furniture/吊るした植物.png', rarity: 1 },
 ];
 
 // --- 家具アイテムのアイコンを描画する共通ヘルパー（専用イラストがあれば画像、無ければ絵文字で代替） ---
