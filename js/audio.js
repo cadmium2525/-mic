@@ -246,6 +246,29 @@ const AudioManager = (() => {
             tone({ freq: 165, duration: 0.18, type: 'sawtooth', when: 0.1, volume: 0.4, gainNode: masterSeGain });
         },
         toggle: () => tone({ freq: 900, duration: 0.05, type: 'sine', volume: 0.4, gainNode: masterSeGain }),
+        // --- 祈りの神殿（ガチャ）専用SE ---
+        gacha_place: () => {
+            // 円盤石を台座に置いた瞬間：低い着地音＋小さな煌めき
+            tone({ freq: 180, freqEnd: 90, duration: 0.18, type: 'sine', volume: 0.5, gainNode: masterSeGain });
+            tone({ freq: noteFreq('A5'), duration: 0.12, type: 'triangle', when: 0.06, volume: 0.3, gainNode: masterSeGain });
+        },
+        gacha_spin_start: () => {
+            // 回転が始まる瞬間の立ち上がるような風切り音
+            tone({ freq: 220, freqEnd: 660, duration: 0.5, type: 'sawtooth', volume: 0.2, gainNode: masterSeGain });
+        },
+        gacha_flash: () => {
+            // 通常（金色）フラッシュ：明るい短いアルペジオ
+            ['C5', 'E5', 'G5'].forEach((n, i) => {
+                tone({ freq: noteFreq(n), duration: 0.18, type: 'triangle', when: i * 0.08, volume: 0.4, gainNode: masterSeGain });
+            });
+        },
+        gacha_flash_rare: () => {
+            // 虹色フラッシュ（★3確定）：より高く長く伸びるファンファーレ＋煌めきノイズ
+            ['C5', 'E5', 'G5', 'C6', 'E6'].forEach((n, i) => {
+                tone({ freq: noteFreq(n), duration: 0.22, type: 'triangle', when: i * 0.07, volume: 0.45, gainNode: masterSeGain });
+            });
+            noiseBurst({ duration: 0.3, volume: 0.22, filterFreq: 6500, when: 0.1, gainNode: masterSeGain });
+        },
     };
 
     function playSE(name) {
@@ -495,6 +518,61 @@ const AudioManager = (() => {
                    ['D4',1.5],['C4',1],['B3',1.5],['A3',1],['A3',2],[null,1]],
             bass: [['D3',2],['A2',2],['B2',2],['E2',2],['A2',2],['D2',2]],
         },
+        // マイルーム（小屋）専用BGM（完全新規オリジナル作曲）。
+        // Cメジャー・テンポ76のゆったりとした構成で、木漏れ日が差し込む小屋の中で
+        // モンスターたちがくつろいでいるような、穏やかで温かい雰囲気を狙っている。
+        // 打楽器は使わず、三角波の柔らかいリードとサイン波のベース、控えめな和音の
+        // パッドだけで構成し、聞き疲れしない落ち着いたループにしている。
+        myroom: {
+            tempo: 76, leadType: 'triangle', bassType: 'sine',
+            lead: [
+                // --- フレーズA (16拍) ---
+                ['C5',1],['E5',1],['G5',1],['E5',1],
+                ['A4',1],['C5',1],['B4',1],[null,1],
+                ['G4',1],['C5',1],['E5',1],['D5',1],
+                ['C5',1],['B4',1],['C5',2],
+                // --- フレーズB (16拍) ---
+                ['C5',1],['E5',1],['G5',1],['E5',1],
+                ['A4',1],['C5',1],['D5',1],[null,1],
+                ['E5',1],['D5',1],['C5',1],['A4',1],
+                ['G4',1],['E4',1],['C4',2],
+            ],
+            bass: [
+                ['C3',2],['G3',2],['A3',2],['F3',2],
+                ['C3',2],['G3',2],['G3',2],['C3',2],
+                ['C3',2],['G3',2],['A3',2],['F3',2],
+                ['C3',2],['G3',2],['C3',4],
+            ],
+            // --- ハーモニー（和音）レイヤー：C→G→Am→F の穏やかなコード進行で温かみを補強 ---
+            harmony: [
+                [['C4','E4','G4'],4],[['G3','B3','D4'],4],
+                [['A3','C4','E4'],4],[['F3','A3','C4'],4],
+                [['C4','E4','G4'],4],[['G3','B3','D4'],4],[['G3','B3','D4'],4],[['C4','E4','G4'],4],
+            ],
+            harmonyVolume: 0.1,
+        },
+        // 祈りの神殿（ガチャ）専用BGM（完全新規オリジナル作曲）。
+        // Dマイナー・テンポ92の神秘的で少し緊張感のある構成。サイン波の澄んだベルのような
+        // リードと三角波の低いベース、和音パッドのみで、打楽器は使わず静けさと期待感を演出する。
+        gacha: {
+            tempo: 92, leadType: 'sine', bassType: 'triangle',
+            lead: [
+                ['D5',2],['A4',2],['F5',2],['D5',2],
+                ['E5',2],['C5',2],['D5',4],
+                ['A4',2],['D5',2],['F5',2],['A5',2],
+                ['G5',2],['E5',2],['D5',4],
+            ],
+            bass: [
+                ['D3',4],['A2',4],['F2',4],['D3',4],
+                ['D3',4],['A2',4],['F2',4],['D3',4],
+            ],
+            // --- ハーモニー（和音）レイヤー：Dm→Am→F→Dm で神秘的な響きを支える ---
+            harmony: [
+                [['D3','F3','A3'],8],[['A2','C3','E3'],8],
+                [['F2','A2','C3'],8],[['D3','F3','A3'],8],
+            ],
+            harmonyVolume: 0.12,
+        },
     };
 
     // --- BGM用の簡易ドラム1打分（kick/snare/hat）を合成する ---
@@ -660,6 +738,8 @@ const AudioManager = (() => {
         'screen-kinnejiki-swap': 'title',
         'screen-kinnejiki-result': 'title',
         'screen-kinnejiki-ranking': 'title',
+        'screen-myroom': 'myroom',
+        'screen-gacha': 'gacha',
     };
 
     // 「screen-battle」表示時、現在ガッツファクトリー（きんねじき）のボス戦かどうかを見て

@@ -56,7 +56,12 @@
         <div class="flex-1 flex flex-col min-h-0 overflow-hidden">
 
             <!-- ==================== SCREEN 1: タイトル画面 ==================== -->
-            <div id="screen-title" class="screen active flex-col justify-between h-full p-5 text-center title-screen-bg">
+            <div id="screen-title" class="screen active flex-col justify-between h-full p-5 text-center title-screen-bg relative">
+                <!-- 所持ダイヤ表示（画面上部・音量調整ボタンと被らない左上に常時表示） -->
+                <div class="absolute top-2 left-2 z-30 flex items-center space-x-1 bg-[#1a120b]/85 border border-cyan-800 rounded-full px-2.5 py-1 shadow-lg">
+                    <span class="text-cyan-300 text-xs font-black" id="title-diamond-balance-chip">💎-</span>
+                </div>
+
                 <div class="mt-2 relative z-10">
                     <img src="images/branding/title.png" alt="モンスターファーム バトルアリーナ - LEGEND OF BREEDER" class="title-logo-img w-full max-w-sm mx-auto">
                 </div>
@@ -80,9 +85,13 @@
                         <i class="fa-solid fa-swords"></i>
                         <span>PvP対戦（レンタルモンスター）</span>
                     </button>
-                    <button onclick="showPvpRanking()" class="fantasy-btn w-full py-2.5 bg-[#1a120b] hover:bg-[#2a1b15] text-sky-400 font-bold rounded-xl text-sm shadow border-sky-800 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
-                        <i class="fa-solid fa-trophy"></i>
-                        <span>PvPレートランキング</span>
+                    <button onclick="openGachaScreen()" class="fantasy-btn w-full py-2.5 bg-gradient-to-r from-fuchsia-700 to-purple-800 hover:from-fuchsia-600 hover:to-purple-700 text-white font-bold rounded-xl text-sm shadow border-fuchsia-900 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-gem"></i>
+                        <span>祈りの神殿（ガチャ）</span>
+                    </button>
+                    <button onclick="openMyRoomScreen()" class="fantasy-btn w-full py-2.5 bg-gradient-to-r from-orange-700 to-amber-800 hover:from-orange-600 hover:to-amber-700 text-white font-bold rounded-xl text-sm shadow border-orange-900 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-house"></i>
+                        <span>マイルーム</span>
                     </button>
                     <div class="relative">
                         <button onclick="openAccountModal()" class="fantasy-btn w-full py-2.5 bg-[#1a120b] hover:bg-[#2a1b15] text-emerald-400 font-bold rounded-xl text-sm shadow border-emerald-800 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
@@ -396,6 +405,10 @@
                     </button>
                     <button onclick="openPvpPresetManageScreen(false)" class="w-full py-2.5 bg-[#2a1b15] hover:bg-[#3c2a21] text-amber-300 font-bold rounded-xl text-xs border border-amber-900/50 transition-all active:scale-95">
                         🎨 マイ編成を管理する
+                    </button>
+                    <button onclick="showPvpRanking()" class="w-full py-2.5 bg-[#1a120b] hover:bg-[#2a1b15] text-sky-400 font-bold rounded-xl text-xs border border-sky-800 transition-all active:scale-95 flex items-center justify-center space-x-2">
+                        <i class="fa-solid fa-trophy"></i>
+                        <span>PvPレートランキングを見る</span>
                     </button>
                     <button onclick="changeScreen('screen-title')" class="w-full py-2 bg-[#1a120b] hover:bg-[#2a1b15] text-gray-400 font-bold rounded-xl text-xs shadow border border-gray-700 transition-all active:scale-95">
                         タイトルに戻る
@@ -1008,6 +1021,8 @@
                             <button onclick="AudioManager.playBGM('finalboss')" class="py-1.5 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[10px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all">👿 最終ボス戦</button>
                             <button onclick="AudioManager.playBGM('victory')" class="py-1.5 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[10px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all">🏆 勝利</button>
                             <button onclick="AudioManager.playBGM('defeat')" class="py-1.5 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[10px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all">💀 敗北</button>
+                            <button onclick="AudioManager.playBGM('myroom')" class="py-1.5 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[10px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all">🏠 マイルーム</button>
+                            <button onclick="AudioManager.playBGM('gacha')" class="py-1.5 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[10px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all">🔮 祈りの神殿</button>
                             <button onclick="AudioManager.stopBgm()" class="py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">■ 停止</button>
                         </div>
                     </div>
@@ -1057,6 +1072,218 @@
                         </div>
                     </div>
 
+                    <!-- ⑧ ガチャ／マイルーム 所持データテスト -->
+                    <div class="bg-[#2a1b15] border border-fuchsia-900/50 rounded-xl p-3 space-y-2">
+                        <div class="text-xs font-bold text-fuchsia-300 flex items-center justify-between">
+                            <span>⑧ 🎁 ガチャ／マイルーム所持データテスト</span>
+                            <button onclick="debugRefreshInventorySummary()" class="text-[9px] text-fuchsia-400 underline">所持状況を更新</button>
+                        </div>
+                        <div class="text-[9px] text-gray-500 leading-tight">実際にガチャを引かなくても、家具・モンスターを直接付与してマイルームの動作確認ができます。</div>
+
+                        <div class="bg-[#1a120b] rounded-lg p-2 space-y-1">
+                            <p class="text-[9px] text-gray-400 font-bold">🪑 家具を付与</p>
+                            <select id="debug-gacha-furniture-select" class="w-full bg-[#241b12] border border-fuchsia-800 text-white text-[10px] rounded-lg px-2 py-1.5"></select>
+                            <button onclick="debugGrantFurniture()" class="w-full py-1.5 bg-fuchsia-800 hover:bg-fuchsia-700 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">＋ 付与</button>
+                        </div>
+
+                        <div class="bg-[#1a120b] rounded-lg p-2 space-y-1">
+                            <p class="text-[9px] text-gray-400 font-bold">🐾 モンスターを付与（★3扱い）</p>
+                            <div class="grid grid-cols-2 gap-1.5">
+                                <select id="debug-gacha-species-select" class="w-full bg-[#241b12] border border-fuchsia-800 text-white text-[10px] rounded-lg px-2 py-1.5"></select>
+                                <select id="debug-gacha-aura-select" class="w-full bg-[#241b12] border border-fuchsia-800 text-white text-[10px] rounded-lg px-2 py-1.5"></select>
+                            </div>
+                            <button onclick="debugGrantMonster()" class="w-full py-1.5 bg-fuchsia-800 hover:bg-fuchsia-700 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">＋ 付与</button>
+                        </div>
+
+                        <div id="debug-inventory-summary" class="text-[9px] text-gray-400 space-y-1 max-h-40 overflow-y-auto">
+                            <p class="text-gray-500">「所持状況を更新」を押すと読み込みます</p>
+                        </div>
+
+                        <button onclick="debugResetMyRoomPlacement()" class="w-full py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">🔄 マイルームの設置状態をリセット</button>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- ==================== SCREEN: 祈りの神殿（ガチャ） ====================
+                 円盤石を指でドラッグして中央やや下の台座（設置スポット）に配置すると演出開始。
+                 最初はゆっくり回転→次第に高速回転→フラッシュ（★3が含まれる場合は虹色）→結果発表、の流れ。 -->
+            <div id="screen-gacha" class="screen flex-col h-full" style="background:#0a0704;">
+                <div class="p-3 border-b border-amber-950 flex items-center justify-between bg-[#1a120b] flex-shrink-0 relative z-20">
+                    <button onclick="closeGachaScreen()" class="text-amber-400 text-[10px] font-bold flex items-center space-x-1">
+                        <i class="fa-solid fa-arrow-left"></i><span>タイトルへ</span>
+                    </button>
+                    <h2 class="text-sm font-black text-amber-300 pixel-font">🔮 祈りの神殿</h2>
+                    <div class="flex items-center space-x-1 text-cyan-300 text-xs font-black">
+                        💎<span id="gacha-diamond-balance">-</span>
+                    </div>
+                </div>
+
+                <!-- 神殿ビジュアル（背景・台座・ドラッグする円盤石） -->
+                <div id="gacha-altar-area" class="flex-1 relative overflow-hidden">
+                    <img src="images/gacha/ガチャ.png" class="absolute inset-0 w-full h-full object-cover" alt="祈りの神殿" draggable="false">
+
+                    <!-- 案内テキスト -->
+                    <p id="gacha-instruction-text" class="absolute top-3 left-0 right-0 text-center text-amber-200 text-[11px] font-bold drop-shadow-lg z-10 pointer-events-none">
+                        円盤石を台座までドラッグしよう
+                    </p>
+
+                    <!-- 台座（設置スポット・当たり判定） -->
+                    <div id="gacha-socket" class="absolute rounded-full pointer-events-none" style="left:50%; top:64%; width:36%; aspect-ratio:1/1; transform:translate(-50%,-50%);"></div>
+
+                    <!-- 演出フラッシュ用オーバーレイ -->
+                    <div id="gacha-flash-overlay" class="absolute inset-0 pointer-events-none opacity-0 z-30"></div>
+
+                    <!-- ドラッグする円盤石 -->
+                    <img id="gacha-disc" src="images/gacha/円盤石.png" alt="円盤石" draggable="false"
+                        class="absolute select-none z-10"
+                        style="left:50%; top:89%; width:24%; transform:translate(-50%,-50%); touch-action:none; cursor:grab;">
+
+                    <!-- 結果発表パネル -->
+                    <div id="gacha-reveal-panel" class="absolute inset-0 bg-black/88 hidden flex-col items-center justify-center p-4 z-40">
+                        <p class="text-amber-300 font-black text-xs pixel-font tracking-widest mb-3">✨ 結果発表 ✨</p>
+                        <div id="gacha-reveal-grid" class="grid grid-cols-3 gap-2 max-w-xs w-full max-h-[60vh] overflow-y-auto"></div>
+                        <button onclick="closeGachaReveal()" class="mt-4 px-8 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-900 font-black rounded-xl text-xs shadow active:scale-95 transition-all">
+                            閉じる
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 引く回数の切り替え -->
+                <div class="p-3 bg-[#1a120b] border-t border-amber-950 flex-shrink-0">
+                    <div class="flex gap-2">
+                        <button id="gacha-mode-btn-1" onclick="setGachaPullMode(1)"
+                            class="gacha-mode-btn flex-1 py-2 rounded-xl text-xs font-black transition-all active:scale-95">
+                            1回 <span class="font-normal opacity-80">💎150</span>
+                        </button>
+                        <button id="gacha-mode-btn-11" onclick="setGachaPullMode(11)"
+                            class="gacha-mode-btn flex-1 py-2 rounded-xl text-xs font-black transition-all active:scale-95">
+                            11連 <span class="font-normal opacity-80">💎1500</span>・★3確定
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ==================== SCREEN: マイルーム ====================
+                 家具＝画像内の固定スロット（棚2箇所＋クレート）にタップで設置。
+                 モンスター＝手前の床エリアを自由に歩き回る（ランダム徘徊）。 -->
+            <div id="screen-myroom" class="screen flex-col h-full" style="background:#0a0704;">
+                <div class="p-3 border-b border-amber-950 flex items-center justify-between bg-[#1a120b] flex-shrink-0 relative z-20">
+                    <button onclick="closeMyRoomScreen()" class="text-amber-400 text-[10px] font-bold flex items-center space-x-1">
+                        <i class="fa-solid fa-arrow-left"></i><span>タイトルへ</span>
+                    </button>
+                    <h2 class="text-sm font-black text-amber-300 pixel-font">🏠 マイルーム</h2>
+                    <button onclick="openMyRoomInventoryModal()" class="text-amber-400 text-[10px] font-bold flex items-center space-x-1">
+                        <i class="fa-solid fa-box-archive"></i><span>所持品</span>
+                    </button>
+                </div>
+
+                <!-- 初回特典チケットの案内バナー（未使用チケットがある間だけ表示） -->
+                <div id="myroom-ticket-banner" class="hidden bg-gradient-to-r from-amber-500 to-yellow-400 text-slate-900 text-[11px] font-black px-3 py-2 flex items-center justify-between flex-shrink-0">
+                    <span>🎫 初回特典チケットが<span id="myroom-ticket-count">1</span>枚あります！</span>
+                    <button onclick="openMyRoomTicketModal()" class="px-3 py-1 bg-slate-900 text-amber-300 rounded-full text-[10px] font-black active:scale-95 transition-all">使う</button>
+                </div>
+
+                <div id="myroom-area" class="flex-1 relative overflow-hidden">
+                    <img id="myroom-bg-image" src="images/myroom/マイルームA.png" class="absolute inset-0 w-full h-full object-cover" alt="マイルーム" draggable="false">
+
+                    <!-- 家具スロット（棚2箇所＋クレート）。JS側で座標(%)を割り当てて動的に生成する -->
+                    <div id="myroom-furniture-slots"></div>
+
+                    <!-- モンスターが歩き回る床エリア（家具スロットのタップを邪魔しないようpointer-events:noneにし、
+                         モンスター本体（トークン）だけ個別にクリックを受け付ける） -->
+                    <div id="myroom-monster-floor" class="absolute inset-0 pointer-events-none"></div>
+                </div>
+
+                <div class="p-3 bg-[#1a120b] border-t border-amber-950 flex-shrink-0 space-y-1.5">
+                    <div class="flex gap-1.5">
+                        <button onclick="openMyRoomMonsterPicker()" class="flex-1 py-2.5 bg-gradient-to-r from-emerald-700 to-teal-700 hover:from-emerald-600 hover:to-teal-600 text-white font-black rounded-xl text-xs shadow active:scale-95 transition-all flex items-center justify-center space-x-2">
+                            <i class="fa-solid fa-paw"></i><span>モンスターを配置する</span>
+                        </button>
+                        <button onclick="openMyRoomBackgroundPicker()" class="py-2.5 px-3 bg-[#2a1b15] hover:bg-[#3c2a21] text-amber-300 font-bold rounded-xl text-xs border border-amber-800 active:scale-95 transition-all flex items-center justify-center">
+                            <i class="fa-solid fa-image"></i>
+                        </button>
+                    </div>
+                    <p class="text-[9px] text-gray-500 text-center">棚・地面をタップすると家具を置けます。配置中のモンスターをタップすると床から外せます。</p>
+                </div>
+            </div>
+
+            <!-- 背景切り替えモーダル -->
+            <div id="myroom-background-picker-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeMyRoomBackgroundPicker()">
+                <div class="bg-[#2a1b15] w-full max-w-xs rounded-2xl border-2 border-amber-600 shadow-2xl flex flex-col max-h-[75vh]" onclick="event.stopPropagation()">
+                    <h4 class="text-sm font-black text-white pixel-font border-b border-amber-800 px-4 pt-4 pb-2 flex-shrink-0">🖼️ 背景を選ぶ</h4>
+                    <div id="myroom-background-picker-list" class="p-4 grid grid-cols-2 gap-2 overflow-y-auto flex-1"></div>
+                    <button onclick="closeMyRoomBackgroundPicker()" class="w-full py-2 bg-[#1a120b] hover:bg-[#150b07] text-gray-300 font-bold rounded-xl text-xs transition-all border border-gray-700 mx-4 mb-4" style="width: calc(100% - 2rem);">
+                        閉じる
+                    </button>
+                </div>
+            </div>
+
+            <!-- 所持品一覧モーダル（読み取り専用：現在持っている家具・モンスターを一覧表示） -->
+            <div id="myroom-inventory-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeMyRoomInventoryModal()">
+                <div class="bg-[#2a1b15] w-full max-w-xs rounded-2xl border-2 border-amber-600 shadow-2xl flex flex-col max-h-[80vh]" onclick="event.stopPropagation()">
+                    <h4 class="text-sm font-black text-white pixel-font border-b border-amber-800 px-4 pt-4 pb-2 flex-shrink-0">📦 所持品一覧</h4>
+                    <div class="px-4 pt-2 overflow-y-auto flex-1">
+                        <p class="text-[10px] text-amber-300 font-bold mb-1">🪑 家具</p>
+                        <div id="myroom-inventory-furniture-list" class="space-y-1 mb-3"></div>
+                        <p class="text-[10px] text-emerald-300 font-bold mb-1">🐾 モンスター</p>
+                        <div id="myroom-inventory-monster-list" class="space-y-1"></div>
+                    </div>
+                    <button onclick="closeMyRoomInventoryModal()" class="w-full py-2 bg-[#1a120b] hover:bg-[#150b07] text-gray-300 font-bold rounded-xl text-xs transition-all border border-gray-700 mx-4 mb-4 mt-2" style="width: calc(100% - 2rem);">
+                        閉じる
+                    </button>
+                </div>
+            </div>
+
+            <!-- 初回特典チケット交換モーダル：好きな家具1つ＋好きなモンスター1体を選んで受け取れる -->
+            <div id="myroom-ticket-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeMyRoomTicketModal()">
+                <div class="bg-[#2a1b15] w-full max-w-xs rounded-2xl border-2 border-yellow-500 shadow-2xl flex flex-col max-h-[85vh]" onclick="event.stopPropagation()">
+                    <h4 class="text-sm font-black text-white pixel-font border-b border-yellow-700 px-4 pt-4 pb-2 flex-shrink-0">🎫 初回特典チケット</h4>
+                    <div class="px-4 py-2 overflow-y-auto flex-1 space-y-3">
+                        <p class="text-[10px] text-gray-400 leading-relaxed">好きな家具1つと、好きなモンスター1体（オーラ色も選べます）を、その場でプレゼント！</p>
+                        <div>
+                            <p class="text-[10px] text-amber-300 font-bold mb-1">🪑 家具を選ぶ</p>
+                            <select id="myroom-ticket-furniture-select" class="w-full bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-2"></select>
+                        </div>
+                        <div>
+                            <p class="text-[10px] text-emerald-300 font-bold mb-1">🐾 モンスターを選ぶ</p>
+                            <div class="grid grid-cols-2 gap-1.5">
+                                <select id="myroom-ticket-species-select" class="w-full bg-[#1a120b] border border-emerald-800 text-white text-xs rounded-lg px-2 py-2"></select>
+                                <select id="myroom-ticket-aura-select" class="w-full bg-[#1a120b] border border-emerald-800 text-white text-xs rounded-lg px-2 py-2"></select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="px-4 pb-4 pt-1 space-y-2 flex-shrink-0">
+                        <button onclick="redeemMyRoomTicket()" class="w-full py-2.5 bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-400 hover:to-amber-400 text-slate-900 font-black rounded-xl text-xs shadow active:scale-95 transition-all">
+                            この組み合わせを受け取る
+                        </button>
+                        <button onclick="closeMyRoomTicketModal()" class="w-full py-2 bg-[#1a120b] hover:bg-[#150b07] text-gray-300 font-bold rounded-xl text-xs transition-all border border-gray-700">
+                            あとで使う
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 家具設置モーダル（棚・クレートをタップした時に開く） -->
+            <div id="myroom-furniture-picker-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeMyRoomFurniturePicker()">
+                <div class="bg-[#2a1b15] w-full max-w-xs rounded-2xl border-2 border-amber-600 shadow-2xl flex flex-col max-h-[75vh]" onclick="event.stopPropagation()">
+                    <h4 class="text-sm font-black text-white pixel-font border-b border-amber-800 px-4 pt-4 pb-2 flex-shrink-0" id="myroom-furniture-picker-title">🪑 家具を選ぶ</h4>
+                    <div id="myroom-furniture-picker-list" class="px-4 py-2 space-y-1.5 overflow-y-auto flex-1"></div>
+                    <button onclick="closeMyRoomFurniturePicker()" class="w-full py-2 bg-[#1a120b] hover:bg-[#150b07] text-gray-300 font-bold rounded-xl text-xs transition-all border border-gray-700 mx-4 mb-4" style="width: calc(100% - 2rem);">
+                        閉じる
+                    </button>
+                </div>
+            </div>
+
+            <!-- モンスター配置モーダル -->
+            <div id="myroom-monster-picker-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeMyRoomMonsterPicker()">
+                <div class="bg-[#2a1b15] w-full max-w-xs rounded-2xl border-2 border-emerald-600 shadow-2xl flex flex-col max-h-[75vh]" onclick="event.stopPropagation()">
+                    <h4 class="text-sm font-black text-white pixel-font border-b border-emerald-800 px-4 pt-4 pb-2 flex-shrink-0">🐾 配置するモンスターを選ぶ</h4>
+                    <p class="text-[9px] text-gray-500 px-4 pt-2">床には最大<span id="myroom-monster-max-label">4</span>体まで配置できます（<span id="myroom-monster-count-label">0</span>体配置中）</p>
+                    <div id="myroom-monster-picker-list" class="px-4 py-2 space-y-1.5 overflow-y-auto flex-1"></div>
+                    <button onclick="closeMyRoomMonsterPicker()" class="w-full py-2 bg-[#1a120b] hover:bg-[#150b07] text-gray-300 font-bold rounded-xl text-xs transition-all border border-gray-700 mx-4 mb-4" style="width: calc(100% - 2rem);">
+                        閉じる
+                    </button>
                 </div>
             </div>
 
@@ -1307,6 +1534,8 @@
     <script src="js/game_core.js"></script>
     <script src="js/game_ranking.js"></script>
     <script src="js/currency.js"></script>
+    <script src="js/gacha.js"></script>
+    <script src="js/myroom.js"></script>
     <script src="js/turn_order.js"></script>
     <script src="js/masmon_battle.js"></script>
     <script src="js/masmon_rating.js"></script>

@@ -121,6 +121,7 @@ function openDebugScreen() {
     updateDebugKinNejikiRunBadge();
     renderDebugAchievementPreviewList();
     debugRefreshDiamondBalance();
+    renderDebugGachaOptions();
     changeScreen('screen-debug');
 }
 
@@ -859,4 +860,116 @@ function debugPreviewKinNejikiDiamonds() {
     if (!Number.isFinite(wins) || wins < 0) wins = 0;
     const amount = (typeof computeKinNejikiDiamondsForWins === 'function') ? computeKinNejikiDiamondsForWins(wins) : 0;
     if (typeof showToast === 'function') showToast(`🛠️ 通算${wins}勝の場合の獲得ダイヤ試算：${amount}個`);
+}
+
+// -----------------------------------------------------
+// ⑧ ガチャ／マイルーム 所持データテスト
+// -----------------------------------------------------
+function renderDebugGachaOptions() {
+    const furnitureSelect = document.getElementById('debug-gacha-furniture-select');
+    if (furnitureSelect && typeof GACHA_FURNITURE_POOL !== 'undefined') {
+        furnitureSelect.innerHTML = GACHA_FURNITURE_POOL.map(f =>
+            `<option value="${f.id}">${f.emoji} ${f.name}（★${f.rarity}）</option>`
+        ).join('');
+    }
+
+    const speciesSelect = document.getElementById('debug-gacha-species-select');
+    if (speciesSelect && typeof KIN_NEJIKI_SPECIES_POOL !== 'undefined') {
+        speciesSelect.innerHTML = KIN_NEJIKI_SPECIES_POOL.map(speciesId => {
+            const tmpl = MONSTER_TEMPLATES[speciesId];
+            return `<option value="${speciesId}">${tmpl ? tmpl.emoji + ' ' + tmpl.name : speciesId}</option>`;
+        }).join('');
+    }
+
+    const auraSelect = document.getElementById('debug-gacha-aura-select');
+    if (auraSelect && typeof AURA_TYPES !== 'undefined') {
+        auraSelect.innerHTML = Object.keys(AURA_TYPES).map(auraKey => {
+            const aura = AURA_TYPES[auraKey];
+            return `<option value="${auraKey}">${aura.emoji} ${aura.name}</option>`;
+        }).join('');
+    }
+}
+
+async function debugGrantFurniture() {
+    const select = document.getElementById('debug-gacha-furniture-select');
+    const furnitureId = select ? select.value : null;
+    if (!furnitureId) return;
+    if (typeof initFirebase === 'function' && initFirebase()) {
+        try {
+            const pid = getMyPlayerId();
+            await firebaseDb.ref(`player_inventory/${pid}/furniture/${furnitureId}`).transaction(current => (current || 0) + 1);
+        } catch (e) { console.error('[DEBUG] 家具付与エラー:', e); }
+    }
+    if (typeof showToast === 'function') showToast('🛠️ 家具をテスト付与しました');
+    debugRefreshInventorySummary();
+}
+
+async function debugGrantMonster() {
+    const speciesSelect = document.getElementById('debug-gacha-species-select');
+    const auraSelect = document.getElementById('debug-gacha-aura-select');
+    const speciesId = speciesSelect ? speciesSelect.value : null;
+    const auraKey = auraSelect ? auraSelect.value : null;
+    if (!speciesId || !auraKey) return;
+    if (typeof initFirebase === 'function' && initFirebase()) {
+        try {
+            const pid = getMyPlayerId();
+            const key = `${speciesId}_${auraKey}`;
+            await firebaseDb.ref(`player_inventory/${pid}/monsters/${key}`).transaction(current => (current || 0) + 1);
+        } catch (e) { console.error('[DEBUG] モンスター付与エラー:', e); }
+    }
+    if (typeof showToast === 'function') showToast('🛠️ モンスターをテスト付与しました');
+    debugRefreshInventorySummary();
+}
+
+async function debugRefreshInventorySummary() {
+    const container = document.getElementById('debug-inventory-summary');
+    if (!container) return;
+    container.innerHTML = '<p class="text-gray-500">読込中…</p>';
+    if (typeof initFirebase !== 'function' || !initFirebase()) {
+        container.innerHTML = '<p class="text-gray-500">Firebase未接続です</p>';
+        return;
+    }
+    try {
+        const pid = getMyPlayerId();
+        const [furnitureSnap, monstersSnap] = await Promise.all([
+            firebaseDb.ref(`player_inventory/${pid}/furniture`).once('value'),
+            firebaseDb.ref(`player_inventory/${pid}/monsters`).once('value')
+        ]);
+        const furnitureCounts = furnitureSnap.val() || {};
+        const monsterCounts = monstersSnap.val() || {};
+
+        const furnitureHtml = Object.keys(furnitureCounts).map(id => {
+            const def = (typeof GACHA_FURNITURE_POOL !== 'undefined') ? GACHA_FURNITURE_POOL.find(f => f.id === id) : null;
+            return `<div class="flex justify-between bg-[#241b12] rounded px-2 py-1"><span>${def ? def.emoji + ' ' + def.name : id}</span><span class="text-amber-300 font-bold">×${furnitureCounts[id]}</span></div>`;
+        }).join('') || '<p class="text-gray-600">家具なし</p>';
+
+        const monsterHtml = Object.keys(monsterCounts).map(key => {
+            const lastUnderscoreIdx = key.lastIndexOf('_');
+            const speciesId = key.slice(0, lastUnderscoreIdx);
+            const auraKey = key.slice(lastUnderscoreIdx + 1);
+            const tmpl = MONSTER_TEMPLATES[speciesId];
+            const aura = AURA_TYPES[auraKey];
+            return `<div class="flex justify-between bg-[#241b12] rounded px-2 py-1"><span>${tmpl ? tmpl.emoji + ' ' + tmpl.name : speciesId}${aura ? ' ' + aura.emoji : ''}</span><span class="text-fuchsia-300 font-bold">×${monsterCounts[key]}</span></div>`;
+        }).join('') || '<p class="text-gray-600">モンスターなし</p>';
+
+        container.innerHTML = `
+            <p class="text-gray-400 font-bold">🪑 家具</p>
+            <div class="space-y-0.5">${furnitureHtml}</div>
+            <p class="text-gray-400 font-bold mt-1.5">🐾 モンスター</p>
+            <div class="space-y-0.5">${monsterHtml}</div>
+        `;
+    } catch (e) {
+        console.error('[DEBUG] 所持データ取得エラー:', e);
+        container.innerHTML = '<p class="text-red-400">取得に失敗しました</p>';
+    }
+}
+
+async function debugResetMyRoomPlacement() {
+    if (typeof initFirebase === 'function' && initFirebase()) {
+        try {
+            const pid = getMyPlayerId();
+            await firebaseDb.ref(`player_myroom/${pid}`).remove();
+        } catch (e) { console.error('[DEBUG] マイルームリセットエラー:', e); }
+    }
+    if (typeof showToast === 'function') showToast('🔄 マイルームの設置状態をリセットしました');
 }

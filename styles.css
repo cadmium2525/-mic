@@ -126,6 +126,114 @@ input, textarea, select {
     color: #6ee7b7;
 }
 
+/* ===== マイルーム ===== */
+.myroom-slot-marker {
+    width: 15%;
+    aspect-ratio: 1/1;
+    border-radius: 12px;
+    transition: transform 0.15s ease-out;
+}
+.myroom-slot-marker:active {
+    transform: translate(-50%,-50%) scale(0.92);
+}
+.myroom-slot-empty-hint {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 220, 150, 0.55);
+    font-size: 1.4rem;
+    font-weight: 900;
+    border: 2px dashed rgba(255, 210, 120, 0.45);
+    border-radius: 10px;
+    background: rgba(0, 0, 0, 0.12);
+}
+.myroom-slot-icon {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.8rem;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+    background: rgba(255, 210, 120, 0.12);
+    border: 2px solid rgba(255, 210, 120, 0.35);
+    border-radius: 10px;
+}
+
+.myroom-monster-token {
+    transition: filter 0.2s ease-out;
+}
+.myroom-monster-token:active {
+    filter: brightness(1.2);
+}
+
+/* ===== 祈りの神殿（ガチャ）===== */
+.gacha-mode-btn {
+    background: #1a120b;
+    color: #9ca3af;
+    border: 1px solid #6b21a8;
+}
+.gacha-mode-btn.active {
+    background: linear-gradient(90deg, #a21caf, #7e22ce);
+    color: #fff;
+    box-shadow: 0 0 10px rgba(192, 38, 211, 0.6);
+}
+
+#gacha-socket {
+    box-shadow: 0 0 0 0 rgba(255, 215, 0, 0);
+    transition: box-shadow 0.2s ease-out;
+}
+#gacha-socket.gacha-socket-near {
+    box-shadow: 0 0 24px 8px rgba(255, 215, 0, 0.55);
+}
+
+.gacha-disc-goldglow {
+    filter: drop-shadow(0 0 10px rgba(255, 210, 90, 0.85)) drop-shadow(0 0 22px rgba(255, 180, 60, 0.5));
+}
+.gacha-disc-rainbowglow {
+    animation: gachaDiscRainbowGlow 1.2s linear infinite;
+}
+@keyframes gachaDiscRainbowGlow {
+    0%   { filter: drop-shadow(0 0 14px #ff3b3b) drop-shadow(0 0 26px #ff8f3b); }
+    17%  { filter: drop-shadow(0 0 14px #ffd23b) drop-shadow(0 0 26px #b6ff3b); }
+    34%  { filter: drop-shadow(0 0 14px #3bffb0) drop-shadow(0 0 26px #3bd4ff); }
+    50%  { filter: drop-shadow(0 0 14px #3b7bff) drop-shadow(0 0 26px #9b3bff); }
+    67%  { filter: drop-shadow(0 0 14px #e63bff) drop-shadow(0 0 26px #ff3b9e); }
+    84%  { filter: drop-shadow(0 0 14px #ff3b3b) drop-shadow(0 0 26px #ff8f3b); }
+    100% { filter: drop-shadow(0 0 14px #ff3b3b) drop-shadow(0 0 26px #ff8f3b); }
+}
+
+.gacha-flash-normal {
+    background: radial-gradient(circle at 50% 64%, rgba(255, 245, 210, 0.95), rgba(255, 210, 110, 0.45) 42%, transparent 72%);
+    animation: gachaFlashPulse 0.6s ease-out forwards;
+}
+.gacha-flash-rainbow {
+    background: conic-gradient(from 0deg at 50% 64%, #ff3b3b, #ffd23b, #3bffb0, #3b7bff, #b03bff, #ff3b9e, #ff3b3b);
+    mix-blend-mode: screen;
+    animation: gachaFlashPulse 0.9s ease-out forwards, gachaRainbowSpin 0.9s linear forwards;
+}
+@keyframes gachaFlashPulse {
+    0%   { opacity: 0; }
+    35%  { opacity: 1; }
+    100% { opacity: 0; }
+}
+@keyframes gachaRainbowSpin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(160deg); }
+}
+
+.gacha-reveal-card {
+    opacity: 0;
+    animation: gachaRevealCardIn 0.4s ease-out forwards;
+}
+@keyframes gachaRevealCardIn {
+    0%   { opacity: 0; transform: scale(0.5) translateY(10px); }
+    70%  { opacity: 1; transform: scale(1.08) translateY(0); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
 /* ===== 実績解除：特別演出 ===== */
 .achievement-celebration-card {
     animation: achvCardPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
