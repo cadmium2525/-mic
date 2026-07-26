@@ -126,6 +126,26 @@ input, textarea, select {
     color: #6ee7b7;
 }
 
+/* ===== 実績解除：特別演出 ===== */
+.achievement-celebration-card {
+    animation: achvCardPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes achvCardPop {
+    0% { transform: scale(0.6); opacity: 0; }
+    60% { transform: scale(1.05); opacity: 1; }
+    100% { transform: scale(1); opacity: 1; }
+}
+.achievement-celebration-burst {
+    position: absolute;
+    inset: -30%;
+    background: repeating-conic-gradient(from 0deg, rgba(251, 191, 36, 0.25) 0deg 8deg, transparent 8deg 20deg);
+    animation: achvBurstSpin 7s linear infinite;
+    pointer-events: none;
+}
+@keyframes achvBurstSpin {
+    to { transform: rotate(360deg); }
+}
+
 /* 状態変化のスムーズな点滅アニメーション */
 @keyframes smoothBlink {
     0%, 100% { opacity: 0.15; }

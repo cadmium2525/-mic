@@ -119,6 +119,8 @@ function openDebugScreen() {
     renderDebugTeamLists();
     renderDebugBreederPreviewList();
     updateDebugKinNejikiRunBadge();
+    renderDebugAchievementPreviewList();
+    debugRefreshDiamondBalance();
     changeScreen('screen-debug');
 }
 
@@ -784,4 +786,77 @@ async function renderDebugAllUsersStats() {
         console.error('[DEBUG] 全ユーザー状況取得エラー:', e);
         container.innerHTML = `<p class="text-[10px] text-red-400">取得に失敗しました</p>`;
     }
+}
+
+// -----------------------------------------------------
+// ⑥ 実績演出テスト：ACHIEVEMENT_DEFS の一覧をボタン化し、
+//    タップするとその実績の「解除演出」をその場で即プレビューできる。
+//    本物の解除判定・localStorageの通知記録には一切影響しない（見た目確認専用）。
+// -----------------------------------------------------
+function renderDebugAchievementPreviewList() {
+    const container = document.getElementById('debug-achievement-preview-list');
+    if (!container) return;
+    if (typeof ACHIEVEMENT_DEFS === 'undefined') {
+        container.innerHTML = `<p class="text-[10px] text-gray-500">実績データが見つかりません</p>`;
+        return;
+    }
+    container.innerHTML = ACHIEVEMENT_DEFS.map(def => `
+        <button onclick="debugPreviewAchievementCelebration('${def.id}')"
+            class="w-full py-1.5 px-2 bg-[#1a120b] hover:bg-[#241b12] text-amber-200 text-[10px] font-bold rounded-lg border border-amber-900/70 active:scale-95 transition-all flex items-center gap-1.5 text-left">
+            <span>${def.emoji}</span><span class="truncate">${def.name}</span>
+        </button>
+    `).join('') + `
+        <button onclick="debugPreviewAllAchievementCelebrations()"
+            class="w-full py-1.5 bg-amber-800 hover:bg-amber-700 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all mt-1">🎉 全部まとめて連続表示（キュー確認用）</button>
+    `;
+}
+
+// --- 1件だけ演出をプレビュー表示する ---
+function debugPreviewAchievementCelebration(achievementId) {
+    const def = ACHIEVEMENT_DEFS.find(d => d.id === achievementId);
+    if (!def) return;
+    if (typeof queueAchievementCelebrations === 'function') queueAchievementCelebrations([def]);
+}
+
+// --- 全件を1つのキューに積んで、連続表示（複数同時解除時の見え方）を確認する ---
+function debugPreviewAllAchievementCelebrations() {
+    if (typeof queueAchievementCelebrations === 'function') queueAchievementCelebrations([...ACHIEVEMENT_DEFS]);
+}
+
+// --- 「演出済み」「実績画面で確認済み」のlocalStorage記録を消し、バッジ・演出の再テストをしやすくする ---
+function debugResetAchievementNotifications() {
+    try {
+        localStorage.removeItem('mfload_achv_notified');
+        localStorage.removeItem('mfload_achv_viewed');
+    } catch (e) { /* ignore */ }
+    if (typeof refreshAchievementBadge === 'function') refreshAchievementBadge();
+    if (typeof showToast === 'function') showToast('🔄 実績の演出・確認済み記録をリセットしました（次回解除判定時から再度バッジ・演出が出ます）');
+}
+
+// -----------------------------------------------------
+// ⑦ ダイヤ通貨テスト
+// -----------------------------------------------------
+async function debugRefreshDiamondBalance() {
+    const el = document.getElementById('debug-diamond-balance');
+    if (!el) return;
+    el.textContent = '読込中…';
+    const balance = (typeof fetchMyDiamondBalance === 'function') ? await fetchMyDiamondBalance() : 0;
+    el.textContent = balance.toLocaleString();
+}
+
+async function debugAddDiamonds() {
+    const input = document.getElementById('debug-diamond-add-amount');
+    let amount = parseInt(input ? input.value : '0', 10);
+    if (!Number.isFinite(amount) || amount === 0) amount = 100;
+    if (typeof awardDiamonds === 'function') await awardDiamonds(amount);
+    if (typeof showToast === 'function') showToast(`🛠️ テストでダイヤを${amount}個付与しました`);
+    debugRefreshDiamondBalance();
+}
+
+function debugPreviewKinNejikiDiamonds() {
+    const input = document.getElementById('debug-diamond-wins-preview');
+    let wins = parseInt(input ? input.value : '0', 10);
+    if (!Number.isFinite(wins) || wins < 0) wins = 0;
+    const amount = (typeof computeKinNejikiDiamondsForWins === 'function') ? computeKinNejikiDiamondsForWins(wins) : 0;
+    if (typeof showToast === 'function') showToast(`🛠️ 通算${wins}勝の場合の獲得ダイヤ試算：${amount}個`);
 }

@@ -231,6 +231,7 @@ window.addEventListener('load', () => {
     }
     if (typeof initFirebase === 'function') initFirebase();
     if (typeof checkEndlessModeUnlockAndUpdateHomeButton === 'function') checkEndlessModeUnlockAndUpdateHomeButton();
+    if (typeof refreshAchievementBadge === 'function') refreshAchievementBadge();
 });
 
 // 画面遷移

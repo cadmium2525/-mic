@@ -84,10 +84,16 @@
                         <i class="fa-solid fa-trophy"></i>
                         <span>PvPレートランキング</span>
                     </button>
-                    <button onclick="openAccountModal()" class="fantasy-btn w-full py-2.5 bg-[#1a120b] hover:bg-[#2a1b15] text-emerald-400 font-bold rounded-xl text-sm shadow border-emerald-800 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
-                        <i class="fa-solid fa-user-shield"></i>
-                        <span>アカウント管理</span>
-                    </button>
+                    <div class="relative">
+                        <button onclick="openAccountModal()" class="fantasy-btn w-full py-2.5 bg-[#1a120b] hover:bg-[#2a1b15] text-emerald-400 font-bold rounded-xl text-sm shadow border-emerald-800 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
+                            <i class="fa-solid fa-user-shield"></i>
+                            <span>アカウント管理</span>
+                        </button>
+                        <span id="account-achv-badge" class="hidden absolute -top-1.5 -right-1.5 flex h-4 w-4 pointer-events-none">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-4 w-4 bg-red-600 border border-red-200"></span>
+                        </span>
+                    </div>
                     <button onclick="openStrategyHubScreen()" class="fantasy-btn w-full py-2.5 bg-[#1a120b] hover:bg-[#2a1b15] text-indigo-300 font-bold rounded-xl text-sm shadow border-indigo-700 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
                         <i class="fa-solid fa-book-open-reader"></i>
                         <span>攻略情報局</span>
@@ -1018,6 +1024,39 @@
                         </div>
                     </div>
 
+                    <!-- ⑥ 実績演出テスト -->
+                    <div class="bg-[#2a1b15] border border-amber-900/50 rounded-xl p-3 space-y-2">
+                        <div class="text-xs font-bold text-amber-300">⑥ 実績演出テスト</div>
+                        <div class="text-[9px] text-gray-500 leading-tight">実際に条件を満たさなくても、実績解除の特別演出（ポップアップ）とバッジの動作をその場で確認できます。</div>
+                        <div id="debug-achievement-preview-list" class="grid grid-cols-1 gap-1"></div>
+                        <button onclick="debugResetAchievementNotifications()"
+                            class="w-full py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">🔄 演出・確認済み記録をリセット（バッジ再テスト用）</button>
+                    </div>
+
+                    <!-- ⑦ ダイヤ通貨テスト -->
+                    <div class="bg-[#2a1b15] border border-cyan-900/50 rounded-xl p-3 space-y-2">
+                        <div class="text-xs font-bold text-cyan-300 flex items-center justify-between">
+                            <span>⑦ 💎 ダイヤ通貨テスト</span>
+                            <button onclick="debugRefreshDiamondBalance()" class="text-[9px] text-cyan-400 underline">残高更新</button>
+                        </div>
+                        <div class="text-[9px] text-gray-500 leading-tight">ガッツファクトリーの獲得式（セット番号×10+5／1勝あたり）の動作確認用。</div>
+                        <div class="bg-[#1a120b] rounded-lg p-2 flex items-center justify-between">
+                            <span class="text-[10px] text-gray-400">現在の残高</span>
+                            <span id="debug-diamond-balance" class="text-cyan-300 font-black text-sm">-</span>
+                        </div>
+                        <div class="flex gap-1.5">
+                            <input id="debug-diamond-add-amount" type="number" value="100"
+                                class="w-20 bg-[#1a120b] border border-cyan-800 text-white text-xs rounded-lg px-2 py-1.5 text-center">
+                            <button onclick="debugAddDiamonds()" class="flex-1 py-1.5 bg-cyan-800 hover:bg-cyan-700 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">＋ 付与（テスト）</button>
+                        </div>
+                        <div class="flex gap-1.5 items-center">
+                            <span class="text-[10px] text-gray-400 flex-shrink-0">通算勝利数で試算</span>
+                            <input id="debug-diamond-wins-preview" type="number" min="0" max="49" value="10"
+                                class="w-16 bg-[#1a120b] border border-cyan-800 text-white text-xs rounded-lg px-2 py-1.5 text-center">
+                            <button onclick="debugPreviewKinNejikiDiamonds()" class="flex-1 py-1.5 bg-[#1a120b] hover:bg-[#241b12] text-cyan-200 text-[10px] font-bold rounded-lg border border-cyan-900/70 active:scale-95 transition-all">獲得量を試算</button>
+                        </div>
+                    </div>
+
                 </div>
             </div>
 
@@ -1220,8 +1259,12 @@
                             <p class="text-gray-500">読み込み中…</p>
                         </div>
                     </div>
-                    <button onclick="closeAccountModal(); openAchievementsScreen();" class="w-full py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black rounded-xl text-xs shadow transition-all active:scale-95 flex items-center justify-center space-x-1.5">
+                    <button onclick="closeAccountModal(); openAchievementsScreen();" class="relative w-full py-2 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black rounded-xl text-xs shadow transition-all active:scale-95 flex items-center justify-center space-x-1.5">
                         <i class="fa-solid fa-trophy"></i><span>🏆 実績を見る</span>
+                        <span id="stats-tab-achv-badge" class="hidden absolute -top-1.5 -right-1.5 flex h-4 w-4 pointer-events-none">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-4 w-4 bg-red-600 border border-red-200"></span>
+                        </span>
                     </button>
                 </div>
 
@@ -1244,11 +1287,26 @@
         </div>
     </div>
 
+    <!-- 実績解除：特別演出オーバーレイ（ガッツファクトリー／エンドレスモードの終了直後に表示） -->
+    <div id="achievement-celebration-overlay" class="fixed inset-0 bg-black/85 flex items-center justify-center p-4 z-[60] hidden" onclick="closeAchievementCelebration()">
+        <div class="achievement-celebration-card relative bg-gradient-to-b from-[#3a2410] to-[#1a120b] border-2 border-amber-400 rounded-2xl px-6 py-8 max-w-xs w-full text-center shadow-2xl overflow-hidden" onclick="event.stopPropagation()">
+            <div class="achievement-celebration-burst"></div>
+            <p class="text-amber-300 font-black text-[11px] pixel-font tracking-widest mb-3 relative z-10">🎉 実績解除 🎉</p>
+            <div id="achievement-celebration-emoji" class="text-5xl mb-2 relative z-10"></div>
+            <p id="achievement-celebration-name" class="text-white font-black text-base mb-1 relative z-10"></p>
+            <p id="achievement-celebration-desc" class="text-gray-400 text-[10px] leading-relaxed mb-4 relative z-10"></p>
+            <button onclick="closeAchievementCelebration()" class="w-full py-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-slate-900 font-black rounded-xl text-xs shadow transition-all active:scale-95 relative z-10">
+                確認した！
+            </button>
+        </div>
+    </div>
+
 
     <!-- ==================== SCRIPT / ゲームロジック ==================== -->
     <script src="js/database.js"></script>
     <script src="js/game_core.js"></script>
     <script src="js/game_ranking.js"></script>
+    <script src="js/currency.js"></script>
     <script src="js/turn_order.js"></script>
     <script src="js/masmon_battle.js"></script>
     <script src="js/masmon_rating.js"></script>
@@ -1263,6 +1321,7 @@
     <script src="js/strategy_hub.js"></script>
     <script src="js/achievements.js"></script>
     <script src="js/skill_effects.js"></script>
+    <script src="js/monster_motion_mochi.js"></script>
     <script src="js/debug_mode.js"></script>
     <!-- BGM/SE 管理（他スクリプトの関数をラップするため必ず最後に読み込む） -->
     <script src="js/audio.js"></script>

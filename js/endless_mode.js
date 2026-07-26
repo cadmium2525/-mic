@@ -602,11 +602,7 @@ async function endlessHandleBattleEnd(isWin) {
         ENDLESS_STATE.bestStreak = ENDLESS_STATE.currentStreak;
         saveEndlessBestStreakIfNeeded(ENDLESS_STATE.currentStreak);
     }
-    // 実績のエンドレス連勝バッジ（10/25/50/100）を、ちょうど到達した瞬間にその場で知らせる
-    const ENDLESS_STREAK_BADGE_THRESHOLDS = [10, 25, 50, 100];
-    if (ENDLESS_STREAK_BADGE_THRESHOLDS.includes(ENDLESS_STATE.currentStreak)) {
-        showToast(`🎉 実績解除：エンドレス${ENDLESS_STATE.currentStreak}連勝！`);
-    }
+    // 実績のエンドレス連勝バッジ（10/25/50/100）は、ラン終了（ゲームオーバー）時にまとめて判定・演出表示する
     changeScreen('screen-endless-select');
     renderEndlessSelectScreen();
 }
@@ -627,4 +623,6 @@ async function endlessFinishRun() {
     showToast(`💀 ${finalStreak}連勝でストップ！（自己ベスト：${ENDLESS_STATE.bestStreak}連勝）`);
     changeScreen('screen-endless-home');
     renderEndlessHomeScreen();
+    // ゲームオーバー時点の最新記録を基準に新規実績を判定し、未通知のものがあれば演出で知らせる
+    if (typeof checkAndCelebrateNewAchievements === 'function') checkAndCelebrateNewAchievements();
 }

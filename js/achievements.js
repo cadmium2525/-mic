@@ -55,6 +55,17 @@ async function openAchievementsScreen() {
 
     const stats = await fetchAchievementStats();
     renderAchievementsList(stats);
+
+    // この画面を開いた時点で解除済みの実績はすべて「確認済み」として扱い、
+    // バッジを消し、以後の演出の重複対象からも外す
+    // （演出を見逃した状態でここに来た場合も、ここで確認したものとみなす）
+    const unlockedIds = ACHIEVEMENT_DEFS.filter(def => def.check(stats)).map(def => def.id);
+    const viewed = _loadAchvIdSet(ACHV_VIEWED_KEY);
+    const notified = _loadAchvIdSet(ACHV_NOTIFIED_KEY);
+    unlockedIds.forEach(id => { viewed.add(id); notified.add(id); });
+    _saveAchvIdSet(ACHV_VIEWED_KEY, viewed);
+    _saveAchvIdSet(ACHV_NOTIFIED_KEY, notified);
+    refreshAchievementBadge();
 }
 
 function returnFromAchievementsScreen() {
@@ -81,4 +92,100 @@ function renderAchievementsList(stats) {
             </div>
         </div>
     `).join('');
+}
+
+// =====================================================
+// 実績の「新規解除」通知まわり
+// ・解除済みかどうか自体はステートレスに毎回判定するが、
+//   「もう演出を見せたか」「もう一覧画面で確認したか」の2つだけは
+//   端末のlocalStorageに保存し、演出の重複表示とバッジの表示要否を管理する。
+// =====================================================
+const ACHV_NOTIFIED_KEY = 'mfload_achv_notified'; // 演出を表示済みの実績ID一覧（演出の重複防止）
+const ACHV_VIEWED_KEY = 'mfload_achv_viewed';     // 実績画面で確認済みの実績ID一覧（バッジの表示要否）
+
+function _loadAchvIdSet(key) {
+    try {
+        const raw = localStorage.getItem(key);
+        return new Set(raw ? JSON.parse(raw) : []);
+    } catch (e) {
+        return new Set();
+    }
+}
+function _saveAchvIdSet(key, idSet) {
+    try {
+        localStorage.setItem(key, JSON.stringify([...idSet]));
+    } catch (e) { /* 保存に失敗しても致命的ではないので無視する */ }
+}
+
+// --- ガッツファクトリー／エンドレスモードの「ゲームオーバー or クリア」直後に呼び出す ---
+// 新規に解除された実績があれば、特別演出（ポップアップ）をキューに積んで表示する。
+async function checkAndCelebrateNewAchievements() {
+    try {
+        const stats = await fetchAchievementStats();
+        const unlocked = ACHIEVEMENT_DEFS.filter(def => def.check(stats));
+        const notified = _loadAchvIdSet(ACHV_NOTIFIED_KEY);
+        const newlyUnlocked = unlocked.filter(def => !notified.has(def.id));
+
+        // バッジは「解除済みだが未確認」全体で判定するため、演出の有無に関わらず毎回更新する
+        refreshAchievementBadge(stats);
+
+        if (newlyUnlocked.length === 0) return;
+        newlyUnlocked.forEach(def => notified.add(def.id));
+        _saveAchvIdSet(ACHV_NOTIFIED_KEY, notified);
+        queueAchievementCelebrations(newlyUnlocked);
+    } catch (e) {
+        console.error('[実績] 新規解除チェックエラー:', e);
+    }
+}
+
+// --- タイトル画面・アカウント管理内のボタンに「未確認の実績あり」の赤バッジを表示する ---
+async function refreshAchievementBadge(statsArg) {
+    const badgeEls = [
+        document.getElementById('account-achv-badge'),
+        document.getElementById('stats-tab-achv-badge')
+    ].filter(Boolean);
+    if (badgeEls.length === 0) return;
+
+    const stats = statsArg || await fetchAchievementStats();
+    const unlockedIds = ACHIEVEMENT_DEFS.filter(def => def.check(stats)).map(def => def.id);
+    const viewed = _loadAchvIdSet(ACHV_VIEWED_KEY);
+    const hasUnseen = unlockedIds.some(id => !viewed.has(id));
+    badgeEls.forEach(el => el.classList.toggle('hidden', !hasUnseen));
+}
+
+// --- 実績解除の演出を1件ずつ順番に表示するキュー ---
+let _achvCelebrationQueue = [];
+function queueAchievementCelebrations(defs) {
+    const wasEmpty = _achvCelebrationQueue.length === 0;
+    _achvCelebrationQueue.push(...defs);
+    if (wasEmpty) showNextAchievementCelebration();
+}
+
+function showNextAchievementCelebration() {
+    if (_achvCelebrationQueue.length === 0) return;
+    const def = _achvCelebrationQueue.shift();
+    const overlay = document.getElementById('achievement-celebration-overlay');
+    const card = overlay ? overlay.querySelector('.achievement-celebration-card') : null;
+    if (!overlay || !card) return;
+
+    document.getElementById('achievement-celebration-emoji').textContent = def.emoji;
+    document.getElementById('achievement-celebration-name').textContent = def.name;
+    document.getElementById('achievement-celebration-desc').textContent = def.desc;
+    overlay.classList.remove('hidden');
+
+    // 複数連続表示の際もポップイン・アニメーションを毎回頭から再生させる
+    card.style.animation = 'none';
+    void card.offsetWidth; // 強制リフローでアニメーションをリセットする
+    card.style.animation = '';
+
+    if (typeof AudioManager !== 'undefined' && AudioManager.playSE) AudioManager.playSE('win');
+}
+
+// --- 演出を閉じる。キューに次があれば少し間を置いて続けて表示する ---
+function closeAchievementCelebration() {
+    const overlay = document.getElementById('achievement-celebration-overlay');
+    if (overlay) overlay.classList.add('hidden');
+    if (_achvCelebrationQueue.length > 0) {
+        setTimeout(showNextAchievementCelebration, 300);
+    }
 }

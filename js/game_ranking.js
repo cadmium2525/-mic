@@ -100,11 +100,12 @@ async function loadAndRenderAccountStats() {
     if (!container) return;
     container.innerHTML = `<p class="text-gray-500">読み込み中…</p>`;
 
-    const [kinStats, usageTop, pvpStats, endlessStats] = await Promise.all([
+    const [kinStats, usageTop, pvpStats, endlessStats, diamondBalance] = await Promise.all([
         (typeof fetchMyKinNejikiStats === 'function') ? fetchMyKinNejikiStats() : Promise.resolve(null),
         (typeof fetchMyKinNejikiMonsterUsageTop === 'function') ? fetchMyKinNejikiMonsterUsageTop(5) : Promise.resolve([]),
         (typeof fetchMyPvpTotalStats === 'function') ? fetchMyPvpTotalStats() : Promise.resolve(null),
-        (typeof fetchMyEndlessStats === 'function') ? fetchMyEndlessStats() : Promise.resolve(null)
+        (typeof fetchMyEndlessStats === 'function') ? fetchMyEndlessStats() : Promise.resolve(null),
+        (typeof fetchMyDiamondBalance === 'function') ? fetchMyDiamondBalance() : Promise.resolve(0)
     ]);
 
     const kinRuns = kinStats ? kinStats.totalRuns : 0;
@@ -131,7 +132,11 @@ async function loadAndRenderAccountStats() {
     }
 
     container.innerHTML = `
-        <div class="grid grid-cols-2 gap-2">
+        <div class="bg-gradient-to-r from-sky-900/60 to-cyan-900/40 border border-sky-700/60 rounded-lg p-2 flex items-center justify-between">
+            <p class="text-sky-200 font-bold">💎 ダイヤ残高</p>
+            <p class="font-black text-cyan-300 text-base">${(diamondBalance || 0).toLocaleString()}</p>
+        </div>
+        <div class="grid grid-cols-2 gap-2 mt-2">
             <div class="bg-[#150b07] rounded-lg p-2">
                 <p class="text-gray-400">🏭 ガッツファクトリー</p>
                 <p class="text-white mt-1">プレイ回数<br><span class="font-bold text-amber-300 text-sm">${kinRuns}</span></p>

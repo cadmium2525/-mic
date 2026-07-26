@@ -99,13 +99,96 @@ const SKILL_EFFECT_CONFIGS = {
     hazard:        { particles: ['🪨'],          motion: 'ground_spread', count: 4, size: 16, duration: 600 },
 };
 
+// =====================================================
+// モンスター別の丁寧なモーション演出（カスタムモーション）
+// ・上のSKILL_EFFECT_TYPEによる汎用エフェクトとは別に、技キー単位で完全にオリジナルの
+//   モーション関数を登録できる仕組み。モンスター1体ずつ、js/monster_motion_〇〇.js のような
+//   専用ファイルに切り出して少しずつ丁寧な演出を追加していくための土台。
+// ・登録された技は、汎用エフェクト（絵文字の点滅）より優先してこちらが再生される。
+// =====================================================
+const CUSTOM_SKILL_MOTIONS = {};        // 技キー → モーション関数
+const CUSTOM_SKILL_MOTIONS_BY_NAME = {}; // 技名 → モーション関数（PvPリアルタイム対戦のログ再生用）
+
+// --- 技キー単位でカスタムモーションを登録する。専用ファイル側から呼び出して使う ---
+function registerCustomSkillMotion(skKey, motionFn) {
+    CUSTOM_SKILL_MOTIONS[skKey] = motionFn;
+    if (typeof SKILLS_DB !== 'undefined' && SKILLS_DB[skKey] && SKILLS_DB[skKey].name) {
+        CUSTOM_SKILL_MOTIONS_BY_NAME[SKILLS_DB[skKey].name] = motionFn;
+    }
+}
+
+// --- バトル画面の陣営アイコン／スプライト枠を side から取得する共通ヘルパー群 ---
+function getBattleIconEl(side) {
+    return document.getElementById(side === 'player' ? 'battle-player-icon' : 'battle-enemy-icon');
+}
+function getBattleSpriteContainerEl(side) {
+    return document.getElementById(side === 'player' ? 'battle-player-sprite-container' : 'battle-enemy-sprite-container');
+}
+// アイコン内の実際に見た目を動かすべき要素（画像が読み込めていればimg、なければ絵文字ごとアイコン自体）
+function getSpriteAnimTargetEl(side) {
+    const iconEl = getBattleIconEl(side);
+    if (!iconEl) return null;
+    return iconEl.querySelector('img.monster-visual-img') || iconEl;
+}
+function otherSide(side) {
+    return side === 'player' ? 'enemy' : 'player';
+}
+function getElCenter(el) {
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+// --- カスタムモーション用の汎用パーティクル生成ヘルパー ---
+// spawnSkillParticleEffectと役割は同じだが、キーフレームを呼び出し側で自由に指定できる版。
+function spawnCustomParticle(text, x, y, opts = {}) {
+    const { size = 24, duration = 400, delay = 0, keyframes, color } = opts;
+    const particle = document.createElement('div');
+    particle.textContent = text;
+    const glowShadow = color ? `0 0 8px ${color}, 0 0 4px rgba(0,0,0,0.5)` : '0 0 6px rgba(0,0,0,0.5)';
+    particle.style.cssText = `position:fixed; left:${x}px; top:${y}px; font-size:${size}px; line-height:1; pointer-events:none; z-index:9999; will-change:transform,opacity; text-shadow:${glowShadow};`;
+    document.body.appendChild(particle);
+
+    const kf = keyframes || [{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 0 }];
+    try {
+        const anim = particle.animate(kf, { duration, delay, easing: 'ease-out', fill: 'forwards' });
+        anim.onfinish = () => particle.remove();
+        setTimeout(() => particle.remove(), duration + delay + 200);
+    } catch (e) {
+        particle.remove();
+    }
+    return particle;
+}
+
+// --- 自分自身の周囲をぐるっと囲むように粒子を舞わせる（自己強化・自己回復系の演出用） ---
+// containerEl: 発動者のスプライト枠 / text: 絵文字 / count: 個数 / size: フォントサイズ / duration: 再生時間 / radius: 広がる半径(px)
+function spawnSelfParticleRing(containerEl, text, count, size, duration, radius = 46) {
+    if (!containerEl) return;
+    const { x, y } = getElCenter(containerEl);
+    for (let i = 0; i < count; i++) {
+        const angle = (Math.PI * 2 * i) / count + Math.random() * 0.4;
+        const startX = x + Math.cos(angle) * radius * 0.25;
+        const startY = y + Math.sin(angle) * radius * 0.25;
+        const endDx = Math.cos(angle) * radius;
+        const endDy = Math.sin(angle) * radius * 0.6 - 12; // 少し上方向に広がりながら舞う
+        const delay = i * 45 * EFFECT_SPEED_MULTIPLIER;
+        spawnCustomParticle(text, startX, startY, {
+            size, duration, delay,
+            keyframes: [
+                { transform: 'translate(-50%,-50%) scale(0.3)', opacity: 0 },
+                { transform: `translate(${endDx}px, ${endDy}px) translate(-50%,-50%) scale(1.1) rotate(200deg)`, opacity: 1, offset: 0.5 },
+                { transform: `translate(${endDx * 1.3}px, ${endDy * 1.3 - 16}px) translate(-50%,-50%) scale(0.8) rotate(360deg)`, opacity: 0 }
+            ]
+        });
+    }
+}
+
 // --- 技キー単位でエフェクトの色味・絵文字を個別に上書きするための設定 ---
 // SKILL_EFFECT_TYPE で分類した「見た目のベース」（motion/count/size/duration）はそのまま使い、
 // 特定の技だけ色味・絵文字を変えたい場合にここで上書きする（未指定の項目はベース設定を継承する）。
 // color: ビーム本体の発光色（CSSカラー）。motion:'beam' のときのみ使用される。
 const SKILL_EFFECT_OVERRIDES = {
     flame_beam:   { color: '#ff4d3d', particles: ['🔥'] }, // フレイムビーム（ヒノトリ）：赤を基調にした火炎ビーム
-    cho_mochihou: { color: '#ff6fc4', particles: ['🌸'] }, // 超もっち砲（モッチー）：ピンクを基調にした一撃
+    cho_mochihou: { color: '#ff6fc4', particles: ['🌸'], beamWidth: 16 }, // 超もっち砲（モッチー）：ピンクを基調にした一撃。太さを通常ビームの2倍に
     flower_beam:  { color: '#7ed957', particles: ['🌼'] }, // フラワービーム（プラント）：緑を基調にした光線
     dokuro_beam:  { color: '#9b6bff', particles: ['💀'] }, // ドクロビーム：紫を基調にした怪光線
 };
@@ -165,7 +248,7 @@ function spawnSkillParticleEffect(fromEl, toEl, config) {
     // --- ビーム本体（発光する帯）を1本描画する。motion:'beam' の技のみ ---
     // 発動者→対象へ一直線に「撃つ」動きを、伸びる光の帯＋着弾フラッシュで表現する。
     if (config.motion === 'beam') {
-        spawnBeamLine(fromX, fromY, dx, dy, config.color || '#ffe066', baseDuration);
+        spawnBeamLine(fromX, fromY, dx, dy, config.color || '#ffe066', baseDuration, config.beamWidth || 8);
     }
 
     for (let i = 0; i < count; i++) {
@@ -291,15 +374,15 @@ function spawnSkillParticleEffect(fromEl, toEl, config) {
 
 // --- ビーム本体（発光する帯）を1本描画する ---
 // 発動者の位置から対象に向けて、一瞬で伸びる光の帯として表現する（実際に光線を撃つ見た目にするため）。
-// fromX/fromY: 発射開始位置 / dx,dy: 対象までの相対距離 / color: 発光色（CSSカラー） / totalDuration: 全体の再生時間(ms)
-function spawnBeamLine(fromX, fromY, dx, dy, color, totalDuration) {
+// fromX/fromY: 発射開始位置 / dx,dy: 対象までの相対距離 / color: 発光色（CSSカラー） / totalDuration: 全体の再生時間(ms) / width: 帯の太さ(px、既定8)
+function spawnBeamLine(fromX, fromY, dx, dy, color, totalDuration, width = 8) {
     const length = Math.sqrt(dx * dx + dy * dy);
     if (!length) return;
     const angle = Math.atan2(dy, dx) * 180 / Math.PI;
 
     const beam = document.createElement('div');
-    beam.style.cssText = `position:fixed; left:${fromX}px; top:${fromY}px; width:${length}px; height:8px;
-        transform-origin:0% 50%; pointer-events:none; z-index:9998; will-change:transform,opacity; border-radius:4px;
+    beam.style.cssText = `position:fixed; left:${fromX}px; top:${fromY}px; width:${length}px; height:${width}px;
+        transform-origin:0% 50%; pointer-events:none; z-index:9998; will-change:transform,opacity; border-radius:${width}px;
         background:linear-gradient(90deg, ${color}00, ${color}ff 20%, ${color}ff 80%, ${color}00);
         box-shadow:0 0 10px 3px ${color}, 0 0 22px 6px ${color}80;`;
     document.body.appendChild(beam);
@@ -323,6 +406,10 @@ function spawnBeamLine(fromX, fromY, dx, dy, color, totalDuration) {
 
 // --- 育成中バトル（masmon_battle.js）用：技キーから直接再生 ---
 function playSkillVisualEffect(skKey, side) {
+    if (CUSTOM_SKILL_MOTIONS[skKey]) {
+        CUSTOM_SKILL_MOTIONS[skKey](side);
+        return;
+    }
     const effType = SKILL_EFFECT_TYPE[skKey];
     if (!effType) return;
     playSkillVisualEffectByType(effType, side, SKILL_EFFECT_OVERRIDES[skKey]);
@@ -330,6 +417,10 @@ function playSkillVisualEffect(skKey, side) {
 
 // --- PvPリアルタイム対戦（masmon_realtime_battle.js）用：技名から再生 ---
 function playSkillVisualEffectByName(skillName, side) {
+    if (CUSTOM_SKILL_MOTIONS_BY_NAME[skillName]) {
+        CUSTOM_SKILL_MOTIONS_BY_NAME[skillName](side);
+        return;
+    }
     const effType = SKILL_NAME_EFFECT_TYPE[skillName];
     if (!effType) return;
     playSkillVisualEffectByType(effType, side, SKILL_NAME_EFFECT_OVERRIDE[skillName]);

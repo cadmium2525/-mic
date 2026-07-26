@@ -181,6 +181,9 @@ function saveKinNejikiSuspend() {
             nextBattlePrepared: KIN_NEJIKI_STATE.nextBattlePrepared || null,
             // タスクキル検知回数も保存し、再開後に別セッションへ引き継がれるようにする
             taskKillCount: KIN_NEJIKI_STATE.taskKillCount || 0,
+            // 交換回数（ボーナス枠の判定に使う）も保存する。これが抜けていると、再開のたびに
+            // カウントが0にリセットされ、ボーナス枠が永遠に出現しなくなる不具合になる。
+            exchangeCount: KIN_NEJIKI_STATE.exchangeCount || 0,
             savedAt: Date.now()
         };
         localStorage.setItem(KIN_NEJIKI_SUSPEND_KEY, JSON.stringify(payload));
@@ -228,6 +231,9 @@ function resumeKinNejikiRun() {
     // 変えないようにするため。無ければnullのままとなり、従来通りその場で生成される）
     KIN_NEJIKI_STATE.nextBattlePrepared = saved.nextBattlePrepared || null;
     KIN_NEJIKI_STATE.taskKillCount = saved.taskKillCount || 0;
+    // 交換回数（ボーナス枠の判定に使う）も復元する。以前はここが抜けていたため、
+    // 再開のたびに交換カウントが0に戻り、ボーナス枠が出現しなくなる不具合があった。
+    KIN_NEJIKI_STATE.exchangeCount = saved.exchangeCount || 0;
 
     showToast(`セーブデータから再開します（通算${saved.totalWins}勝・第${saved.set}セット）`);
     advanceToNextKinNejikiBattle();
@@ -283,12 +289,18 @@ function kinNejikiRollEquipmentForSet(setNumber, excludeEquipIds, guaranteeEquip
 //                  対面しないようにするための調整。省略可）
 // guaranteeEquip: trueの場合、型・ランダム抽選いずれの経路でも「未装備」にはせず必ず何かを持たせる
 //                 （ガッツファクトリーの敵生成用。省略時はfalse＝従来通り）
-function generateKinNejikiRentalMonster(speciesId, setNumber, excludeEquipIds, guaranteeEquip) {
+// forceLatestMoldOnly: trueの場合、その時点で解放済みの型の中でも「最新（最後に解放された）型」のみから選ぶ。
+//                      （省略時はfalse＝解放済みの型全体からランダム。通常の敵生成はこちら。
+//                      　交換画面のボーナスモンスター専用に、型1〜型2のような既に見慣えた古い型が
+//                      　出てしまい「1セット先の強さ」らしさが薄れてしまう問題への対処）
+function generateKinNejikiRentalMonster(speciesId, setNumber, excludeEquipIds, guaranteeEquip, forceLatestMoldOnly) {
     const tmpl = MONSTER_TEMPLATES[speciesId];
     if (!tmpl) return null;
 
     const unlockedMoldCount = (typeof getMoldUnlockCountForSet === 'function') ? getMoldUnlockCountForSet(setNumber) : 1;
-    const mold = (typeof pickMonsterMold === 'function') ? pickMonsterMold(speciesId, unlockedMoldCount, excludeEquipIds, undefined, guaranteeEquip) : null;
+    // forceLatestMoldOnly指定時は、解放済みの中でも最後の1段階（最新の型）だけに絞り込む
+    const moldMinIndex = forceLatestMoldOnly ? Math.max(0, unlockedMoldCount - 1) : undefined;
+    const mold = (typeof pickMonsterMold === 'function') ? pickMonsterMold(speciesId, unlockedMoldCount, excludeEquipIds, moldMinIndex, guaranteeEquip) : null;
 
     let chosenSkills, equipInstance;
     if (mold) {
@@ -345,7 +357,8 @@ function generateKinNejikiRentalMonster(speciesId, setNumber, excludeEquipIds, g
 // excludeEquipIds:   各個体の装備から除外したい装備IDの配列（省略可）
 // count:             生成する体数（既定6）
 // guaranteeEquip:    trueの場合、生成する全個体を必ず何かしらの装備ありにする（省略時はfalse＝従来通り）
-function generateKinNejikiOffer(setNumber, excludeSpeciesIds, excludeEquipIds, count, guaranteeEquip) {
+// forceLatestMoldOnly: trueの場合、各個体の型を「その時点で解放済みの中で最新の型」のみに限定する（省略可）
+function generateKinNejikiOffer(setNumber, excludeSpeciesIds, excludeEquipIds, count, guaranteeEquip, forceLatestMoldOnly) {
     const n = count || 6;
     const excludeSpecies = excludeSpeciesIds || [];
 
@@ -354,7 +367,7 @@ function generateKinNejikiOffer(setNumber, excludeSpeciesIds, excludeEquipIds, c
 
     const shuffledSpecies = [...candidatePool].sort(() => Math.random() - 0.5);
     const chosenSpecies = shuffledSpecies.slice(0, n);
-    return chosenSpecies.map(sp => generateKinNejikiRentalMonster(sp, setNumber, excludeEquipIds, guaranteeEquip));
+    return chosenSpecies.map(sp => generateKinNejikiRentalMonster(sp, setNumber, excludeEquipIds, guaranteeEquip, forceLatestMoldOnly));
 }
 
 // --- 対戦相手チーム（3体）を生成。ボス戦の場合は専用ボス＋帯同2体を返す ---
@@ -1244,11 +1257,6 @@ function kinNejikiHandleBattleEnd(isWin) {
     }
 
     KIN_NEJIKI_STATE.totalWins++;
-    // 実績の連勝バッジ（10/25/49）を、ちょうど到達した瞬間にその場で知らせる
-    const KIN_STREAK_BADGE_THRESHOLDS = [10, 25, 49];
-    if (KIN_STREAK_BADGE_THRESHOLDS.includes(KIN_NEJIKI_STATE.totalWins) && typeof showToast === 'function') {
-        showToast(`🎉 実績解除：連勝${KIN_NEJIKI_STATE.totalWins}${KIN_NEJIKI_STATE.totalWins === 49 ? '（完全制覇！）' : ''}！`);
-    }
     const defeatedTeam = [...MASMON_BATTLE_STATE.enemyMeta];
     KIN_NEJIKI_STATE.pendingSwap = {
         defeatedTeam,
@@ -1274,7 +1282,7 @@ function kinNejikiHandleBattleEnd(isWin) {
     const bonusSlotCount = Math.floor((KIN_NEJIKI_STATE.exchangeCount || 0) / 7);
     if (bonusSlotCount > 0) {
         const usedSpecies = defeatedTeam.map(m => m && m.speciesId).filter(Boolean);
-        const bonusCandidates = generateKinNejikiOffer(next.set + 1, usedSpecies, exclusions.equip, bonusSlotCount, true);
+        const bonusCandidates = generateKinNejikiOffer(next.set + 1, usedSpecies, exclusions.equip, bonusSlotCount, true, true);
         bonusCandidates.forEach(m => {
             if (!m) return;
             m.isBonusSlot = true;
@@ -1546,6 +1554,16 @@ async function kinNejikiFinishRun(cleared) {
     }
     renderKinNejikiResultScreen(finalWins, cleared);
     changeScreen('screen-kinnejiki-result');
+    // ゲームオーバー・クリアいずれの場合も、この時点の最新記録を基準に新規実績を判定し、
+    // 未通知のものがあれば特別演出（ポップアップ）で知らせる
+    if (typeof checkAndCelebrateNewAchievements === 'function') checkAndCelebrateNewAchievements();
+    // このランで獲得したダイヤをまとめて付与する（セットが進むほど1勝あたりの獲得量が増える）
+    if (typeof awardKinNejikiRunDiamonds === 'function') {
+        const earnedDiamonds = await awardKinNejikiRunDiamonds(finalWins);
+        if (earnedDiamonds > 0 && typeof showToast === 'function') {
+            showToast(`💎 ダイヤを${earnedDiamonds}個獲得！`);
+        }
+    }
 }
 
 // ランキング保存はtransaction()を使い、サーバー側の最新値を基準に「自己ベストを更新する
