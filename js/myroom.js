@@ -1,8 +1,9 @@
 // =====================================================
 // myroom.js
 // マイルーム画面（フェーズ4）
-// ・家具：背景画像内の固定スロットにタップで設置。背景ごとに独立したスロット構成を持つが、
-//   「同じ家具を何個まで置けるか」は所持数を基準に背景をまたいで共通でカウントする
+// ・家具：床の好きな場所に自由にドラッグ配置できる（ガチャの円盤石と同じドラッグ操作）。
+//   配置後もタップすると操作パネルが出て、サイズ変更・回転・左右反転・再配置（再ドラッグ）・
+//   撤去ができる。「同じ家具を何個まで置けるか」は所持数を基準に背景をまたいで共通でカウントする
 //   （例：木の椅子を1個しか持っていなければ、AとBのどちらか片方にしか置けない）
 // ・モンスター：手前の床エリアを自由に歩き回る（ランダム徘徊AI）。
 //   家具と違い、モンスターは所持数を消費しない「観賞用の分身」として扱うため、
@@ -11,24 +12,20 @@
 // ・所持データは player_inventory/{pid}/furniture, player_inventory/{pid}/monsters
 //   （ガチャで既に書き込み済み）を読み込んで選択肢にする
 // ・設置状態は player_myroom/{pid} に保存し、次回訪問時も復元する
-//   { backgroundId, furnitureSlots: { bgId: { slotId: furnitureId } },
+//   { backgroundId,
+//     placedFurniture: { bgId: { instanceKey: {furnitureId, xPct, yPct, scale, rotation, flipped} } },
 //     placedMonsters: { bgId: { placementKey: {speciesId, auraKey} } } }
 // =====================================================
 
-// --- マイルームの背景一覧。背景ごとに家具スロットの座標・モンスターの徘徊範囲を個別に持つ ---
-// （背景によって棚の位置や地面の形が違うため、スロット座標も背景ごとに変える必要がある）
+// --- マイルームの背景一覧。背景ごとにモンスターの徘徊範囲・家具の配置可能範囲を個別に持つ ---
 const MYROOM_BACKGROUNDS = {
     A: {
         id: 'A',
         name: '小屋',
         emoji: '🏠',
         file: 'images/myroom/マイルームA.png',
-        furnitureSlots: [
-            { id: 'left_shelf', xPct: 23, yPct: 33, label: '左の棚' },
-            { id: 'right_shelf', xPct: 78, yPct: 34, label: '右の棚' },
-            { id: 'floor_crate', xPct: 82, yPct: 49, label: '床のクレート' }
-        ],
         wanderBounds: { xMin: 10, xMax: 90, yMin: 60, yMax: 88 },
+        furnitureBounds: { xMin: 8, xMax: 92, yMin: 25, yMax: 90 },
         tokenSizePx: 84 // 小屋は奥行きが浅いぶん、モンスターを少し大きめに表示する
     },
     B: {
@@ -36,17 +33,18 @@ const MYROOM_BACKGROUNDS = {
         name: 'ファーム',
         emoji: '🌾',
         file: 'images/myroom/マイルームB.png',
-        furnitureSlots: [
-            { id: 'left_fence', xPct: 14, yPct: 79, label: '左手前の柵' },
-            { id: 'right_fence', xPct: 86, yPct: 79, label: '右手前の柵' },
-            { id: 'center_ground', xPct: 50, yPct: 66, label: '中央の地面' }
-        ],
         wanderBounds: { xMin: 8, xMax: 92, yMin: 48, yMax: 90 },
+        furnitureBounds: { xMin: 5, xMax: 95, yMin: 30, yMax: 92 },
         tokenSizePx: 56 // ちょうど良いサイズなので現状維持
     }
 };
 const MYROOM_DEFAULT_BACKGROUND_ID = 'A';
 const MYROOM_MAX_MONSTERS = 4;
+const MYROOM_FURNITURE_BASE_SIZE_PX = 90; // scale:1のときの基準サイズ（正方形の当たり判定・表示枠）
+const MYROOM_FURNITURE_SCALE_MIN = 0.5;
+const MYROOM_FURNITURE_SCALE_MAX = 2.0;
+const MYROOM_FURNITURE_SCALE_STEP = 0.15;
+const MYROOM_FURNITURE_ROTATE_STEP = 45;
 
 function getCurrentMyRoomBackground() {
     return MYROOM_BACKGROUNDS[MYROOM_STATE.backgroundId] || MYROOM_BACKGROUNDS[MYROOM_DEFAULT_BACKGROUND_ID];
@@ -54,18 +52,19 @@ function getCurrentMyRoomBackground() {
 
 const MYROOM_STATE = {
     backgroundId: MYROOM_DEFAULT_BACKGROUND_ID,
-    furnitureSlots: {},    // { bgId: { slotId -> furnitureId } }
+    placedFurniture: {},   // { bgId: { instanceKey -> { furnitureId, xPct, yPct, scale, rotation, flipped } } }
     placedMonsters: {},    // { bgId: { placementKey -> { speciesId, auraKey } } }
-    ownedFurniture: [],    // [{id, count, name, emoji}]
+    ownedFurniture: [],    // [{id, count, name, emoji, image}]
     ownedMonsters: [],     // [{key, speciesId, auraKey, count, name, emoji}]
     wanderTimers: {},      // placementKey -> timeoutId
-    activeSlotId: null     // 現在ピッカーで選択中の家具スロットID
+    activeFurnitureKey: null, // 現在操作パネルを開いている家具インスタンスのキー
+    furnitureDragging: false
 };
 
-// --- 現在の背景IDに対応する家具スロット・配置モンスターのオブジェクトを取得する（無ければ作る） ---
-function getFurnitureSlotsForBg(bgId) {
-    if (!MYROOM_STATE.furnitureSlots[bgId]) MYROOM_STATE.furnitureSlots[bgId] = {};
-    return MYROOM_STATE.furnitureSlots[bgId];
+// --- 現在の背景IDに対応する配置済み家具・配置モンスターのオブジェクトを取得する（無ければ作る） ---
+function getPlacedFurnitureForBg(bgId) {
+    if (!MYROOM_STATE.placedFurniture[bgId]) MYROOM_STATE.placedFurniture[bgId] = {};
+    return MYROOM_STATE.placedFurniture[bgId];
 }
 function getPlacedMonstersForBg(bgId) {
     if (!MYROOM_STATE.placedMonsters[bgId]) MYROOM_STATE.placedMonsters[bgId] = {};
@@ -73,15 +72,14 @@ function getPlacedMonstersForBg(bgId) {
 }
 
 // --- 指定した家具IDが、全背景を通じて合計何個「設置済み」になっているかを数える ---
-// excludeBgId/excludeSlotId : 今まさに編集中のスロット自身は集計から除外する
-// （そうしないと「今この場所に置いてある家具」自身が原因で自分自身を選べなくなってしまう）
-function countFurnitureUsedAcrossBackgrounds(furnitureId, excludeBgId, excludeSlotId) {
+// excludeBgId/excludeInstanceKey : 今まさに編集中のインスタンス自身は集計から除外する
+function countFurnitureUsedAcrossBackgrounds(furnitureId, excludeBgId, excludeInstanceKey) {
     let count = 0;
-    Object.keys(MYROOM_STATE.furnitureSlots).forEach(bgId => {
-        const slots = MYROOM_STATE.furnitureSlots[bgId] || {};
-        Object.keys(slots).forEach(slotId => {
-            if (bgId === excludeBgId && slotId === excludeSlotId) return;
-            if (slots[slotId] === furnitureId) count++;
+    Object.keys(MYROOM_STATE.placedFurniture).forEach(bgId => {
+        const instances = MYROOM_STATE.placedFurniture[bgId] || {};
+        Object.keys(instances).forEach(instanceKey => {
+            if (bgId === excludeBgId && instanceKey === excludeInstanceKey) return;
+            if (instances[instanceKey].furnitureId === furnitureId) count++;
         });
     });
     return count;
@@ -116,7 +114,7 @@ async function saveMyRoomPlacement() {
     try {
         await firebaseDb.ref(`player_myroom/${pid}`).update({
             backgroundId: MYROOM_STATE.backgroundId,
-            furnitureSlots: MYROOM_STATE.furnitureSlots,
+            placedFurniture: MYROOM_STATE.placedFurniture,
             placedMonsters: MYROOM_STATE.placedMonsters
         });
     } catch (e) {
@@ -127,7 +125,13 @@ async function saveMyRoomPlacement() {
 function buildOwnedFurnitureList(furnitureCounts) {
     return Object.keys(furnitureCounts).map(id => {
         const def = (typeof GACHA_FURNITURE_POOL !== 'undefined') ? GACHA_FURNITURE_POOL.find(f => f.id === id) : null;
-        return { id, count: furnitureCounts[id] || 0, name: def ? def.name : id, emoji: def ? def.emoji : '📦' };
+        return {
+            id,
+            count: furnitureCounts[id] || 0,
+            name: def ? def.name : id,
+            emoji: def ? def.emoji : '📦',
+            image: def ? def.image : null
+        };
     }).filter(f => f.count > 0);
 }
 
@@ -159,11 +163,11 @@ async function openMyRoomScreen() {
     MYROOM_STATE.ownedFurniture = buildOwnedFurnitureList(data.furnitureCounts);
     MYROOM_STATE.ownedMonsters = buildOwnedMonsterList(data.monsterCounts);
     MYROOM_STATE.backgroundId = (data.placement && data.placement.backgroundId) || MYROOM_DEFAULT_BACKGROUND_ID;
-    MYROOM_STATE.furnitureSlots = (data.placement && data.placement.furnitureSlots) || {};
+    MYROOM_STATE.placedFurniture = (data.placement && data.placement.placedFurniture) || {};
     MYROOM_STATE.placedMonsters = (data.placement && data.placement.placedMonsters) || {};
 
     applyMyRoomBackground();
-    renderMyRoomFurnitureSlots();
+    renderMyRoomFurnitureItems();
     renderMyRoomMonsterFloor();
     await checkMyRoomFirstVisitTicket();
     refreshMyRoomTicketBanner();
@@ -205,7 +209,7 @@ function selectMyRoomBackground(bgId) {
     }
     MYROOM_STATE.backgroundId = bgId;
     applyMyRoomBackground();
-    renderMyRoomFurnitureSlots();
+    renderMyRoomFurnitureItems();
     renderMyRoomMonsterFloor();
     closeMyRoomBackgroundPicker();
     saveMyRoomPlacement();
@@ -245,112 +249,273 @@ function closeMyRoomScreen() {
 }
 
 // =====================================================
-// 家具スロット
+// 家具（自由配置）
+// ・ガチャの円盤石と同じ考え方：指でドラッグして好きな場所に配置
+// ・配置後もタップすると操作パネルが開き、サイズ・向き・反転を調整、再配置（再ドラッグ）、撤去ができる
 // =====================================================
-function renderMyRoomFurnitureSlots() {
+function renderMyRoomFurnitureItems() {
     const container = document.getElementById('myroom-furniture-slots');
     if (!container) return;
     container.innerHTML = '';
 
     const bg = getCurrentMyRoomBackground();
-    const slotsForBg = getFurnitureSlotsForBg(bg.id);
-    bg.furnitureSlots.forEach(slot => {
-        const furnitureId = slotsForBg[slot.id];
-        const def = furnitureId ? MYROOM_STATE.ownedFurniture.find(f => f.id === furnitureId) : null;
-
-        const marker = document.createElement('div');
-        marker.className = 'myroom-slot-marker absolute flex items-center justify-center cursor-pointer';
-        marker.style.left = `${slot.xPct}%`;
-        marker.style.top = `${slot.yPct}%`;
-        marker.style.transform = 'translate(-50%,-50%)';
-        marker.onclick = () => openMyRoomFurniturePicker(slot.id);
-
-        if (def) {
-            marker.innerHTML = `<span class="myroom-slot-icon">${def.emoji}</span>`;
-        } else {
-            marker.innerHTML = `<span class="myroom-slot-empty-hint">＋</span>`;
-        }
-        container.appendChild(marker);
+    const instances = getPlacedFurnitureForBg(bg.id);
+    Object.keys(instances).forEach(instanceKey => {
+        spawnMyRoomFurnitureElement(instanceKey, instances[instanceKey], container);
     });
 }
 
-function openMyRoomFurniturePicker(slotId) {
-    MYROOM_STATE.activeSlotId = slotId;
-    const bg = getCurrentMyRoomBackground();
-    const slot = bg.furnitureSlots.find(s => s.id === slotId);
+function getMyRoomFurnitureDef(furnitureId) {
+    return (MYROOM_STATE.ownedFurniture.find(f => f.id === furnitureId))
+        || (typeof GACHA_FURNITURE_POOL !== 'undefined' ? GACHA_FURNITURE_POOL.find(f => f.id === furnitureId) : null);
+}
+
+// --- transform文字列を組み立てる（中央寄せ＋回転＋拡大縮小＋左右反転をまとめて1つのtransformにする） ---
+function buildMyRoomFurnitureTransform(instance) {
+    const scale = instance.scale || 1;
+    const flipX = instance.flipped ? -1 : 1;
+    const rotation = instance.rotation || 0;
+    return `translate(-50%,-50%) rotate(${rotation}deg) scale(${flipX * scale}, ${scale})`;
+}
+
+function spawnMyRoomFurnitureElement(instanceKey, instance, container) {
+    const def = getMyRoomFurnitureDef(instance.furnitureId);
+    if (!def) return;
+
+    const el = document.createElement('div');
+    el.className = 'myroom-furniture-item absolute cursor-pointer flex items-center justify-center text-6xl';
+    el.style.position = 'absolute';
+    el.style.width = `${MYROOM_FURNITURE_BASE_SIZE_PX}px`;
+    el.style.height = `${MYROOM_FURNITURE_BASE_SIZE_PX}px`;
+    el.style.left = `${instance.xPct}%`;
+    el.style.top = `${instance.yPct}%`;
+    el.style.transform = buildMyRoomFurnitureTransform(instance);
+    el.style.touchAction = 'none';
+    el.dataset.instanceKey = instanceKey;
+    container.appendChild(el);
+
+    renderFurnitureIcon(el, def, { imgClassName: 'w-full h-full object-contain pointer-events-none drop-shadow-lg' });
+
+    setupMyRoomFurnitureDragHandlers(el, instanceKey);
+}
+
+// --- ドラッグ操作（Pointer Eventsでマウス・タッチ両対応。ガチャの円盤石ドラッグと同じ考え方） ---
+function setupMyRoomFurnitureDragHandlers(el, instanceKey) {
+    let pointerId = null;
+    let startClientX = 0, startClientY = 0;
+    let moved = false;
+    const TAP_THRESHOLD_PX = 6;
+
+    el.addEventListener('pointerdown', (e) => {
+        pointerId = e.pointerId;
+        startClientX = e.clientX;
+        startClientY = e.clientY;
+        moved = false;
+        el.style.transition = 'none';
+        el.style.zIndex = '50';
+        el.setPointerCapture(e.pointerId);
+        e.preventDefault();
+        e.stopPropagation();
+    });
+
+    el.addEventListener('pointermove', (e) => {
+        if (e.pointerId !== pointerId) return;
+        const dx = e.clientX - startClientX;
+        const dy = e.clientY - startClientY;
+        if (!moved && Math.hypot(dx, dy) < TAP_THRESHOLD_PX) return;
+        moved = true;
+
+        const container = document.getElementById('myroom-area');
+        if (!container) return;
+        const rect = container.getBoundingClientRect();
+        let xPct = ((e.clientX - rect.left) / rect.width) * 100;
+        let yPct = ((e.clientY - rect.top) / rect.height) * 100;
+        const bounds = getCurrentMyRoomBackground().furnitureBounds;
+        xPct = Math.min(bounds.xMax, Math.max(bounds.xMin, xPct));
+        yPct = Math.min(bounds.yMax, Math.max(bounds.yMin, yPct));
+        el.style.left = `${xPct}%`;
+        el.style.top = `${yPct}%`;
+        e.preventDefault();
+    });
+
+    el.addEventListener('pointerup', (e) => {
+        if (e.pointerId !== pointerId) return;
+        pointerId = null;
+        el.style.zIndex = '';
+        el.style.transition = ''; // ドラッグ中に外していたtransitionを戻す（ボタン操作時のアニメーションのため）
+
+        const bg = getCurrentMyRoomBackground();
+        const instances = getPlacedFurnitureForBg(bg.id);
+        const instance = instances[instanceKey];
+        if (!instance) return;
+
+        if (moved) {
+            // ドラッグ操作：着地位置を%換算して保存する
+            const container = document.getElementById('myroom-area');
+            if (container) {
+                const rect = container.getBoundingClientRect();
+                let xPct = ((e.clientX - rect.left) / rect.width) * 100;
+                let yPct = ((e.clientY - rect.top) / rect.height) * 100;
+                const bounds = bg.furnitureBounds;
+                xPct = Math.min(bounds.xMax, Math.max(bounds.xMin, xPct));
+                yPct = Math.min(bounds.yMax, Math.max(bounds.yMin, yPct));
+                instance.xPct = xPct;
+                instance.yPct = yPct;
+            }
+            saveMyRoomPlacement();
+        } else {
+            // タップ操作：操作パネル（サイズ・回転・反転・撤去）を開く
+            openMyRoomFurnitureOptions(instanceKey);
+        }
+    });
+
+    el.addEventListener('pointercancel', () => { pointerId = null; el.style.zIndex = ''; });
+}
+
+// --- 家具ピッカー：所持している家具から新しく1つ配置する ---
+function openMyRoomFurniturePicker() {
     const modal = document.getElementById('myroom-furniture-picker-modal');
-    const title = document.getElementById('myroom-furniture-picker-title');
     const list = document.getElementById('myroom-furniture-picker-list');
     if (!modal || !list) return;
-    if (title) title.textContent = `🪑 ${slot ? slot.label : '家具'}に置くものを選ぶ`;
 
-    const currentFurnitureId = getFurnitureSlotsForBg(bg.id)[slotId];
-    let html = '';
-    if (currentFurnitureId) {
-        html += `
-            <button onclick="placeMyRoomFurniture(null)" class="w-full py-2 bg-[#1a120b] hover:bg-[#241b12] text-red-300 text-xs font-bold rounded-lg border border-red-900/70 active:scale-95 transition-all mb-2">
-                ✕ ここを空にする
-            </button>
-        `;
-    }
+    const bg = getCurrentMyRoomBackground();
     if (MYROOM_STATE.ownedFurniture.length === 0) {
-        html += `<p class="text-gray-500 text-[11px] text-center py-6">まだ家具を持っていません。<br>祈りの神殿（ガチャ）で手に入れよう！</p>`;
+        list.innerHTML = `<p class="text-gray-500 text-[11px] text-center py-6">まだ家具を持っていません。<br>祈りの神殿（ガチャ）で手に入れよう！</p>`;
     } else {
-        html += MYROOM_STATE.ownedFurniture.map(f => {
-            const isCurrent = currentFurnitureId === f.id;
-            const usedElsewhere = countFurnitureUsedAcrossBackgrounds(f.id, bg.id, slotId);
+        list.innerHTML = MYROOM_STATE.ownedFurniture.map(f => {
+            const usedElsewhere = countFurnitureUsedAcrossBackgrounds(f.id, null, null);
             const remaining = f.count - usedElsewhere;
-            const isAvailable = isCurrent || remaining > 0;
-            if (!isAvailable) {
+            const iconId = `myroom-furniture-picker-icon-${f.id}`;
+            if (remaining <= 0) {
                 return `
                     <div class="w-full flex items-center gap-2 bg-[#150b07] border border-gray-800 rounded-lg px-2 py-2 opacity-50">
-                        <span class="text-xl grayscale">${f.emoji}</span>
+                        <div id="${iconId}" class="w-8 h-8 flex-shrink-0 flex items-center justify-center text-xl grayscale"></div>
                         <span class="flex-1 text-xs text-gray-500 font-bold">${f.name}</span>
-                        <span class="text-[9px] text-gray-600 font-bold">他の場所で使用中</span>
+                        <span class="text-[9px] text-gray-600 font-bold">全て使用中</span>
                     </div>
                 `;
             }
             return `
-                <button onclick="placeMyRoomFurniture('${f.id}')"
-                    class="w-full flex items-center gap-2 bg-[#1a120b] hover:bg-[#241b12] border ${isCurrent ? 'border-amber-400' : 'border-amber-900/50'} rounded-lg px-2 py-2 text-left active:scale-[0.98] transition-all">
-                    <span class="text-xl">${f.emoji}</span>
+                <button onclick="addNewMyRoomFurnitureInstance('${f.id}')"
+                    class="w-full flex items-center gap-2 bg-[#1a120b] hover:bg-[#241b12] border border-amber-900/50 rounded-lg px-2 py-2 text-left active:scale-[0.98] transition-all">
+                    <div id="${iconId}" class="w-8 h-8 flex-shrink-0 flex items-center justify-center text-xl"></div>
                     <span class="flex-1 text-xs text-amber-100 font-bold">${f.name}</span>
                     <span class="text-[10px] text-gray-400">残り${remaining}／×${f.count}</span>
                 </button>
             `;
         }).join('');
+
+        // アイコン（画像 or 絵文字）を後から個別に描画する
+        MYROOM_STATE.ownedFurniture.forEach(f => {
+            const iconEl = document.getElementById(`myroom-furniture-picker-icon-${f.id}`);
+            if (iconEl) renderFurnitureIcon(iconEl, f, { imgClassName: 'w-full h-full object-contain' });
+        });
     }
-    list.innerHTML = html;
     modal.classList.remove('hidden');
 }
 
 function closeMyRoomFurniturePicker() {
     const modal = document.getElementById('myroom-furniture-picker-modal');
     if (modal) modal.classList.add('hidden');
-    MYROOM_STATE.activeSlotId = null;
 }
 
-function placeMyRoomFurniture(furnitureId) {
-    const slotId = MYROOM_STATE.activeSlotId;
-    if (!slotId) return;
+function addNewMyRoomFurnitureInstance(furnitureId) {
     const bg = getCurrentMyRoomBackground();
-    const slotsForBg = getFurnitureSlotsForBg(bg.id);
-
-    if (furnitureId) {
-        // 念のため、選択操作の間に他で使い切られていないか最終確認する
-        const usedElsewhere = countFurnitureUsedAcrossBackgrounds(furnitureId, bg.id, slotId);
-        const owned = (MYROOM_STATE.ownedFurniture.find(f => f.id === furnitureId) || {}).count || 0;
-        if (usedElsewhere >= owned) {
-            if (typeof showToast === 'function') showToast('その家具は他の場所で使用中で、これ以上置けません');
-            return;
-        }
-        slotsForBg[slotId] = furnitureId;
-    } else {
-        delete slotsForBg[slotId];
+    const usedElsewhere = countFurnitureUsedAcrossBackgrounds(furnitureId, null, null);
+    const owned = (MYROOM_STATE.ownedFurniture.find(f => f.id === furnitureId) || {}).count || 0;
+    if (usedElsewhere >= owned) {
+        if (typeof showToast === 'function') showToast('その家具は他の場所で使用中で、これ以上置けません');
+        return;
     }
-    renderMyRoomFurnitureSlots();
+
+    const bounds = bg.furnitureBounds;
+    const instanceKey = `f_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    const instances = getPlacedFurnitureForBg(bg.id);
+    instances[instanceKey] = {
+        furnitureId,
+        xPct: (bounds.xMin + bounds.xMax) / 2,
+        yPct: (bounds.yMin + bounds.yMax) / 2,
+        scale: 1,
+        rotation: 0,
+        flipped: false
+    };
+    renderMyRoomFurnitureItems();
     closeMyRoomFurniturePicker();
     saveMyRoomPlacement();
+    if (typeof showToast === 'function') showToast('🪑 配置しました。ドラッグして好きな場所に動かせます');
+}
+
+// --- 家具の操作パネル（サイズ・回転・反転・撤去） ---
+function openMyRoomFurnitureOptions(instanceKey) {
+    MYROOM_STATE.activeFurnitureKey = instanceKey;
+    const bg = getCurrentMyRoomBackground();
+    const instance = getPlacedFurnitureForBg(bg.id)[instanceKey];
+    if (!instance) return;
+    const def = getMyRoomFurnitureDef(instance.furnitureId);
+
+    const modal = document.getElementById('myroom-furniture-options-modal');
+    const nameEl = document.getElementById('myroom-furniture-options-name');
+    const iconEl = document.getElementById('myroom-furniture-options-icon');
+    if (!modal) return;
+    if (nameEl) nameEl.textContent = def ? def.name : '家具';
+    if (iconEl) renderFurnitureIcon(iconEl, def, { imgClassName: 'w-full h-full object-contain' });
+
+    modal.classList.remove('hidden');
+}
+
+function closeMyRoomFurnitureOptions() {
+    const modal = document.getElementById('myroom-furniture-options-modal');
+    if (modal) modal.classList.add('hidden');
+    MYROOM_STATE.activeFurnitureKey = null;
+}
+
+function adjustMyRoomFurnitureScale(delta) {
+    const instance = getActiveMyRoomFurnitureInstance();
+    if (!instance) return;
+    const next = Math.round(((instance.scale || 1) + delta) * 100) / 100;
+    instance.scale = Math.min(MYROOM_FURNITURE_SCALE_MAX, Math.max(MYROOM_FURNITURE_SCALE_MIN, next));
+    applyActiveMyRoomFurnitureTransform();
+}
+
+function rotateMyRoomFurniture() {
+    const instance = getActiveMyRoomFurnitureInstance();
+    if (!instance) return;
+    instance.rotation = ((instance.rotation || 0) + MYROOM_FURNITURE_ROTATE_STEP) % 360;
+    applyActiveMyRoomFurnitureTransform();
+}
+
+function flipMyRoomFurniture() {
+    const instance = getActiveMyRoomFurnitureInstance();
+    if (!instance) return;
+    instance.flipped = !instance.flipped;
+    applyActiveMyRoomFurnitureTransform();
+}
+
+function getActiveMyRoomFurnitureInstance() {
+    const key = MYROOM_STATE.activeFurnitureKey;
+    if (!key) return null;
+    const bg = getCurrentMyRoomBackground();
+    return getPlacedFurnitureForBg(bg.id)[key] || null;
+}
+
+function applyActiveMyRoomFurnitureTransform() {
+    const key = MYROOM_STATE.activeFurnitureKey;
+    const instance = getActiveMyRoomFurnitureInstance();
+    if (!key || !instance) return;
+    const el = document.querySelector(`.myroom-furniture-item[data-instance-key="${CSS.escape(key)}"]`);
+    if (el) el.style.transform = buildMyRoomFurnitureTransform(instance);
+    saveMyRoomPlacement();
+}
+
+function removeMyRoomFurniture() {
+    const key = MYROOM_STATE.activeFurnitureKey;
+    if (!key) return;
+    const bg = getCurrentMyRoomBackground();
+    delete getPlacedFurnitureForBg(bg.id)[key];
+    renderMyRoomFurnitureItems();
+    closeMyRoomFurnitureOptions();
+    saveMyRoomPlacement();
+    if (typeof showToast === 'function') showToast('家具を撤去しました');
 }
 
 // =====================================================
@@ -505,13 +670,17 @@ function openMyRoomInventoryModal() {
 
     furnitureList.innerHTML = MYROOM_STATE.ownedFurniture.length === 0
         ? `<p class="text-gray-500 text-[10px]">まだ持っていません</p>`
-        : MYROOM_STATE.ownedFurniture.map(f => `
+        : MYROOM_STATE.ownedFurniture.map((f, i) => `
             <div class="flex items-center gap-2 bg-[#1a120b] rounded-lg px-2 py-1.5">
-                <span class="text-lg">${f.emoji}</span>
+                <div id="myroom-inventory-furniture-icon-${i}" class="w-7 h-7 flex-shrink-0 flex items-center justify-center text-lg"></div>
                 <span class="flex-1 text-xs text-amber-100 font-bold">${f.name}</span>
                 <span class="text-[10px] text-gray-400">×${f.count}</span>
             </div>
         `).join('');
+    MYROOM_STATE.ownedFurniture.forEach((f, i) => {
+        const iconEl = document.getElementById(`myroom-inventory-furniture-icon-${i}`);
+        if (iconEl) renderFurnitureIcon(iconEl, f, { imgClassName: 'w-full h-full object-contain' });
+    });
 
     monsterList.innerHTML = MYROOM_STATE.ownedMonsters.length === 0
         ? `<p class="text-gray-500 text-[10px]">まだ持っていません</p>`

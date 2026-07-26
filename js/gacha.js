@@ -25,6 +25,7 @@ const GACHA_STATE = {
 
 // --- 排出アイテムプール（仮） ---
 // ★1/★2＝家具（観賞用・機能効果なし）、★3＝レンタルモンスター種族から抽選＋ランダムオーラ
+// image: 専用イラストがある場合のパス（マイルームでの表示・図鑑等で使用。無ければemojiで代替表示）
 const GACHA_FURNITURE_POOL = [
     { id: 'furniture_wood_chair', name: '木の椅子', emoji: '🪑', rarity: 1 },
     { id: 'furniture_lantern', name: '灯りのランタン', emoji: '🏮', rarity: 1 },
@@ -35,7 +36,31 @@ const GACHA_FURNITURE_POOL = [
     { id: 'furniture_fountain', name: '小さな噴水', emoji: '⛲', rarity: 2 },
     { id: 'furniture_treasure_chest', name: '装飾された宝箱', emoji: '🗝️', rarity: 2 },
     { id: 'furniture_windowlight', name: 'ステンドグラスの窓', emoji: '🪟', rarity: 2 },
+    // --- マイルームB（ファーム）向けに追加した専用イラスト付きアイテム ---
+    { id: 'furniture_hay_set', name: '牧草セット', emoji: '🌾', image: 'images/furniture/牧草セット.png', rarity: 1 },
+    { id: 'furniture_crate_a', name: '木箱A', emoji: '📦', image: 'images/furniture/木箱A.png', rarity: 1 },
+    { id: 'furniture_crate_b', name: '木箱B', emoji: '📦', image: 'images/furniture/木箱B.png', rarity: 1 },
+    { id: 'furniture_feed_trough', name: '餌置き場', emoji: '🍖', image: 'images/furniture/餌置き場.png', rarity: 2 },
+    { id: 'furniture_water_trough', name: '水のみ場', emoji: '💧', image: 'images/furniture/水のみ場.png', rarity: 2 },
+    { id: 'furniture_barrel', name: '樽', emoji: '🛢️', image: 'images/furniture/樽.png', rarity: 1 },
 ];
+
+// --- 家具アイテムのアイコンを描画する共通ヘルパー（専用イラストがあれば画像、無ければ絵文字で代替） ---
+// マイルームでの配置表示・所持品一覧・各種ピッカー・ガチャ結果カードなど、家具を表示する箇所全てで共通利用する。
+function renderFurnitureIcon(containerEl, furnitureDef, opts = {}) {
+    if (!containerEl || !furnitureDef) return;
+    containerEl.innerHTML = '';
+    if (furnitureDef.image) {
+        const img = document.createElement('img');
+        img.src = furnitureDef.image;
+        img.alt = furnitureDef.name;
+        img.className = opts.imgClassName || 'w-full h-full object-contain';
+        img.draggable = false;
+        containerEl.appendChild(img);
+    } else {
+        containerEl.textContent = furnitureDef.emoji || '📦';
+    }
+}
 
 // --- ★1〜★3の排出率（%） ---
 const GACHA_RARITY_TABLE = [
@@ -385,7 +410,8 @@ function renderGachaRevealPanel(results) {
         if (r.kind === 'monster' && typeof renderMonsterVisual === 'function') {
             renderMonsterVisual(visualEl, r.name, r.emoji, false, true, r.auraKey);
         } else if (visualEl) {
-            visualEl.textContent = r.emoji;
+            const def = GACHA_FURNITURE_POOL.find(f => f.id === r.id);
+            renderFurnitureIcon(visualEl, def || r, { imgClassName: 'w-full h-full object-contain drop-shadow' });
         }
     });
 
