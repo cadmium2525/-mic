@@ -44,10 +44,14 @@ const GAME_STATE = {
 
 // --- モンスター画像のオーラ着色設定（調整しやすいようにここで定数化） ---
 // MONSTER_VISUAL_AURA_TINT_STRENGTH: 色の重ねる強さ（0〜1）。0にすると着色オフになる。
-// MONSTER_VISUAL_AURA_TINT_BLEND_MODE: CSSのmix-blend-mode。'hue'（色相のみ変更・陰影を保持）を採用。
-//   他の候補: 'color'（hueよりくっきり）/ 'multiply'（濃く暗めに色付け）/ 'soft-light'（淡く色付け）
+// MONSTER_VISUAL_AURA_TINT_BLEND_MODE: CSSのmix-blend-mode。
+//   'hue'は「色相だけを変える」モードだが、CSSの仕様上 SetSat(Cs, Sat(Cb)) という計算式になっており、
+//   下地（モンスター画像）の彩度が低い部分（銀・白・灰色の甲冑など）では、どのオーラ色を重ねても
+//   結果がほぼ無彩色になってしまい、赤・緑・黄・青の違いがほとんど見えないバグの原因になっていた。
+//   'color'モードは SetLum(Cs, Lum(Cb)) で、重ねる色（オーラ色）の彩度をそのまま活かしつつ
+//   下地の明暗（陰影）だけを保持するため、下地の彩度に左右されず、どんな絵柄でも色の違いがはっきり出る。
 const MONSTER_VISUAL_AURA_TINT_STRENGTH = 0.6;
-const MONSTER_VISUAL_AURA_TINT_BLEND_MODE = 'hue';
+const MONSTER_VISUAL_AURA_TINT_BLEND_MODE = 'color';
 
 // --- モンスター画像読み込みヘルパー関数 ---
 // isPartner: プレイヤー側（自分のパーティ）のモンスターを描画する場合はtrue。
@@ -128,6 +132,19 @@ function renderMonsterVisual(containerEl, name, emoji, isAwakened = false, isPar
             tintEl.style.webkitMaskPosition = 'center';
             tintEl.style.maskPosition = 'center';
             containerEl.insertBefore(tintEl, imgEl.nextSibling);
+
+            // --- マスク画像の読み込み確認 ---
+            // mask-image はブラウザ内部でCORSモードの通信を行うため、file:// で直接開いている場合など
+            // クロスオリジン扱いになる環境では読み込みに失敗することがある。
+            // その場合、マスクが効かず「着色した四角形がモンスター全体を覆ってしまう」壊れた見た目になるため、
+            // 読み込み失敗を検知したら着色オーバーレイごと取り除き、通常表示にフォールバックする。
+            const maskLoadProbe = new Image();
+            maskLoadProbe.crossOrigin = 'anonymous';
+            maskLoadProbe.onerror = () => {
+                if (tintEl.isConnected) tintEl.remove();
+                console.warn(`[renderMonsterVisual] オーラ着色用マスクの読み込みに失敗したため、着色なしで表示します: ${imagePath}（file:// で直接開いている場合は、ローカルサーバー経由での起動をお試しください）`);
+            };
+            maskLoadProbe.src = encodedImagePath;
         }
     };
     img.onerror = () => {
@@ -242,6 +259,7 @@ window.addEventListener('load', () => {
     if (typeof refreshAchievementBadge === 'function') refreshAchievementBadge();
     if (typeof refreshDiamondBalanceDisplays === 'function') refreshDiamondBalanceDisplays();
     if (typeof checkFirstLoginDiamondBonus === 'function') checkFirstLoginDiamondBonus();
+    if (typeof checkDailyLoginBonus === 'function') checkDailyLoginBonus();
     if (typeof checkAndCelebrateNewAchievements === 'function') checkAndCelebrateNewAchievements();
 });
 

@@ -1077,6 +1077,7 @@
                             <button onclick="debugPreviewKinNejikiDiamonds()" class="flex-1 py-1.5 bg-[#1a120b] hover:bg-[#241b12] text-cyan-200 text-[10px] font-bold rounded-lg border border-cyan-900/70 active:scale-95 transition-all">獲得量を試算</button>
                         </div>
                         <button onclick="debugResetLaunchBonus()" class="w-full py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">🔄 初回ログイン特典の受領済みフラグをリセット</button>
+                        <button onclick="debugResetDailyLoginBonus()" class="w-full py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">🔄 デイリーログインボーナスをリセット</button>
                     </div>
 
                     <!-- ⑧ ガチャ／マイルーム 所持データテスト -->
@@ -1544,37 +1545,20 @@
 
             <!-- タブ切り替えボタン -->
             <div class="flex px-3 pt-2 gap-1 shrink-0">
-                <button id="account-tab-btn-id" onclick="switchAccountModalTab('id')"
-                    class="account-tab-btn flex-1 py-2 rounded-t-lg text-[11px] font-bold transition-all flex items-center justify-center space-x-1">
-                    <i class="fa-solid fa-id-card"></i><span>ID</span>
-                </button>
                 <button id="account-tab-btn-stats" onclick="switchAccountModalTab('stats')"
                     class="account-tab-btn flex-1 py-2 rounded-t-lg text-[11px] font-bold transition-all flex items-center justify-center space-x-1">
                     <i class="fa-solid fa-chart-simple"></i><span>プレイ記録</span>
                 </button>
-                <button id="account-tab-btn-restore" onclick="switchAccountModalTab('restore')"
+                <button id="account-tab-btn-id" onclick="switchAccountModalTab('id')"
                     class="account-tab-btn flex-1 py-2 rounded-t-lg text-[11px] font-bold transition-all flex items-center justify-center space-x-1">
-                    <i class="fa-solid fa-rotate-left"></i><span>復帰</span>
+                    <i class="fa-solid fa-id-card"></i><span>ID・復帰</span>
                 </button>
             </div>
 
             <!-- タブ内容（ここだけスクロール） -->
             <div class="px-4 pb-3 pt-2 overflow-y-auto flex-1 min-h-0">
 
-                <!-- タブ1: 現在のID -->
-                <div id="account-tab-content-id" class="account-tab-content space-y-2">
-                    <p class="text-[10px] text-gray-400 mb-1">現在のアカウントID（PvPレートやランキングはこのIDに紐づいています）</p>
-                    <div class="flex space-x-1.5">
-                        <input type="text" id="account-my-id-display" readonly
-                            class="flex-1 min-w-0 bg-[#150b07] border border-emerald-800 text-emerald-300 text-[11px] font-mono rounded-lg px-2 py-2 focus:outline-none">
-                        <button onclick="copyMyPlayerId()" class="shrink-0 px-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-lg text-[11px] transition-all active:scale-95">
-                            コピー
-                        </button>
-                    </div>
-                    <p class="text-[9px] text-amber-400 mt-1.5 leading-relaxed">⚠️ このIDはブラウザに保存されています。キャッシュ・データを消去すると引き継げなくなるので、控えておくことをおすすめします。</p>
-                </div>
-
-                <!-- タブ2: プレイ記録・実績 -->
+                <!-- タブ1: プレイ記録・実績 -->
                 <div id="account-tab-content-stats" class="account-tab-content space-y-3 hidden">
                     <div>
                         <p class="text-[10px] text-gray-400 mb-1.5 flex items-center justify-between">
@@ -1594,15 +1578,27 @@
                     </button>
                 </div>
 
-                <!-- タブ3: 以前のIDで復帰 -->
-                <div id="account-tab-content-restore" class="account-tab-content space-y-2 hidden">
-                    <p class="text-[10px] text-gray-400 mb-1">以前のIDで復帰する（別端末や再インストール後など）</p>
-                    <input type="text" id="account-restore-id-input" placeholder="p_ から始まるIDを入力"
-                        class="w-full bg-[#150b07] border border-emerald-800 text-white text-[11px] font-mono rounded-lg px-2 py-2 focus:outline-none focus:border-emerald-500 placeholder-gray-600">
-                    <button onclick="restoreMyPlayerId()" class="w-full mt-2 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs shadow transition-all active:scale-95">
-                        このIDで復帰する
-                    </button>
-                    <p class="text-[9px] text-gray-500 mt-1.5 leading-relaxed">※復帰すると現在のこの端末のIDは上書きされ、入力したIDのランキング・レート・対戦履歴を引き継ぎます。</p>
+                <!-- タブ2: 現在のID・以前のIDで復帰（統合） -->
+                <div id="account-tab-content-id" class="account-tab-content space-y-2 hidden">
+                    <p class="text-[10px] text-gray-400 mb-1">現在のアカウントID（PvPレートやランキングはこのIDに紐づいています）</p>
+                    <div class="flex space-x-1.5">
+                        <input type="text" id="account-my-id-display" readonly
+                            class="flex-1 min-w-0 bg-[#150b07] border border-emerald-800 text-emerald-300 text-[11px] font-mono rounded-lg px-2 py-2 focus:outline-none">
+                        <button onclick="copyMyPlayerId()" class="shrink-0 px-3 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-lg text-[11px] transition-all active:scale-95">
+                            コピー
+                        </button>
+                    </div>
+                    <p class="text-[9px] text-amber-400 mt-1.5 leading-relaxed">⚠️ このIDはブラウザに保存されています。キャッシュ・データを消去すると引き継げなくなるので、控えておくことをおすすめします。</p>
+
+                    <div class="border-t border-emerald-900 pt-3 mt-3">
+                        <p class="text-[10px] text-gray-400 mb-1">以前のIDで復帰する（別端末や再インストール後など）</p>
+                        <input type="text" id="account-restore-id-input" placeholder="p_ から始まるIDを入力"
+                            class="w-full bg-[#150b07] border border-emerald-800 text-white text-[11px] font-mono rounded-lg px-2 py-2 focus:outline-none focus:border-emerald-500 placeholder-gray-600">
+                        <button onclick="restoreMyPlayerId()" class="w-full mt-2 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-xl text-xs shadow transition-all active:scale-95">
+                            このIDで復帰する
+                        </button>
+                        <p class="text-[9px] text-gray-500 mt-1.5 leading-relaxed">※復帰すると現在のこの端末のIDは上書きされ、入力したIDのランキング・レート・対戦履歴を引き継ぎます。</p>
+                    </div>
                 </div>
 
             </div>

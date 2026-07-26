@@ -57,6 +57,7 @@ const MYROOM_STATE = {
     ownedFurniture: [],    // [{id, count, name, emoji, image}]
     ownedMonsters: [],     // [{key, speciesId, auraKey, count, name, emoji}]
     wanderTimers: {},      // placementKey -> timeoutId
+    durahanWalkAnimTimers: {}, // placementKey -> setIntervalId（デュラハン歩行スプライトのコマ送り用）
     monsterTokenEls: {},   // placementKey -> DOM要素（反応演出の表示位置を探すために使う）
     activeFurnitureKey: null, // 現在操作パネルを開いている家具インスタンスのキー
     activeMonsterKey: null,   // 現在操作パネルを開いているモンスターの配置キー
@@ -734,8 +735,123 @@ function spawnMyRoomMonsterToken(placementKey, info, floor) {
     floor.appendChild(token);
     MYROOM_STATE.monsterTokenEls[placementKey] = token;
 
-    renderMonsterVisual(token, tmpl.name, tmpl.emoji, false, true, info.auraKey);
+    if (isMyRoomDurahanSpriteTarget(tmpl)) {
+        renderMyRoomDurahanSprite(token, info.auraKey);
+    } else {
+        renderMonsterVisual(token, tmpl.name, tmpl.emoji, false, true, info.auraKey);
+    }
     startMyRoomMonsterWander(placementKey, token);
+}
+
+// --- デュラハンのみ、マイルーム内では通常の静止画ではなく専用の歩行スプライトシートを使う ---
+//   ※対象はマイルームでの表示のみ。バトル演出（renderMonsterVisual）は今まで通り
+//     images/デュラハン.png の静止画のままにするため、ここでは分岐して専用関数を呼ぶ。
+function isMyRoomDurahanSpriteTarget(tmpl) {
+    return !!tmpl && tmpl.id === 'durahan';
+}
+
+// --- 歩行スプライトシート（images/myroom/デュラハン_歩行.png）の仕様（5列×5行・全25コマ） ---
+const MYROOM_DURAHAN_SPRITE_COLS = 5;
+const MYROOM_DURAHAN_SPRITE_ROWS = 5;
+const MYROOM_DURAHAN_WALK_FRAME_MS = 44; // 1コマの表示時間（25コマで約1.1秒/周）
+// 静止時に不自然な「中途半端なポーズ」で止まらないよう、あらかじめ見た目の良いコマだけを
+// 静止ポーズ用として指定しておく（0始まりのフレーム番号）。
+// 指定：4列目1行目・1列目3行目・1列目4行目・3列目5行目（列・行はどちらも1始まり）
+const MYROOM_DURAHAN_IDLE_FRAMES = [3, 10, 15, 22];
+
+// --- フレーム番号（0始まり）から background-position / mask-position の値を計算する ---
+function getMyRoomDurahanFramePosition(frameIndex) {
+    const col = frameIndex % MYROOM_DURAHAN_SPRITE_COLS;
+    const row = Math.floor(frameIndex / MYROOM_DURAHAN_SPRITE_COLS);
+    const x = (col * 100) / (MYROOM_DURAHAN_SPRITE_COLS - 1);
+    const y = (row * 100) / (MYROOM_DURAHAN_SPRITE_ROWS - 1);
+    return `${x}% ${y}%`;
+}
+
+// --- 指定したフレームを、トークン内のスプライト要素（＋オーラ着色オーバーレイ）に反映する ---
+function setMyRoomDurahanFrame(token, frameIndex) {
+    const spriteEl = token.querySelector('.myroom-durahan-sprite');
+    if (!spriteEl) return; // デュラハン以外のトークンは何もしない
+    const tintEl = token.querySelector('.myroom-durahan-sprite-tint');
+    const pos = getMyRoomDurahanFramePosition(frameIndex);
+    spriteEl.style.backgroundPosition = pos;
+    if (tintEl) {
+        tintEl.style.maskPosition = pos;
+        tintEl.style.webkitMaskPosition = pos;
+    }
+}
+
+// --- デュラハンの歩行スプライトシートを描画する ---
+//   コマ送り自体はCSSアニメーションではなくJS側（setInterval）で1コマずつ進める。
+//   これは、停止時に「必ず見た目の良い決まったコマで止める」ため
+//   （CSSアニメーションをpauseするだけだと、途中の中途半端なコマで静止してしまう）。
+function renderMyRoomDurahanSprite(containerEl, auraKey) {
+    if (!containerEl) return;
+    containerEl.innerHTML = '';
+    if (!containerEl.style.position) containerEl.style.position = 'relative';
+    containerEl.style.isolation = 'isolate';
+
+    const spriteEl = document.createElement('div');
+    spriteEl.className = 'myroom-durahan-sprite absolute inset-0 w-full h-full drop-shadow-lg';
+    containerEl.appendChild(spriteEl);
+
+    // 他のモンスター同様、オーラが設定されていれば同じマスク方式で色を重ねる
+    const aura = auraKey ? AURA_TYPES[auraKey] : null;
+    if (aura && aura.hex && MONSTER_VISUAL_AURA_TINT_STRENGTH > 0) {
+        const tintEl = document.createElement('div');
+        tintEl.className = 'myroom-durahan-sprite-tint absolute inset-0 w-full h-full';
+        tintEl.style.pointerEvents = 'none';
+        tintEl.style.backgroundColor = aura.hex;
+        tintEl.style.opacity = String(MONSTER_VISUAL_AURA_TINT_STRENGTH);
+        tintEl.style.mixBlendMode = MONSTER_VISUAL_AURA_TINT_BLEND_MODE;
+        containerEl.appendChild(tintEl);
+
+        // mask-imageはブラウザ内部でCORSモードの通信を行うため、file://で直接開いている場合など
+        // クロスオリジン扱いになる環境では読み込みに失敗し、マスクが効かないまま
+        // 「着色した四角形がスプライト全体を覆ってしまう」壊れた見た目になることがある。
+        // 読み込み失敗を検知したら着色オーバーレイごと取り除き、通常表示にフォールバックする。
+        const maskLoadProbe = new Image();
+        maskLoadProbe.crossOrigin = 'anonymous';
+        maskLoadProbe.onerror = () => {
+            if (tintEl.isConnected) tintEl.remove();
+            console.warn('[renderMyRoomDurahanSprite] オーラ着色用マスクの読み込みに失敗したため、着色なしで表示します（file:// で直接開いている場合は、ローカルサーバー経由での起動をお試しください）');
+        };
+        maskLoadProbe.src = 'images/myroom/デュラハン_歩行.png';
+    }
+
+    // 初期状態（配置直後）も、指定した静止ポーズの中からランダムに1つ選んで表示する
+    const idleFrame = MYROOM_DURAHAN_IDLE_FRAMES[Math.floor(Math.random() * MYROOM_DURAHAN_IDLE_FRAMES.length)];
+    setMyRoomDurahanFrame(containerEl, idleFrame);
+}
+
+// --- トークンがデュラハンの歩行スプライトを使っている場合、歩行中だけコマ送りを再生する ---
+//   walking=true  : 0→24→0…とコマ送りを繰り返す
+//   walking=false : コマ送りを止め、指定済みの静止ポーズの中からランダムに1つを表示する
+function setMyRoomDurahanWalking(placementKey, token, walking) {
+    const spriteEl = token.querySelector('.myroom-durahan-sprite');
+    if (!spriteEl) return; // デュラハン以外のトークンは何もしない
+
+    if (MYROOM_STATE.durahanWalkAnimTimers[placementKey]) {
+        clearInterval(MYROOM_STATE.durahanWalkAnimTimers[placementKey]);
+        delete MYROOM_STATE.durahanWalkAnimTimers[placementKey];
+    }
+
+    if (walking) {
+        let frame = 0;
+        setMyRoomDurahanFrame(token, frame);
+        MYROOM_STATE.durahanWalkAnimTimers[placementKey] = setInterval(() => {
+            if (!token.isConnected) {
+                clearInterval(MYROOM_STATE.durahanWalkAnimTimers[placementKey]);
+                delete MYROOM_STATE.durahanWalkAnimTimers[placementKey];
+                return;
+            }
+            frame = (frame + 1) % (MYROOM_DURAHAN_SPRITE_COLS * MYROOM_DURAHAN_SPRITE_ROWS);
+            setMyRoomDurahanFrame(token, frame);
+        }, MYROOM_DURAHAN_WALK_FRAME_MS);
+    } else {
+        const idleFrame = MYROOM_DURAHAN_IDLE_FRAMES[Math.floor(Math.random() * MYROOM_DURAHAN_IDLE_FRAMES.length)];
+        setMyRoomDurahanFrame(token, idleFrame);
+    }
 }
 
 // --- ランダム徘徊AI：一定の間隔で床の中のランダムな地点へゆっくり移動する ---
@@ -765,10 +881,17 @@ function wanderMyRoomMonsterStep(placementKey, token, onArrive) {
     token.style.left = `${targetX}%`;
     token.style.top = `${targetY}%`;
 
-    MYROOM_STATE.wanderTimers[placementKey] = setTimeout(onArrive, duration);
+    // 移動している間だけ歩行スプライトのコマ送りを再生し、目的地に着いたら指定の静止ポーズで止める
+    setMyRoomDurahanWalking(placementKey, token, true);
+    MYROOM_STATE.wanderTimers[placementKey] = setTimeout(() => {
+        setMyRoomDurahanWalking(placementKey, token, false);
+        onArrive();
+    }, duration);
 }
 
 function stopAllMyRoomWander() {
+    Object.values(MYROOM_STATE.durahanWalkAnimTimers).forEach(timerId => clearInterval(timerId));
+    MYROOM_STATE.durahanWalkAnimTimers = {};
     Object.values(MYROOM_STATE.wanderTimers).forEach(timerId => clearTimeout(timerId));
     MYROOM_STATE.wanderTimers = {};
 }

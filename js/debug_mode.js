@@ -878,6 +878,17 @@ async function debugResetLaunchBonus() {
     if (typeof showToast === 'function') showToast('🔄 初回ログイン特典をリセットしました（次回アプリ起動時に再度受け取れます）');
 }
 
+async function debugResetDailyLoginBonus() {
+    if (typeof initFirebase === 'function' && initFirebase()) {
+        try {
+            const pid = getMyPlayerId();
+            await firebaseDb.ref(`player_currency/${pid}/lastLoginBonusDate`).remove();
+        } catch (e) { console.error('[DEBUG] デイリーログインボーナスリセットエラー:', e); }
+    }
+    if (typeof checkDailyLoginBonus === 'function') await checkDailyLoginBonus();
+    if (typeof showToast === 'function') showToast('🔄 デイリーログインボーナスをリセットして即座に付与しました');
+}
+
 // -----------------------------------------------------
 // ⑧ ガチャ／マイルーム 所持データテスト
 // -----------------------------------------------------

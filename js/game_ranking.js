@@ -73,13 +73,13 @@ function openAccountModal() {
     const restoreInput = document.getElementById('account-restore-id-input');
     if (restoreInput) restoreInput.value = '';
     document.getElementById('account-modal').classList.remove('hidden');
-    switchAccountModalTab('id');
+    switchAccountModalTab('stats');
     loadAndRenderAccountStats();
 }
 
 // --- アカウント管理モーダル内のタブ切り替え ---
 function switchAccountModalTab(tabName) {
-    const tabs = ['id', 'stats', 'restore'];
+    const tabs = ['stats', 'id'];
     tabs.forEach(name => {
         const content = document.getElementById('account-tab-content-' + name);
         const btn = document.getElementById('account-tab-btn-' + name);

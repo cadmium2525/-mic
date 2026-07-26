@@ -222,6 +222,37 @@ async function checkFirstLoginDiamondBonus() {
     }
 }
 
+// =====================================================
+// デイリーログインボーナス：毎日1回目のアクセス時にダイヤ150個プレゼント
+// ・player_currency/{pid}/lastLoginBonusDate に「最後に受け取った日付」を保存し、
+//   端末のローカル日付と比較して、日付が変わっていれば再度受け取れるようにする
+// =====================================================
+const DAILY_LOGIN_BONUS_AMOUNT = 150;
+
+function getTodayDateStringForBonusCheck() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+async function checkDailyLoginBonus() {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return;
+    const pid = getMyPlayerId();
+    try {
+        const ref = firebaseDb.ref(`player_currency/${pid}/lastLoginBonusDate`);
+        const snap = await ref.once('value');
+        const today = getTodayDateStringForBonusCheck();
+        if (snap.val() === today) return; // 本日は既に受け取り済み
+        await ref.set(today);
+        await awardDiamonds(DAILY_LOGIN_BONUS_AMOUNT);
+        if (typeof refreshDiamondBalanceDisplays === 'function') refreshDiamondBalanceDisplays();
+        if (typeof showToast === 'function') {
+            showToast(`🎁 ログインボーナス！ダイヤを${DAILY_LOGIN_BONUS_AMOUNT}個獲得しました！`);
+        }
+    } catch (e) {
+        console.error('[ダイヤ] デイリーログインボーナスの付与エラー:', e);
+    }
+}
+
 // --- ガッツファクトリーのラン終了時に呼び出す：獲得ダイヤを計算・付与し、獲得量を返す ---
 async function awardKinNejikiRunDiamonds(totalWins) {
     const amount = computeKinNejikiDiamondsForWins(totalWins);
