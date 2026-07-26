@@ -280,3 +280,53 @@ input, textarea, select {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
 }
+
+/* ===== マイルーム：時間帯演出 ===== */
+/* #myroom-area に myroom-time-{morning|day|evening|night} クラスが付き、
+   ::after の疑似要素で部屋全体に色味を重ねる。家具・モンスターより手前に来るが、
+   pointer-events:none なので操作の邪魔はしない。 */
+#myroom-area::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 30;
+    transition: background 1.2s ease, opacity 1.2s ease;
+    opacity: 0;
+}
+#myroom-area.myroom-time-morning::after {
+    /* 朝：低い位置から差し込むやわらかな橙色の光 */
+    background: linear-gradient(to bottom, rgba(255, 214, 148, 0.30), rgba(255, 176, 122, 0.10) 60%, rgba(90, 60, 40, 0.12));
+    opacity: 1;
+}
+#myroom-area.myroom-time-day::after {
+    /* 昼：ほぼ素の色。ごく薄く明るさを足すだけ */
+    background: linear-gradient(to bottom, rgba(255, 252, 235, 0.10), rgba(255, 255, 255, 0.02));
+    opacity: 1;
+}
+#myroom-area.myroom-time-evening::after {
+    /* 夕方：赤みの強い斜光 */
+    background: linear-gradient(to bottom right, rgba(255, 138, 76, 0.34), rgba(198, 84, 92, 0.22) 55%, rgba(60, 40, 70, 0.30));
+    opacity: 1;
+}
+#myroom-area.myroom-time-night::after {
+    /* 夜：全体を青く沈ませる */
+    background: linear-gradient(to bottom, rgba(18, 26, 66, 0.60), rgba(12, 16, 44, 0.66));
+    opacity: 1;
+}
+
+/* 灯り系の家具（emitsLight:true）は、夕方・夜だけほのかに光る */
+.myroom-furniture-lit {
+    filter: drop-shadow(0 0 10px rgba(255, 196, 92, 0.85)) drop-shadow(0 0 22px rgba(255, 158, 48, 0.45)) brightness(1.12);
+    animation: myroomLanternFlicker 3.4s ease-in-out infinite;
+}
+@keyframes myroomLanternFlicker {
+    0%, 100% { filter: drop-shadow(0 0 10px rgba(255, 196, 92, 0.85)) drop-shadow(0 0 22px rgba(255, 158, 48, 0.45)) brightness(1.12); }
+    45%      { filter: drop-shadow(0 0 13px rgba(255, 206, 112, 0.95)) drop-shadow(0 0 28px rgba(255, 168, 58, 0.55)) brightness(1.18); }
+    70%      { filter: drop-shadow(0 0 9px rgba(255, 190, 86, 0.80)) drop-shadow(0 0 19px rgba(255, 152, 44, 0.40)) brightness(1.10); }
+}
+
+/* ===== マイルーム：フレンドの部屋を閲覧中の表示 ===== */
+#myroom-visitor-notice {
+    background: linear-gradient(to right, #0e7490, #0369a1);
+}

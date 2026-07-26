@@ -63,8 +63,73 @@ const MYROOM_STATE = {
     activeMonsterKey: null,   // 現在操作パネルを開いているモンスターの配置キー
     furnitureDragging: false,
     monsterSortMode: 'monclass', // 'monclass' | 'name' | 'count'
-    furnitureSortMode: 'rarity'  // 'rarity' | 'name'
+    furnitureSortMode: 'rarity',  // 'rarity' | 'name'
+    // フレンドのマイルームを閲覧している間はtrue。閲覧中は配置の変更・保存・交流を一切行わない。
+    visitorMode: false,
+    visitorName: null,
+    timeOfDayTimer: null // 時間帯（朝／昼／夕／夜）の切り替わりを監視するタイマー
 };
+
+// =====================================================
+// 時間帯演出
+// ・端末のローカル時刻から「朝・昼・夕方・夜」を判定し、マイルーム全体に色味を重ねる。
+// ・灯り系の家具（GACHA_FURNITURE_POOLでemitsLight:trueを指定したもの）は、
+//   夕方・夜だけ自動的に光る（lit: trueの時間帯）。
+// =====================================================
+const MYROOM_TIME_PERIODS = [
+    { id: 'morning', name: '朝',   emoji: '🌅', startHour: 5,  endHour: 10, lit: false },
+    { id: 'day',     name: '昼',   emoji: '☀️', startHour: 10, endHour: 17, lit: false },
+    { id: 'evening', name: '夕方', emoji: '🌇', startHour: 17, endHour: 20, lit: true  },
+    { id: 'night',   name: '夜',   emoji: '🌙', startHour: 20, endHour: 5,  lit: true  }
+];
+
+// --- 現在時刻（0〜23時）から該当する時間帯を返す ---
+function getMyRoomTimePeriod(hour) {
+    const h = (hour === undefined || hour === null) ? new Date().getHours() : hour;
+    return MYROOM_TIME_PERIODS.find(p => {
+        // 夜のように日付をまたぐ区間（20時〜翌5時）は、開始 > 終了 の形になるため判定を分ける
+        return (p.startHour < p.endHour)
+            ? (h >= p.startHour && h < p.endHour)
+            : (h >= p.startHour || h < p.endHour);
+    }) || MYROOM_TIME_PERIODS[1];
+}
+
+// --- 現在の時間帯をマイルームの見た目に反映する（色味のオーバーレイ＋灯り家具の点灯） ---
+function applyMyRoomTimeOfDay() {
+    const period = getMyRoomTimePeriod();
+    const area = document.getElementById('myroom-area');
+    if (area) {
+        // 時間帯ごとのクラスを付け替える（実際の色味はstyles.css側で定義）
+        MYROOM_TIME_PERIODS.forEach(p => area.classList.remove(`myroom-time-${p.id}`));
+        area.classList.add(`myroom-time-${period.id}`);
+        area.classList.toggle('myroom-time-lit', period.lit);
+    }
+    const labelEl = document.getElementById('myroom-time-label');
+    if (labelEl) labelEl.textContent = `${period.emoji} ${period.name}`;
+    return period;
+}
+
+// --- 1分ごとに時間帯をチェックし、切り替わったタイミングで自動的に見た目を更新する ---
+function startMyRoomTimeOfDayWatcher() {
+    stopMyRoomTimeOfDayWatcher();
+    let lastPeriodId = applyMyRoomTimeOfDay().id;
+    MYROOM_STATE.timeOfDayTimer = setInterval(() => {
+        const nowPeriod = getMyRoomTimePeriod();
+        if (nowPeriod.id === lastPeriodId) return; // 同じ時間帯のうちは何もしない
+        lastPeriodId = nowPeriod.id;
+        applyMyRoomTimeOfDay();
+        // 灯りの点灯状態が変わるため、家具を描き直して反映させる
+        renderMyRoomFurnitureItems();
+        if (typeof showToast === 'function') showToast(`${nowPeriod.emoji} ${nowPeriod.name}になりました`);
+    }, 60 * 1000);
+}
+
+function stopMyRoomTimeOfDayWatcher() {
+    if (MYROOM_STATE.timeOfDayTimer) {
+        clearInterval(MYROOM_STATE.timeOfDayTimer);
+        MYROOM_STATE.timeOfDayTimer = null;
+    }
+}
 
 // --- 現在の背景IDに対応する配置済み家具・配置モンスターのオブジェクトを取得する（無ければ作る） ---
 function getPlacedFurnitureForBg(bgId) {
@@ -199,6 +264,8 @@ async function fetchMyRoomData() {
 }
 
 async function saveMyRoomPlacement() {
+    // フレンドの部屋を閲覧している間は、その内容を自分のデータとして保存してしまわないよう必ず中断する
+    if (MYROOM_STATE.visitorMode) return;
     if (typeof initFirebase !== 'function' || !initFirebase()) return;
     const pid = getMyPlayerId();
     try {
@@ -209,6 +276,14 @@ async function saveMyRoomPlacement() {
         });
     } catch (e) {
         console.error('[マイルーム] 設置状態の保存エラー:', e);
+    }
+    // フレンドが閲覧する用の公開スナップショットも合わせて更新する（friends.js側で実装）
+    if (typeof publishMyRoomSnapshot === 'function') {
+        try {
+            await publishMyRoomSnapshot();
+        } catch (e) {
+            console.error('[マイルーム] 公開スナップショットの更新エラー:', e);
+        }
     }
 }
 
@@ -246,6 +321,9 @@ function buildOwnedMonsterList(monsterCounts) {
 async function openMyRoomScreen() {
     changeScreen('screen-myroom');
     stopAllMyRoomWander();
+    MYROOM_STATE.visitorMode = false;
+    MYROOM_STATE.visitorName = null;
+    applyMyRoomVisitorModeUI();
 
     const data = await fetchMyRoomData();
     if (!data) return;
@@ -257,10 +335,69 @@ async function openMyRoomScreen() {
     MYROOM_STATE.placedMonsters = (data.placement && data.placement.placedMonsters) || {};
 
     applyMyRoomBackground();
+    startMyRoomTimeOfDayWatcher(); // 時間帯（朝／昼／夕／夜）の色味と灯りを反映し、以降も自動で追従させる
     renderMyRoomFurnitureItems();
     renderMyRoomMonsterFloor();
     await checkMyRoomFirstVisitTicket();
     refreshMyRoomTicketBanner();
+}
+
+// =====================================================
+// フレンドのマイルーム閲覧（閲覧専用モード）
+// ・friends.js の visitFriendRoom から、公開スナップショットを受け取って呼ばれる。
+// ・閲覧中は「配置の変更・保存」「なでる・エサ」など、書き込みを伴う操作を一切できないようにする。
+//   （そもそもフレンドのデータへ書き込む経路自体を作らない方針のため）
+// =====================================================
+function openMyRoomAsVisitor(roomSnapshot, visitorTargetName) {
+    if (!roomSnapshot) return;
+    changeScreen('screen-myroom');
+    stopAllMyRoomWander();
+
+    MYROOM_STATE.visitorMode = true;
+    MYROOM_STATE.visitorName = visitorTargetName || 'ブリーダー';
+
+    // 閲覧用に、公開スナップショットの内容をそのまま描画元として使う。
+    // 所持品リストは空にしておく（フレンドの所持品は公開していないため、
+    // 家具の定義は共通のGACHA_FURNITURE_POOLから引かれる）。
+    MYROOM_STATE.ownedFurniture = [];
+    MYROOM_STATE.ownedMonsters = [];
+    MYROOM_STATE.backgroundId = roomSnapshot.backgroundId || MYROOM_DEFAULT_BACKGROUND_ID;
+    MYROOM_STATE.placedFurniture = roomSnapshot.placedFurniture || {};
+    MYROOM_STATE.placedMonsters = roomSnapshot.placedMonsters || {};
+    MYROOM_STATE.activeFurnitureKey = null;
+    MYROOM_STATE.activeMonsterKey = null;
+
+    applyMyRoomVisitorModeUI();
+    applyMyRoomBackground();
+    startMyRoomTimeOfDayWatcher();
+    renderMyRoomFurnitureItems();
+    renderMyRoomMonsterFloor();
+    refreshMyRoomTicketBanner();
+}
+
+// --- 閲覧モードかどうかに応じて、画面上のUI（見出し・操作ボタン類）を切り替える ---
+function applyMyRoomVisitorModeUI() {
+    const isVisiting = !!MYROOM_STATE.visitorMode;
+
+    const titleEl = document.getElementById('myroom-screen-title');
+    if (titleEl) {
+        titleEl.textContent = isVisiting
+            ? `👀 ${MYROOM_STATE.visitorName} のマイルーム`
+            : '🏠 マイルーム';
+    }
+    // 編集用のボタン群（家具・モンスター配置、背景、所持品）は閲覧中は隠す
+    const editControls = document.getElementById('myroom-edit-controls');
+    if (editControls) editControls.classList.toggle('hidden', isVisiting);
+    // 閲覧中だけ表示する案内
+    const visitorNotice = document.getElementById('myroom-visitor-notice');
+    if (visitorNotice) visitorNotice.classList.toggle('hidden', !isVisiting);
+}
+
+// --- 閲覧モードを終了して、自分のマイルームに戻る ---
+function exitMyRoomVisitorMode() {
+    MYROOM_STATE.visitorMode = false;
+    MYROOM_STATE.visitorName = null;
+    openMyRoomScreen();
 }
 
 // --- 背景画像を差し替え、スロット・徘徊範囲もその背景専用の設定に切り替える ---
@@ -335,6 +472,9 @@ async function refreshMyRoomTicketBanner() {
 
 function closeMyRoomScreen() {
     stopAllMyRoomWander();
+    stopMyRoomTimeOfDayWatcher();
+    MYROOM_STATE.visitorMode = false;
+    MYROOM_STATE.visitorName = null;
     changeScreen('screen-title');
 }
 
@@ -428,9 +568,21 @@ function spawnMyRoomFurnitureElement(instanceKey, instance, container) {
     el.style.transform = buildMyRoomFurnitureTransform(instance);
     el.style.touchAction = 'none';
     el.dataset.instanceKey = instanceKey;
+
+    // 灯り系の家具は、夕方・夜（lit:trueの時間帯）だけほのかに光らせる
+    if (def.emitsLight && getMyRoomTimePeriod().lit) {
+        el.classList.add('myroom-furniture-lit');
+    }
     container.appendChild(el);
 
     renderFurnitureIcon(el, def, { imgClassName: 'w-full h-full object-contain pointer-events-none drop-shadow-lg' });
+
+    // フレンドの部屋を閲覧している間は、家具を動かしたり操作パネルを開いたりできないようにする
+    if (MYROOM_STATE.visitorMode) {
+        el.classList.remove('cursor-pointer');
+        el.style.pointerEvents = 'none';
+        return;
+    }
 
     setupMyRoomFurnitureDragHandlers(el, instanceKey);
 }
@@ -736,7 +888,13 @@ function spawnMyRoomMonsterToken(placementKey, info, floor) {
     token.style.top = `${startY}%`;
     token.style.transform = 'translate(-50%,-50%)';
     token.dataset.placementKey = placementKey;
-    token.onclick = () => openMyRoomMonsterOptions(placementKey);
+    // フレンドの部屋を閲覧している間は、モンスターをタップして交流パネルを開けないようにする
+    if (MYROOM_STATE.visitorMode) {
+        token.classList.remove('cursor-pointer', 'pointer-events-auto');
+        token.style.pointerEvents = 'none';
+    } else {
+        token.onclick = () => openMyRoomMonsterOptions(placementKey);
+    }
     floor.appendChild(token);
     MYROOM_STATE.monsterTokenEls[placementKey] = token;
     updateMyRoomMonsterZIndex(token); // Y座標が低い（奥にいるように見える）ほど手前に表示する重なり順を反映
@@ -1082,6 +1240,38 @@ function getActiveMyRoomMonsterInfo() {
     return info ? { key, info } : null;
 }
 
+// =====================================================
+// なつき度（絆ポイントの段階）
+// ・絆ポイントそのものは数値だが、そのままでは伸びが実感しづらいので段階に区切り、
+//   段階ごとに名前を付け、なでる／エサの演出も段階に応じて豪華にしていく。
+// ・しきい値は既存の絆バフ（20ポイントごとに+1%・500ポイントで上限+25%）と歩調を合わせ、
+//   最高段階の到達点＝バフ上限の500ポイントになるようにしている。
+// ・effectLevel: 演出の派手さ（0〜4）。ハートの数やキラキラの有無に使う。
+// =====================================================
+const MYROOM_BOND_LEVELS = [
+    { level: 1, name: 'きになる',         emoji: '🌱', minPoints: 0,   effectLevel: 0 },
+    { level: 2, name: 'なかよし',         emoji: '🌸', minPoints: 50,  effectLevel: 1 },
+    { level: 3, name: 'しんゆう',         emoji: '💖', minPoints: 150, effectLevel: 2 },
+    { level: 4, name: 'あいぼう',         emoji: '⭐', minPoints: 300, effectLevel: 3 },
+    { level: 5, name: 'うんめいのきずな', emoji: '👑', minPoints: 500, effectLevel: 4 }
+];
+
+// --- 絆ポイントから現在のなつき度段階を返す ---
+function getMyRoomBondLevel(points) {
+    const p = points || 0;
+    let current = MYROOM_BOND_LEVELS[0];
+    MYROOM_BOND_LEVELS.forEach(lv => { if (p >= lv.minPoints) current = lv; });
+    return current;
+}
+
+// --- 次の段階までの残りポイントを返す（最高段階に達している場合はnull） ---
+function getMyRoomBondNextLevelInfo(points) {
+    const p = points || 0;
+    const next = MYROOM_BOND_LEVELS.find(lv => p < lv.minPoints);
+    if (!next) return null;
+    return { next, remaining: next.minPoints - p };
+}
+
 async function openMyRoomMonsterOptions(placementKey) {
     MYROOM_STATE.activeMonsterKey = placementKey;
     const active = getActiveMyRoomMonsterInfo();
@@ -1136,9 +1326,20 @@ async function refreshMyRoomMonsterOptionsBondDisplay() {
     bondEl.textContent = '…';
     const points = await fetchMyRoomBond(bondKey);
     bondEl.textContent = points.toLocaleString();
+
+    // なつき度の段階（名前・次の段階までの残り）も合わせて表示する
+    const levelEl = document.getElementById('myroom-monster-options-bond-level');
+    if (levelEl) {
+        const lv = getMyRoomBondLevel(points);
+        const nextInfo = getMyRoomBondNextLevelInfo(points);
+        levelEl.innerHTML = nextInfo
+            ? `${lv.emoji} <span class="font-black">${lv.name}</span><span class="text-gray-500 ml-1">（次の「${nextInfo.next.name}」まであと${nextInfo.remaining}）</span>`
+            : `${lv.emoji} <span class="font-black">${lv.name}</span><span class="text-amber-400 ml-1">（最大！）</span>`;
+    }
 }
 
 async function petMyRoomMonster() {
+    if (MYROOM_STATE.visitorMode) return; // フレンドの部屋では交流できない
     const active = getActiveMyRoomMonsterInfo();
     if (!active) return;
     const bondKey = `${active.info.speciesId}_${active.info.auraKey}`;
@@ -1149,23 +1350,35 @@ async function petMyRoomMonster() {
         return;
     }
 
+    // なつき度が上がった瞬間を検知するため、加算の前後で段階を比較する
+    const pointsBefore = await fetchMyRoomBond(bondKey);
     await addMyRoomBond(bondKey, MYROOM_BOND_PET_AMOUNT);
+    const pointsAfter = pointsBefore + MYROOM_BOND_PET_AMOUNT;
+    const levelBefore = getMyRoomBondLevel(pointsBefore);
+    const levelAfter = getMyRoomBondLevel(pointsAfter);
+
     const key = active.key;
     closeMyRoomMonsterOptions();
 
-    // 対象モンスターを静止させ、頭を撫でるモーション→ハートの順で演出してから徘徊を再開する
+    // 対象モンスターを静止させ、頭を撫でるモーション→なつき度に応じた反応の順で演出してから徘徊を再開する
     const token = pauseMyRoomMonsterForInteraction(key);
     if (token) {
-        await playMyRoomPetMotion(token);
-        showMyRoomMonsterReaction(key, '🥰💕');
+        await playMyRoomPetMotion(token, levelAfter.effectLevel);
+        showMyRoomBondReaction(key, levelAfter.effectLevel, true);
         resumeMyRoomMonsterWander(key);
     } else {
-        showMyRoomMonsterReaction(key, '🥰💕');
+        showMyRoomBondReaction(key, levelAfter.effectLevel, true);
     }
-    if (typeof showToast === 'function') showToast(`なでなで♪ 絆+${MYROOM_BOND_PET_AMOUNT}（本日あと${result.remaining}回）`);
+
+    if (levelAfter.level > levelBefore.level) {
+        celebrateMyRoomBondLevelUp(key, levelAfter);
+    } else if (typeof showToast === 'function') {
+        showToast(`なでなで♪ 絆+${MYROOM_BOND_PET_AMOUNT}（本日あと${result.remaining}回）`);
+    }
 }
 
 async function feedMyRoomMonster(foodId) {
+    if (MYROOM_STATE.visitorMode) return; // フレンドの部屋では交流できない
     const active = getActiveMyRoomMonsterInfo();
     if (!active) return;
     const bondKey = `${active.info.speciesId}_${active.info.auraKey}`;
@@ -1182,7 +1395,12 @@ async function feedMyRoomMonster(foodId) {
     const liked = !!(food && classKey && food.likedByClass === classKey);
     const amount = liked ? MYROOM_BOND_LIKED_FOOD_AMOUNT : MYROOM_BOND_DISLIKED_FOOD_AMOUNT;
 
+    const pointsBefore = await fetchMyRoomBond(bondKey);
     await addMyRoomBond(bondKey, amount);
+    const pointsAfter = pointsBefore + amount;
+    const levelBefore = getMyRoomBondLevel(pointsBefore);
+    const levelAfter = getMyRoomBondLevel(pointsAfter);
+
     const key = active.key;
     closeMyRoomMonsterOptions();
 
@@ -1190,15 +1408,86 @@ async function feedMyRoomMonster(foodId) {
     const token = pauseMyRoomMonsterForInteraction(key);
     if (token) {
         await playMyRoomFeedMotion(token, food ? food.emoji : '🍽️');
-        showMyRoomMonsterReaction(key, liked ? '😋💕' : '😒💢');
+        // 好きな食べ物のときだけ、なつき度に応じて喜び方が派手になる。
+        // 苦手な食べ物のときは段階に関わらず不満顔（💢）のままにする。
+        if (liked) showMyRoomBondReaction(key, levelAfter.effectLevel, false);
+        else showMyRoomMonsterReaction(key, '😒💢');
         resumeMyRoomMonsterWander(key);
+    } else if (liked) {
+        showMyRoomBondReaction(key, levelAfter.effectLevel, false);
     } else {
-        showMyRoomMonsterReaction(key, liked ? '😋💕' : '😒💢');
+        showMyRoomMonsterReaction(key, '😒💢');
     }
-    if (typeof showToast === 'function') {
+
+    if (levelAfter.level > levelBefore.level) {
+        celebrateMyRoomBondLevelUp(key, levelAfter);
+    } else if (typeof showToast === 'function') {
         showToast(liked
             ? `🍽️ 大喜びで食べた！絆+${MYROOM_BOND_LIKED_FOOD_AMOUNT}（本日あと${result.remaining}回）`
             : `🍽️ あまり好きな味じゃなかったみたい…（本日あと${result.remaining}回）`);
+    }
+}
+
+// --- なつき度の段階に応じて、反応の絵文字を段階的に豪華にする ---
+//   effectLevel 0:控えめ → 4:最大級。撫でた時（isPet）と食べた時で表情を少し変える。
+function showMyRoomBondReaction(placementKey, effectLevel, isPet) {
+    const faces = isPet
+        ? ['😊', '🥰', '🥰', '😍', '😍']
+        : ['😋', '😋', '😋', '🤤', '😍'];
+    const hearts = ['', '💕', '💖💕', '💖💕💖', '💖✨💖✨'];
+    const lv = Math.max(0, Math.min(4, effectLevel || 0));
+    showMyRoomMonsterReaction(placementKey, `${faces[lv]}${hearts[lv]}`);
+
+    // 段階が上がるほど、周囲に舞うハート・キラキラの数も増やす
+    const token = MYROOM_STATE.monsterTokenEls[placementKey];
+    if (!token || !token.isConnected || lv < 2) return;
+    const particleCount = lv; // 2段階:2個 → 4段階:4個
+    for (let i = 0; i < particleCount; i++) {
+        const particle = document.createElement('div');
+        particle.textContent = (lv >= 4 && i % 2 === 1) ? '✨' : '💖';
+        particle.style.cssText = 'position:absolute; left:50%; top:20%; font-size:0.95rem; pointer-events:none; z-index:22;';
+        token.appendChild(particle);
+        const angle = (-90 + (i - (particleCount - 1) / 2) * 34) * Math.PI / 180;
+        const dist = 26 + Math.random() * 16;
+        const dx = Math.cos(angle) * dist;
+        const dy = Math.sin(angle) * dist;
+        try {
+            const anim = particle.animate([
+                { transform: 'translate(-50%,-50%) scale(0.4)', opacity: 0 },
+                { transform: `translate(calc(-50% + ${dx * 0.6}px), calc(-50% + ${dy * 0.6}px)) scale(1.1)`, opacity: 1, offset: 0.45 },
+                { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(0.85)`, opacity: 0 }
+            ], { duration: 900 + i * 70, easing: 'ease-out' });
+            anim.onfinish = () => particle.remove();
+            setTimeout(() => particle.remove(), 1400);
+        } catch (e) {
+            setTimeout(() => particle.remove(), 900);
+        }
+    }
+}
+
+// --- なつき度の段階が上がった時の演出（トースト＋モンスターの上に段階名を表示） ---
+function celebrateMyRoomBondLevelUp(placementKey, levelInfo) {
+    if (typeof showToast === 'function') {
+        showToast(`${levelInfo.emoji} なつき度が上がった！「${levelInfo.name}」になりました！`);
+    }
+    const token = MYROOM_STATE.monsterTokenEls[placementKey];
+    if (!token || !token.isConnected) return;
+
+    const banner = document.createElement('div');
+    banner.textContent = `${levelInfo.emoji} ${levelInfo.name}`;
+    banner.style.cssText = 'position:absolute; left:50%; top:-26px; transform:translate(-50%,0); white-space:nowrap; font-size:0.6rem; font-weight:900; color:#fde68a; background:rgba(26,18,11,0.92); border:1px solid #b45309; border-radius:9999px; padding:2px 8px; pointer-events:none; z-index:23;';
+    token.appendChild(banner);
+    try {
+        const anim = banner.animate([
+            { transform: 'translate(-50%,6px) scale(0.7)', opacity: 0 },
+            { transform: 'translate(-50%,-4px) scale(1.1)', opacity: 1, offset: 0.3 },
+            { transform: 'translate(-50%,-10px) scale(1)', opacity: 1, offset: 0.75 },
+            { transform: 'translate(-50%,-20px) scale(1)', opacity: 0 }
+        ], { duration: 2000, easing: 'ease-out' });
+        anim.onfinish = () => banner.remove();
+        setTimeout(() => banner.remove(), 2400);
+    } catch (e) {
+        setTimeout(() => banner.remove(), 2000);
     }
 }
 
@@ -1248,22 +1537,52 @@ function resumeMyRoomMonsterWander(placementKey) {
 }
 
 // --- 頭を手のひらで撫でるモーション（手を左右に小さく揺らす）を再生する。完了したらresolveするPromiseを返す ---
-function playMyRoomPetMotion(token) {
+//   effectLevel（なつき度の段階・0〜4）が高いほど撫でる回数が増え、
+//   さらに高段階ではモンスター自身が嬉しそうに跳ねる動きも加わる。
+function playMyRoomPetMotion(token, effectLevel = 0) {
     return new Promise(resolve => {
+        const lv = Math.max(0, Math.min(4, effectLevel || 0));
+        const strokeCount = 2 + Math.floor(lv / 2); // 0〜1段階:2往復、2〜3段階:3往復、4段階:4往復
+        const duration = 380 * strokeCount;
+
         const handEl = document.createElement('div');
         handEl.textContent = '🖐️';
         handEl.style.cssText = 'position:absolute; left:50%; top:6%; font-size:1.5rem; pointer-events:none; z-index:21; text-shadow:0 2px 4px rgba(0,0,0,0.5);';
         token.appendChild(handEl);
 
-        const duration = 900;
+        // 撫でる手のキーフレーム（往復回数分だけ左右の往復を繰り返す）
+        const handKeyframes = [];
+        const stepCount = strokeCount * 2;
+        for (let i = 0; i <= stepCount; i++) {
+            const isLeft = i % 2 === 0;
+            handKeyframes.push({
+                transform: isLeft
+                    ? 'translate(-70%,-60%) rotate(-18deg)'
+                    : 'translate(-30%,-70%) rotate(-4deg)',
+                offset: i / stepCount
+            });
+        }
+
+        // なつき度が高いと、撫でられている本人も小さく跳ねて喜ぶ
+        if (lv >= 2) {
+            const spriteTarget = token.querySelector('.myroom-walk-sprite')
+                || token.querySelector('img.monster-visual-img');
+            if (spriteTarget) {
+                const bounceHeight = lv >= 4 ? 7 : 4;
+                try {
+                    spriteTarget.animate([
+                        { transform: 'translateY(0)' },
+                        { transform: `translateY(-${bounceHeight}px)`, offset: 0.25 },
+                        { transform: 'translateY(0)', offset: 0.5 },
+                        { transform: `translateY(-${bounceHeight}px)`, offset: 0.75 },
+                        { transform: 'translateY(0)' }
+                    ], { duration, easing: 'ease-in-out' });
+                } catch (e) { /* 非対応環境では跳ねないだけで、撫でるモーションは再生される */ }
+            }
+        }
+
         try {
-            const anim = handEl.animate([
-                { transform: 'translate(-70%,-60%) rotate(-18deg)', offset: 0 },
-                { transform: 'translate(-30%,-70%) rotate(-4deg)', offset: 0.25 },
-                { transform: 'translate(-70%,-60%) rotate(-18deg)', offset: 0.5 },
-                { transform: 'translate(-30%,-70%) rotate(-4deg)', offset: 0.75 },
-                { transform: 'translate(-70%,-60%) rotate(-18deg)', offset: 1 }
-            ], { duration, easing: 'ease-in-out' });
+            const anim = handEl.animate(handKeyframes, { duration, easing: 'ease-in-out' });
             anim.onfinish = () => { handEl.remove(); resolve(); };
         } catch (e) {
             setTimeout(() => { handEl.remove(); resolve(); }, duration);

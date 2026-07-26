@@ -26,16 +26,17 @@ const GACHA_STATE = {
 // --- 排出アイテムプール（仮） ---
 // ★1/★2＝家具（観賞用・機能効果なし）、★3＝レンタルモンスター種族から抽選＋ランダムオーラ
 // image: 専用イラストがある場合のパス（マイルームでの表示・図鑑等で使用。無ければemojiで代替表示）
+// emitsLight: 灯り系の家具。マイルームの時間帯演出で、夕方・夜になると自動的に光る。
 const GACHA_FURNITURE_POOL = [
     { id: 'furniture_wood_chair', name: '木の椅子', emoji: '🪑', rarity: 1 },
-    { id: 'furniture_lantern', name: '灯りのランタン', emoji: '🏮', image: 'images/furniture/ランタン.png', rarity: 1 },
+    { id: 'furniture_lantern', name: '灯りのランタン', emoji: '🏮', image: 'images/furniture/ランタン.png', rarity: 1, emitsLight: true },
     { id: 'furniture_potted_plant', name: '観葉植物', emoji: '🪴', image: 'images/furniture/観葉植物.png', rarity: 1 },
     { id: 'furniture_bookshelf', name: '古びた本棚', emoji: '📚', rarity: 1 },
-    { id: 'furniture_candle', name: '燭台', emoji: '🕯️', image: 'images/furniture/燭台A.png', rarity: 1 },
+    { id: 'furniture_candle', name: '燭台', emoji: '🕯️', image: 'images/furniture/燭台A.png', rarity: 1, emitsLight: true },
     { id: 'furniture_rug', name: 'ふかふかのラグ', emoji: '🟫', rarity: 2 },
     { id: 'furniture_fountain', name: '小さな噴水', emoji: '⛲', image: 'images/furniture/小さな噴水.png', rarity: 2 },
     { id: 'furniture_treasure_chest', name: '装飾された宝箱', emoji: '🗝️', image: 'images/furniture/宝箱.png', rarity: 2 },
-    { id: 'furniture_windowlight', name: '丸窓', emoji: '🪟', image: 'images/furniture/窓.png', rarity: 2 },
+    { id: 'furniture_windowlight', name: '丸窓', emoji: '🪟', image: 'images/furniture/窓.png', rarity: 2, emitsLight: true },
     // --- マイルームB（ファーム）向けに追加した専用イラスト付きアイテム ---
     { id: 'furniture_hay_set', name: '牧草セット', emoji: '🌾', image: 'images/furniture/牧草セット.png', rarity: 1 },
     { id: 'furniture_crate_a', name: '木箱A', emoji: '📦', image: 'images/furniture/木箱A.png', rarity: 1 },
@@ -56,8 +57,8 @@ const GACHA_FURNITURE_POOL = [
     { id: 'furniture_indoor_feed_a', name: '屋内餌A', emoji: '🍬', image: 'images/furniture/屋内餌A.png', rarity: 1 },
     { id: 'furniture_indoor_feed_b', name: '屋内餌B', emoji: '🍬', image: 'images/furniture/屋内餌B.png', rarity: 1 },
     { id: 'furniture_hanging_plant', name: '吊るした植物', emoji: '🌿', image: 'images/furniture/吊るした植物.png', rarity: 1 },
-    { id: 'furniture_candelabra', name: '大燭台', emoji: '🕯️', image: 'images/furniture/燭台B.png', rarity: 2 },
-    { id: 'furniture_chair_with_lantern', name: '椅子とランタン', emoji: '🪑', image: 'images/furniture/木の椅子と明かり.png', rarity: 2 },
+    { id: 'furniture_candelabra', name: '大燭台', emoji: '🕯️', image: 'images/furniture/燭台B.png', rarity: 2, emitsLight: true },
+    { id: 'furniture_chair_with_lantern', name: '椅子とランタン', emoji: '🪑', image: 'images/furniture/木の椅子と明かり.png', rarity: 2, emitsLight: true },
 ];
 
 // --- 家具アイテムのアイコンを描画する共通ヘルパー（専用イラストがあれば画像、無ければ絵文字で代替） ---
@@ -432,4 +433,116 @@ function renderGachaRevealPanel(results) {
 
     panel.classList.remove('hidden');
     panel.classList.add('flex');
+}
+
+// =====================================================
+// カケラ交換所
+// ・★3モンスターがガチャで被ったときに貯まる「モンスターのカケラ」を使い、
+//   好きな★3モンスター（種族＋オーラの組み合わせ）1体と交換できる。
+// ・被りの受け皿として機能させるため、交換で手に入れたモンスターも通常のガチャ排出と
+//   まったく同じ扱い（player_inventory/{pid}/monsters に所持数として加算）にする。
+// ・既に持っている組み合わせを敢えて選ぶこともできる（所持数が増えるだけでカケラは還らない）。
+// =====================================================
+const KAKERA_EXCHANGE_COST = 5; // ★3モンスター1体と交換するのに必要なカケラ数
+
+function openKakeraExchangeModal() {
+    const modal = document.getElementById('kakera-exchange-modal');
+    if (!modal) return;
+
+    const costEl = document.getElementById('kakera-exchange-cost');
+    if (costEl) costEl.textContent = String(KAKERA_EXCHANGE_COST);
+
+    const speciesSelect = document.getElementById('kakera-exchange-species-select');
+    if (speciesSelect && typeof KIN_NEJIKI_SPECIES_POOL !== 'undefined') {
+        speciesSelect.innerHTML = KIN_NEJIKI_SPECIES_POOL.map(speciesId => {
+            const tmpl = MONSTER_TEMPLATES[speciesId];
+            return `<option value="${speciesId}">${tmpl ? tmpl.emoji + ' ' + tmpl.name : speciesId}</option>`;
+        }).join('');
+    }
+
+    const auraSelect = document.getElementById('kakera-exchange-aura-select');
+    if (auraSelect && typeof AURA_TYPES !== 'undefined') {
+        // 白はモスト専用の特別オーラなので、交換所の選択肢からは除外する（exclusive:true）
+        auraSelect.innerHTML = Object.keys(AURA_TYPES)
+            .filter(auraKey => !AURA_TYPES[auraKey].exclusive)
+            .map(auraKey => {
+                const aura = AURA_TYPES[auraKey];
+                return `<option value="${auraKey}">${aura.emoji} ${aura.name}</option>`;
+            }).join('');
+    }
+
+    modal.classList.remove('hidden');
+    refreshKakeraExchangeBalance();
+}
+
+function closeKakeraExchangeModal() {
+    const modal = document.getElementById('kakera-exchange-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+// --- 交換所内のカケラ所持数表示を更新し、足りているかどうかでボタンの有効・無効も切り替える ---
+async function refreshKakeraExchangeBalance() {
+    const balanceEl = document.getElementById('kakera-exchange-balance');
+    const btn = document.getElementById('kakera-exchange-submit-btn');
+    if (balanceEl) balanceEl.textContent = '…';
+    const balance = (typeof fetchMyMonsterKakera === 'function') ? await fetchMyMonsterKakera() : 0;
+    if (balanceEl) balanceEl.textContent = balance.toLocaleString();
+    if (btn) {
+        const enough = balance >= KAKERA_EXCHANGE_COST;
+        btn.disabled = !enough;
+        btn.classList.toggle('opacity-40', !enough);
+        btn.textContent = enough
+            ? `カケラ${KAKERA_EXCHANGE_COST}個で交換する`
+            : `カケラが足りません（あと${KAKERA_EXCHANGE_COST - balance}個）`;
+    }
+    return balance;
+}
+
+async function redeemKakeraExchange() {
+    const speciesSelect = document.getElementById('kakera-exchange-species-select');
+    const auraSelect = document.getElementById('kakera-exchange-aura-select');
+    const speciesId = speciesSelect ? speciesSelect.value : null;
+    const auraKey = auraSelect ? auraSelect.value : null;
+    if (!speciesId || !auraKey) return;
+
+    const tmpl = (typeof MONSTER_TEMPLATES !== 'undefined') ? MONSTER_TEMPLATES[speciesId] : null;
+    const aura = (typeof AURA_TYPES !== 'undefined') ? AURA_TYPES[auraKey] : null;
+    const label = `${aura ? aura.emoji : ''}${tmpl ? tmpl.name : speciesId}`;
+
+    const btn = document.getElementById('kakera-exchange-submit-btn');
+    if (btn) btn.disabled = true; // 連打による二重交換を防ぐ
+
+    // 先にカケラを消費し、成功した場合のみモンスターを付与する
+    // （逆の順番にすると、途中で失敗したときにカケラを払わずにモンスターだけ得られてしまう）
+    const spend = (typeof spendMonsterKakera === 'function')
+        ? await spendMonsterKakera(KAKERA_EXCHANGE_COST)
+        : { success: false };
+    if (!spend.success) {
+        if (typeof showToast === 'function') showToast('🔁 カケラが足りません');
+        refreshKakeraExchangeBalance();
+        return;
+    }
+
+    let granted = false;
+    if (typeof initFirebase === 'function' && initFirebase()) {
+        try {
+            const pid = getMyPlayerId();
+            await firebaseDb.ref(`player_inventory/${pid}/monsters/${speciesId}_${auraKey}`)
+                .transaction(current => (current || 0) + 1);
+            granted = true;
+        } catch (e) {
+            console.error('[カケラ交換所] モンスター付与エラー:', e);
+        }
+    }
+
+    if (!granted) {
+        // 付与に失敗した場合は、支払ったカケラを払い戻してから知らせる（カケラだけ失う事故を防ぐ）
+        if (typeof awardMonsterKakera === 'function') await awardMonsterKakera(KAKERA_EXCHANGE_COST);
+        if (typeof showToast === 'function') showToast('⚠️ 交換に失敗しました。通信状況を確認してもう一度お試しください（カケラは返却されました）');
+        refreshKakeraExchangeBalance();
+        return;
+    }
+
+    if (typeof showToast === 'function') showToast(`🎁 ${label}を仲間にしました！マイルームに配置できます`);
+    refreshKakeraExchangeBalance();
 }

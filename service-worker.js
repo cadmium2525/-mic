@@ -4,7 +4,7 @@
 // キャッシュのバージョンを上げると、ユーザー環境の古いキャッシュが破棄され、
 // 新しいファイル一式が再取得されます。js/images 等を更新した場合は
 // 必ず CACHE_VERSION の値を変更してください（変更しないと更新が反映されません）。
-const CACHE_VERSION = 'v10';
+const CACHE_VERSION = 'v11';
 const CACHE_NAME = `guts-road-cache-${CACHE_VERSION}`;
 
 // 同一オリジンの静的アセット（アプリ本体）。ここに列挙したファイルは
@@ -24,6 +24,7 @@ const PRECACHE_URLS = [
   'js/database.js',
   'js/game_core.js',
   'js/game_ranking.js',
+  'js/friends.js',
   'js/turn_order.js',
   'js/masmon_battle.js',
   'js/masmon_rating.js',

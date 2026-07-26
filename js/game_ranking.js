@@ -79,7 +79,7 @@ function openAccountModal() {
 
 // --- アカウント管理モーダル内のタブ切り替え ---
 function switchAccountModalTab(tabName) {
-    const tabs = ['stats', 'id'];
+    const tabs = ['stats', 'friends', 'id'];
     tabs.forEach(name => {
         const content = document.getElementById('account-tab-content-' + name);
         const btn = document.getElementById('account-tab-btn-' + name);
@@ -92,6 +92,10 @@ function switchAccountModalTab(tabName) {
             btn.classList.remove('active');
         }
     });
+    // フレンドタブは開かれた時に初めて読み込む（毎回モーダルを開くたびに通信しないようにするため）
+    if (tabName === 'friends' && typeof initFriendsTab === 'function') {
+        initFriendsTab();
+    }
 }
 
 // --- プレイ記録（ガッツファクトリー／PvP／モンスター使用率）を取得して描画する ---
@@ -188,6 +192,22 @@ function restoreMyPlayerId() {
         showToast('復帰するIDを入力してください。');
         return;
     }
+
+    // フレンドコード（GR-XXXX-XXXX）が入力された場合は、はっきり区別して弾く。
+    // 「フレンドコードを入力すればそのフレンドのアカウントに入れる」といった誤解や
+    // 悪意のある誘導（相手のコードを復帰欄に入れさせようとする等）を成立させないため、
+    // ここで明確に「別物である」ことを案内する。
+    if (typeof normalizeFriendCodeInput === 'function' && normalizeFriendCodeInput(newId)) {
+        showToast('これはフレンドコードです。復帰にはアカウントID（p_ から始まる文字列）を入力してください。');
+        return;
+    }
+
+    // アカウントIDの形（p_ で始まる）になっていないものは受け付けない
+    if (!newId.startsWith('p_')) {
+        showToast('アカウントIDの形式が正しくありません（p_ から始まる文字列を入力してください）。');
+        return;
+    }
+
     if (newId === getMyPlayerId()) {
         showToast('現在のIDと同じです。');
         return;
@@ -208,5 +228,13 @@ function restoreMyPlayerId() {
         ENDLESS_STATE.bestStreak = 0;
         ENDLESS_STATE.currentStreak = 0;
         ENDLESS_STATE.active = false;
+    }
+    // 別アカウントに切り替わったので、フレンド機能のキャッシュ（公開ID・コード・一覧）も破棄する。
+    // これを消さないと、切り替え前のアカウントのフレンドコードが表示されたままになってしまう。
+    if (typeof FRIENDS_STATE !== 'undefined') {
+        FRIENDS_STATE.myPublicId = null;
+        FRIENDS_STATE.myFriendCode = null;
+        FRIENDS_STATE.myProfile = null;
+        FRIENDS_STATE.friendList = [];
     }
 }

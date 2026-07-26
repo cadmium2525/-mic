@@ -111,6 +111,32 @@ async function fetchMyMonsterKakera() {
     }
 }
 
+// --- カケラを指定個数消費する（不足していればsuccess:falseを返し、何も変更しない） ---
+// ダイヤと同じくtransactionで判定・減算を1回の操作にまとめ、二重消費が起きないようにする。
+async function spendMonsterKakera(amount) {
+    if (!amount || amount <= 0) return { success: false, balance: null };
+    if (typeof initFirebase !== 'function' || !initFirebase()) return { success: false, balance: null };
+    let insufficient = false;
+    try {
+        const pid = getMyPlayerId();
+        const ref = firebaseDb.ref(`player_currency/${pid}/monsterKakera`);
+        const result = await ref.transaction(current => {
+            const balance = current || 0;
+            if (balance < amount) {
+                insufficient = true;
+                return balance; // 不足：変更しない
+            }
+            insufficient = false;
+            return balance - amount;
+        });
+        const finalBalance = (result && result.snapshot) ? result.snapshot.val() : null;
+        return { success: !insufficient, balance: finalBalance };
+    } catch (e) {
+        console.error('[モンスターのカケラ] 消費エラー:', e);
+        return { success: false, balance: null };
+    }
+}
+
 // --- マイルーム初回来訪特典チケット（好きな家具1つ・好きなモンスター1体と交換できる） ---
 async function awardMyRoomTicket(amount) {
     if (!amount || amount <= 0) return null;
