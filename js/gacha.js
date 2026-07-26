@@ -28,14 +28,14 @@ const GACHA_STATE = {
 // image: 専用イラストがある場合のパス（マイルームでの表示・図鑑等で使用。無ければemojiで代替表示）
 const GACHA_FURNITURE_POOL = [
     { id: 'furniture_wood_chair', name: '木の椅子', emoji: '🪑', rarity: 1 },
-    { id: 'furniture_lantern', name: '灯りのランタン', emoji: '🏮', rarity: 1 },
+    { id: 'furniture_lantern', name: '灯りのランタン', emoji: '🏮', image: 'images/furniture/ランタン.png', rarity: 1 },
     { id: 'furniture_potted_plant', name: '観葉植物', emoji: '🪴', image: 'images/furniture/観葉植物.png', rarity: 1 },
     { id: 'furniture_bookshelf', name: '古びた本棚', emoji: '📚', rarity: 1 },
-    { id: 'furniture_candle', name: '燭台', emoji: '🕯️', rarity: 1 },
+    { id: 'furniture_candle', name: '燭台', emoji: '🕯️', image: 'images/furniture/燭台A.png', rarity: 1 },
     { id: 'furniture_rug', name: 'ふかふかのラグ', emoji: '🟫', rarity: 2 },
     { id: 'furniture_fountain', name: '小さな噴水', emoji: '⛲', image: 'images/furniture/小さな噴水.png', rarity: 2 },
-    { id: 'furniture_treasure_chest', name: '装飾された宝箱', emoji: '🗝️', rarity: 2 },
-    { id: 'furniture_windowlight', name: 'ステンドグラスの窓', emoji: '🪟', rarity: 2 },
+    { id: 'furniture_treasure_chest', name: '装飾された宝箱', emoji: '🗝️', image: 'images/furniture/宝箱.png', rarity: 2 },
+    { id: 'furniture_windowlight', name: '丸窓', emoji: '🪟', image: 'images/furniture/窓.png', rarity: 2 },
     // --- マイルームB（ファーム）向けに追加した専用イラスト付きアイテム ---
     { id: 'furniture_hay_set', name: '牧草セット', emoji: '🌾', image: 'images/furniture/牧草セット.png', rarity: 1 },
     { id: 'furniture_crate_a', name: '木箱A', emoji: '📦', image: 'images/furniture/木箱A.png', rarity: 1 },
@@ -56,6 +56,8 @@ const GACHA_FURNITURE_POOL = [
     { id: 'furniture_indoor_feed_a', name: '屋内餌A', emoji: '🍬', image: 'images/furniture/屋内餌A.png', rarity: 1 },
     { id: 'furniture_indoor_feed_b', name: '屋内餌B', emoji: '🍬', image: 'images/furniture/屋内餌B.png', rarity: 1 },
     { id: 'furniture_hanging_plant', name: '吊るした植物', emoji: '🌿', image: 'images/furniture/吊るした植物.png', rarity: 1 },
+    { id: 'furniture_candelabra', name: '大燭台', emoji: '🕯️', image: 'images/furniture/燭台B.png', rarity: 2 },
+    { id: 'furniture_chair_with_lantern', name: '椅子とランタン', emoji: '🪑', image: 'images/furniture/木の椅子と明かり.png', rarity: 2 },
 ];
 
 // --- 家具アイテムのアイコンを描画する共通ヘルパー（専用イラストがあれば画像、無ければ絵文字で代替） ---

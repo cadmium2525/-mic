@@ -1119,7 +1119,16 @@ async function petMyRoomMonster() {
     await addMyRoomBond(bondKey, MYROOM_BOND_PET_AMOUNT);
     const key = active.key;
     closeMyRoomMonsterOptions();
-    showMyRoomMonsterReaction(key, '🥰💕');
+
+    // 対象モンスターを静止させ、頭を撫でるモーション→ハートの順で演出してから徘徊を再開する
+    const token = pauseMyRoomMonsterForInteraction(key);
+    if (token) {
+        await playMyRoomPetMotion(token);
+        showMyRoomMonsterReaction(key, '🥰💕');
+        resumeMyRoomMonsterWander(key);
+    } else {
+        showMyRoomMonsterReaction(key, '🥰💕');
+    }
     if (typeof showToast === 'function') showToast(`なでなで♪ 絆+${MYROOM_BOND_PET_AMOUNT}（本日あと${result.remaining}回）`);
 }
 
@@ -1143,12 +1152,130 @@ async function feedMyRoomMonster(foodId) {
     await addMyRoomBond(bondKey, amount);
     const key = active.key;
     closeMyRoomMonsterOptions();
-    showMyRoomMonsterReaction(key, liked ? '😋💕' : '😒💢');
+
+    // 対象モンスターを静止させ、目の前にエサを出す→少しずつ食べる→感情表現の順で演出してから徘徊を再開する
+    const token = pauseMyRoomMonsterForInteraction(key);
+    if (token) {
+        await playMyRoomFeedMotion(token, food ? food.emoji : '🍽️');
+        showMyRoomMonsterReaction(key, liked ? '😋💕' : '😒💢');
+        resumeMyRoomMonsterWander(key);
+    } else {
+        showMyRoomMonsterReaction(key, liked ? '😋💕' : '😒💢');
+    }
     if (typeof showToast === 'function') {
         showToast(liked
             ? `🍽️ 大喜びで食べた！絆+${MYROOM_BOND_LIKED_FOOD_AMOUNT}（本日あと${result.remaining}回）`
             : `🍽️ あまり好きな味じゃなかったみたい…（本日あと${result.remaining}回）`);
     }
+}
+
+// --- なでる／エサをあげる等のインタラクション演出のため、対象モンスターの徘徊を一時停止する ---
+//   移動アニメーションの途中であっても、今まさに見えている位置でピタッと静止させてから
+//   演出を開始する（急に位置が飛んだように見えないようにするため）。
+//   トークンが見つからない場合（背景を切り替えた直後など）はnullを返す。
+function pauseMyRoomMonsterForInteraction(placementKey) {
+    const token = MYROOM_STATE.monsterTokenEls[placementKey];
+    if (!token || !token.isConnected) return null;
+
+    // 徘徊の次の一歩・次の移動タイマーを止める
+    if (MYROOM_STATE.wanderTimers[placementKey]) {
+        clearTimeout(MYROOM_STATE.wanderTimers[placementKey]);
+        delete MYROOM_STATE.wanderTimers[placementKey];
+    }
+
+    // 移動アニメーションの途中なら、今の見た目の位置でそのまま静止させる
+    const floor = token.parentElement;
+    if (floor) {
+        const floorRect = floor.getBoundingClientRect();
+        const tokenRect = token.getBoundingClientRect();
+        if (floorRect.width > 0 && floorRect.height > 0) {
+            const centerX = tokenRect.left + tokenRect.width / 2 - floorRect.left;
+            const centerY = tokenRect.top + tokenRect.height / 2 - floorRect.top;
+            const xPct = (centerX / floorRect.width) * 100;
+            const yPct = (centerY / floorRect.height) * 100;
+            token.style.transition = 'none';
+            void token.offsetWidth; // 上のtransition解除を確実に反映させてから位置を固定する
+            token.style.left = `${xPct}%`;
+            token.style.top = `${yPct}%`;
+        }
+    }
+
+    // 歩行スプライトを使うモンスターは、指定の静止ポーズに切り替える
+    setMyRoomWalkSpriteWalking(placementKey, token, false);
+
+    return token;
+}
+
+// --- インタラクション演出が終わったら、徘徊を再開する ---
+function resumeMyRoomMonsterWander(placementKey) {
+    const token = MYROOM_STATE.monsterTokenEls[placementKey];
+    if (!token || !token.isConnected) return;
+    startMyRoomMonsterWander(placementKey, token);
+}
+
+// --- 頭を手のひらで撫でるモーション（手を左右に小さく揺らす）を再生する。完了したらresolveするPromiseを返す ---
+function playMyRoomPetMotion(token) {
+    return new Promise(resolve => {
+        const handEl = document.createElement('div');
+        handEl.textContent = '🖐️';
+        handEl.style.cssText = 'position:absolute; left:50%; top:6%; font-size:1.5rem; pointer-events:none; z-index:21; text-shadow:0 2px 4px rgba(0,0,0,0.5);';
+        token.appendChild(handEl);
+
+        const duration = 900;
+        try {
+            const anim = handEl.animate([
+                { transform: 'translate(-70%,-60%) rotate(-18deg)', offset: 0 },
+                { transform: 'translate(-30%,-70%) rotate(-4deg)', offset: 0.25 },
+                { transform: 'translate(-70%,-60%) rotate(-18deg)', offset: 0.5 },
+                { transform: 'translate(-30%,-70%) rotate(-4deg)', offset: 0.75 },
+                { transform: 'translate(-70%,-60%) rotate(-18deg)', offset: 1 }
+            ], { duration, easing: 'ease-in-out' });
+            anim.onfinish = () => { handEl.remove(); resolve(); };
+        } catch (e) {
+            setTimeout(() => { handEl.remove(); resolve(); }, duration);
+        }
+    });
+}
+
+// --- モンスターの目の前にエサを出し、少しずつ食べて無くなっていく様子（3段階）を再生する。完了したらresolveするPromiseを返す ---
+function playMyRoomFeedMotion(token, foodEmoji) {
+    return new Promise(resolve => {
+        const foodEl = document.createElement('div');
+        foodEl.textContent = foodEmoji;
+        foodEl.style.cssText = 'position:absolute; left:78%; top:62%; transform:translate(-50%,-50%) scale(0); font-size:1.4rem; pointer-events:none; z-index:21; text-shadow:0 2px 4px rgba(0,0,0,0.5);';
+        token.appendChild(foodEl);
+
+        // 0:登場 → 1:一口目 → 2:二口目 → 3:三口目（消える）
+        const bites = [1, 0.7, 0.4, 0];
+        const stepDuration = 260;
+        let i = 0;
+
+        const showBite = () => {
+            if (i >= bites.length) {
+                foodEl.remove();
+                resolve();
+                return;
+            }
+            const scale = bites[i];
+            const opacity = scale > 0 ? 1 : 0;
+            try {
+                const anim = foodEl.animate([
+                    { transform: `translate(-50%,-50%) scale(${i === 0 ? 0 : bites[i - 1]})`, opacity: 1 },
+                    { transform: `translate(-50%,-50%) scale(${scale})`, opacity }
+                ], { duration: stepDuration, easing: 'ease-in', fill: 'forwards' });
+                anim.onfinish = () => {
+                    i++;
+                    setTimeout(showBite, i === 1 ? 220 : 0); // 登場後は少し「間」を置いてから食べ始める
+                };
+            } catch (e) {
+                foodEl.style.transform = `translate(-50%,-50%) scale(${scale})`;
+                foodEl.style.opacity = String(opacity);
+                i++;
+                setTimeout(showBite, stepDuration);
+            }
+        };
+        showBite();
+    });
 }
 
 function removeActiveMyRoomMonster() {
