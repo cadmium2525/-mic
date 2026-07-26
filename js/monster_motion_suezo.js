@@ -64,6 +64,9 @@ function spawnSuezoTongue(fromX, fromY, toX, toY, totalDuration, opts = {}) {
     spawnCustomParticle('👅', fromX, fromY, {
         size: 26,
         duration: totalDuration,
+        // 舌の帯（上のtongue.animate）とまったく同じ補間カーブを指定する。
+        // ここを揃えないと、先端の絵文字だけが帯より先に進んでしまう。
+        easing: 'ease-in-out',
         keyframes: [
             { transform: 'translate(-50%,-50%) scale(0.4)', opacity: 0, offset: 0 },
             { transform: `translate(${dx}px, ${dy}px) translate(-50%,-50%) scale(1.15)`, opacity: 1, offset: extendEnd },

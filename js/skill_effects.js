@@ -198,7 +198,10 @@ function getElCenter(el) {
 // --- カスタムモーション用の汎用パーティクル生成ヘルパー ---
 // spawnSkillParticleEffectと役割は同じだが、キーフレームを呼び出し側で自由に指定できる版。
 function spawnCustomParticle(text, x, y, opts = {}) {
-    const { size = 24, duration = 400, delay = 0, keyframes, color } = opts;
+    // easing: 補間カーブ。既定は'ease-out'。別途アニメーションさせている要素と
+    //   ぴったり同期させたい場合（例：伸びる舌の帯と、その先端の絵文字）は、
+    //   双方に同じカーブを指定しないと進み方がズレて先端だけ先に進んでしまう。
+    const { size = 24, duration = 400, delay = 0, keyframes, color, easing = 'ease-out' } = opts;
     const particle = document.createElement('div');
     particle.textContent = text;
     const glowShadow = color ? `0 0 8px ${color}, 0 0 4px rgba(0,0,0,0.5)` : '0 0 6px rgba(0,0,0,0.5)';
@@ -207,7 +210,7 @@ function spawnCustomParticle(text, x, y, opts = {}) {
 
     const kf = keyframes || [{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 0 }];
     try {
-        const anim = particle.animate(kf, { duration, delay, easing: 'ease-out', fill: 'forwards' });
+        const anim = particle.animate(kf, { duration, delay, easing, fill: 'forwards' });
         anim.onfinish = () => particle.remove();
         setTimeout(() => particle.remove(), duration + delay + 200);
     } catch (e) {
@@ -502,4 +505,103 @@ function playSkillVisualEffectByType(effType, side, override) {
     if (!casterEl || !targetEl) return;
     const selfDirected = SELF_DIRECTED_EFFECT_TYPES.includes(effType);
     spawnSkillParticleEffect(casterEl, selfDirected ? casterEl : targetEl, config);
+}
+
+// =====================================================
+// カスタムモーション用の共通パーツ
+// モンスター別のモーションファイル（monster_motion_*.js）から使う汎用の動き。
+// 「踏み込んで殴って戻る」「斬撃の軌跡」「着弾の衝撃」などは種族をまたいで頻出するため、
+// ここにまとめて、各ファイルでは味付けの違いだけを書けばよいようにしている。
+// ※スプライトを動かす処理は必ず animateSpriteLayers を通すこと（オーラ着色を置き去りにしないため）。
+// =====================================================
+
+// --- 相手に踏み込んで攻撃し、元の位置に戻る（近接技の基本の動き） ---
+//   reach   : 相手までの距離のどこまで踏み込むか（0〜1。1で相手の位置まで）
+//   opts.spin: 踏み込みながら回転させたい場合の角度
+//   戻り値: { duration, impactAt, from, to } … 着弾タイミングに合わせて演出を足すのに使う
+function playLungeMotion(side, opts = {}) {
+    const { reach = 0.55, duration = 600, scaleHit = 1.06, spin = 0 } = opts;
+    const casterEl = getBattleSpriteContainerEl(side);
+    const targetEl = getBattleSpriteContainerEl(otherSide(side));
+    const result = { duration, impactAt: duration * 0.45, from: null, to: null };
+    if (!casterEl || !targetEl) return result;
+
+    const from = getElCenter(casterEl);
+    const to = getElCenter(targetEl);
+    result.from = from;
+    result.to = to;
+    const travel = (to.x - from.x) * reach;
+
+    animateSpriteLayers(side, [
+        { transform: 'translateX(0) scale(1) rotate(0deg)', offset: 0 },
+        { transform: `translateX(${-travel * 0.14}px) scale(0.94) rotate(0deg)`, offset: 0.16 }, // ためる
+        { transform: `translateX(${travel}px) scale(${scaleHit}) rotate(${spin}deg)`, offset: 0.45 }, // 踏み込む
+        { transform: `translateX(${travel}px) scale(${scaleHit}) rotate(${spin}deg)`, offset: 0.6 },
+        { transform: 'translateX(0) scale(1) rotate(0deg)', offset: 1 }                          // 戻る
+    ], { duration, easing: 'ease-in-out' });
+
+    return result;
+}
+
+// --- 攻撃を受けた側が仰け反る ---
+function playRecoilMotion(side, opts = {}) {
+    const { duration = 420, distance = 10, rotate = 8 } = opts;
+    animateSpriteLayers(side, [
+        { transform: 'translateX(0) rotate(0deg)', offset: 0 },
+        { transform: `translateX(${distance}px) rotate(${rotate}deg)`, offset: 0.3 },
+        { transform: `translateX(${-distance * 0.4}px) rotate(${-rotate * 0.35}deg)`, offset: 0.65 },
+        { transform: 'translateX(0) rotate(0deg)', offset: 1 }
+    ], { duration, easing: 'ease-out' });
+}
+
+// --- 斬撃の軌跡（細長い光の線が、指定角度で一閃する） ---
+function spawnSlashArc(x, y, angleDeg, opts = {}) {
+    const { length = 90, width = 6, color = '#e8f4ff', duration = 320 } = opts;
+    const arc = document.createElement('div');
+    arc.style.cssText = `position:fixed; left:${x}px; top:${y}px; width:${length}px; height:${width}px;
+        margin-left:${-length / 2}px; margin-top:${-width / 2}px; border-radius:${width}px;
+        pointer-events:none; z-index:9998; will-change:transform,opacity;
+        background:linear-gradient(90deg, ${color}00, ${color}ff 45%, ${color}00);
+        box-shadow:0 0 10px 3px ${color}90;`;
+    document.body.appendChild(arc);
+    try {
+        const anim = arc.animate([
+            { transform: `rotate(${angleDeg}deg) scaleX(0.2) scaleY(0.6)`, opacity: 0 },
+            { transform: `rotate(${angleDeg}deg) scaleX(1) scaleY(1)`, opacity: 1, offset: 0.35 },
+            { transform: `rotate(${angleDeg}deg) scaleX(1.15) scaleY(0.7)`, opacity: 0 }
+        ], { duration, easing: 'ease-out', fill: 'forwards' });
+        anim.onfinish = () => arc.remove();
+        setTimeout(() => arc.remove(), duration + 200);
+    } catch (e) { arc.remove(); }
+}
+
+// --- 着弾の衝撃（ぱっと弾けて消える） ---
+function spawnImpactBurst(x, y, opts = {}) {
+    const { emoji = '💥', size = 30, duration = 340, color } = opts;
+    spawnCustomParticle(emoji, x, y, {
+        size, duration, color,
+        keyframes: [
+            { transform: 'translate(-50%,-50%) scale(0.4)', opacity: 0 },
+            { transform: 'translate(-50%,-50%) scale(1.3)', opacity: 1, offset: 0.45 },
+            { transform: 'translate(-50%,-50%) scale(1)', opacity: 0 }
+        ]
+    });
+}
+
+// --- 相手のフィールドに何かを撒く（設置技用）。上から降ってきて、跳ねて落ち着く ---
+function spawnScatterOnField(x, y, emoji, count, opts = {}) {
+    const { size = 18, duration = 620, spread = 60, color } = opts;
+    for (let i = 0; i < count; i++) {
+        const dx = (i - (count - 1) / 2) * (spread / Math.max(1, count - 1)) + (Math.random() - 0.5) * 8;
+        spawnCustomParticle(emoji, x + dx, y, {
+            size, duration, color,
+            delay: i * 70,
+            keyframes: [
+                { transform: 'translate(-50%,-50%) translateY(-46px) scale(0.6) rotate(0deg)', opacity: 0 },
+                { transform: 'translate(-50%,-50%) translateY(0) scale(1) rotate(180deg)', opacity: 1, offset: 0.55 },
+                { transform: 'translate(-50%,-50%) translateY(-10px) scale(0.95) rotate(240deg)', opacity: 1, offset: 0.75 },
+                { transform: 'translate(-50%,-50%) translateY(0) scale(1) rotate(300deg)', opacity: 0.9, offset: 1 }
+            ]
+        });
+    }
 }
