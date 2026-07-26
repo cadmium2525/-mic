@@ -325,15 +325,38 @@ input, textarea, select {
     opacity: 1;
 }
 
-/* 灯り系の家具（emitsLight:true）は、夕方・夜だけほのかに光る */
+/* 灯り系の家具（emitsLight:true）は、夕方・夜だけほのかに光る。
+   家具の絵柄自体を明るくしつつ、::before で「光のにじみ（ハロー）」を重ねる。
+   ハローのz-indexは時間帯の色味オーバーレイ（#myroom-area::after = 100）より大きくしてある。
+   これは、夜は画面全体を暗く沈ませているため、その下で光らせても打ち消されてしまい、
+   灯りとして見えなくなるのを避けるため（＝光だけは暗がりの上に出す）。 */
 .myroom-furniture-lit {
-    filter: drop-shadow(0 0 10px rgba(255, 196, 92, 0.85)) drop-shadow(0 0 22px rgba(255, 158, 48, 0.45)) brightness(1.12);
+    filter: brightness(1.18) saturate(1.05);
     animation: myroomLanternFlicker 3.4s ease-in-out infinite;
 }
+.myroom-furniture-lit::before {
+    content: '';
+    position: absolute;
+    inset: -30%;
+    z-index: 110;
+    pointer-events: none;
+    border-radius: 50%;
+    background: radial-gradient(circle,
+        rgba(255, 216, 130, 0.55) 0%,
+        rgba(255, 180, 70, 0.30) 38%,
+        rgba(255, 160, 50, 0.10) 62%,
+        rgba(255, 160, 50, 0) 78%);
+    animation: myroomLanternHalo 3.4s ease-in-out infinite;
+}
 @keyframes myroomLanternFlicker {
-    0%, 100% { filter: drop-shadow(0 0 10px rgba(255, 196, 92, 0.85)) drop-shadow(0 0 22px rgba(255, 158, 48, 0.45)) brightness(1.12); }
-    45%      { filter: drop-shadow(0 0 13px rgba(255, 206, 112, 0.95)) drop-shadow(0 0 28px rgba(255, 168, 58, 0.55)) brightness(1.18); }
-    70%      { filter: drop-shadow(0 0 9px rgba(255, 190, 86, 0.80)) drop-shadow(0 0 19px rgba(255, 152, 44, 0.40)) brightness(1.10); }
+    0%, 100% { filter: brightness(1.18) saturate(1.05); }
+    45%      { filter: brightness(1.30) saturate(1.10); }
+    70%      { filter: brightness(1.14) saturate(1.04); }
+}
+@keyframes myroomLanternHalo {
+    0%, 100% { opacity: 0.88; transform: scale(1); }
+    45%      { opacity: 1;    transform: scale(1.06); }
+    70%      { opacity: 0.80; transform: scale(0.98); }
 }
 
 /* ===== マイルーム：フレンドの部屋を閲覧中の表示 ===== */

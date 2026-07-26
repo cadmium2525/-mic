@@ -298,6 +298,12 @@ function buildOwnedFurnitureList(furnitureCounts) {
     return Object.keys(furnitureCounts).map(id => {
         const def = (typeof GACHA_FURNITURE_POOL !== 'undefined') ? GACHA_FURNITURE_POOL.find(f => f.id === id) : null;
         return {
+            // 定義側（GACHA_FURNITURE_POOL）の項目をまず丸ごと引き継ぐ。
+            // ここで必要な項目だけを手で選んで写すと、定義に項目を足したときに
+            // その項目がこのリスト経由では失われてしまう
+            // （実際にemitsLight＝灯り系家具かどうかの情報が抜け落ち、
+            //   自分の部屋では家具が光らない不具合になっていた）。
+            ...(def || {}),
             id,
             count: furnitureCounts[id] || 0,
             name: def ? def.name : id,
