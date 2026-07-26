@@ -823,6 +823,19 @@ function maybeExecuteKinNejikiEnemySwitch() {
 // --- 交換1回分をカウントする（1ラン内のみ有効） ---
 function incrementKinNejikiExchangeCount() {
     KIN_NEJIKI_STATE.exchangeCount = (KIN_NEJIKI_STATE.exchangeCount || 0) + 1;
+    updateKinNejikiExchangeCountDisplay();
+}
+
+// --- 現在の交換回数・次のボーナス枠までの残り回数を、表示中の画面すべてに反映する ---
+// （パーティ選出画面・交換画面のバナー部分に共通クラスで埋め込んである）
+function updateKinNejikiExchangeCountDisplay() {
+    const count = KIN_NEJIKI_STATE.exchangeCount || 0;
+    const bonusSlotCount = Math.floor(count / 7);
+    const remaining = 7 - (count % 7);
+    const text = bonusSlotCount > 0
+        ? `🔄 交換回数: ${count}回（ボーナス枠${bonusSlotCount}個・あと${remaining}回で+1）`
+        : `🔄 交換回数: ${count}回（あと${remaining}回で1セット先のボーナスモンスターが出現）`;
+    document.querySelectorAll('.kinnejiki-exchange-count-display').forEach(el => { el.textContent = text; });
 }
 
 
@@ -978,6 +991,7 @@ function renderKinNejikiSelectScreen() {
     const container = document.getElementById('kinnejiki-offer-container');
     if (!container) return;
     container.innerHTML = '';
+    updateKinNejikiExchangeCountDisplay();
 
     KIN_NEJIKI_STATE.offer.forEach((m, idx) => {
         if (!m) return;
@@ -1304,6 +1318,7 @@ let kinNejikiSwapTheirsIdx = null;
 function renderKinNejikiSwapScreen() {
     kinNejikiSwapMineIdx = null;
     kinNejikiSwapTheirsIdx = null;
+    updateKinNejikiExchangeCountDisplay();
     const selectStep = document.getElementById('kinnejiki-swap-step-select');
     const orderStep = document.getElementById('kinnejiki-swap-step-order');
     const nextStep = document.getElementById('kinnejiki-swap-step-next');
@@ -1402,6 +1417,7 @@ function renderKinNejikiOrderStep() {
     const hintContainer = document.getElementById('kinnejiki-next-opponent-hint');
     const orderContainer = document.getElementById('kinnejiki-order-container');
     if (!hintContainer || !orderContainer) return;
+    updateKinNejikiExchangeCountDisplay();
 
     // --- 次の相手の1体目のヒント ---
     // セットが進むほど得られる情報を減らし、5セット目以降は偵察情報そのものを無くす。
