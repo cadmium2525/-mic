@@ -117,6 +117,13 @@ function startMyRoomTimeOfDayWatcher() {
         const nowPeriod = getMyRoomTimePeriod();
         if (nowPeriod.id === lastPeriodId) return; // 同じ時間帯のうちは何もしない
         lastPeriodId = nowPeriod.id;
+
+        // マイルーム以外の画面にいる間は、見た目の更新もお知らせも行わない。
+        // （バトル中などに「夜になりました」と通知が割り込むのを防ぐ。
+        //   次にマイルームを開いた時点で openMyRoomScreen 側から改めて反映される）
+        const onMyRoomScreen = (typeof GAME_STATE === 'undefined') || GAME_STATE.currentScreen === 'screen-myroom';
+        if (!onMyRoomScreen) return;
+
         applyMyRoomTimeOfDay();
         // 灯りの点灯状態が変わるため、家具を描き直して反映させる
         renderMyRoomFurnitureItems();
@@ -408,6 +415,7 @@ function applyMyRoomBackground() {
 }
 
 function openMyRoomBackgroundPicker() {
+    if (MYROOM_STATE.visitorMode) return; // フレンドの部屋では配置を変更できない
     const modal = document.getElementById('myroom-background-picker-modal');
     const list = document.getElementById('myroom-background-picker-list');
     if (!modal || !list) return;
@@ -465,6 +473,12 @@ async function refreshMyRoomTicketBanner() {
     const banner = document.getElementById('myroom-ticket-banner');
     const countEl = document.getElementById('myroom-ticket-count');
     if (!banner) return;
+    // フレンドの部屋を見学している間は、自分のチケット案内を出さない
+    // （見学中の画面に自分向けの操作ボタンが混ざってしまうため）
+    if (MYROOM_STATE.visitorMode) {
+        banner.classList.add('hidden');
+        return;
+    }
     const count = (typeof fetchMyRoomTicketCount === 'function') ? await fetchMyRoomTicketCount() : 0;
     if (countEl) countEl.textContent = count;
     banner.classList.toggle('hidden', count <= 0);
@@ -684,6 +698,7 @@ function setMyRoomFurnitureSortMode(mode) {
 }
 
 function openMyRoomFurniturePicker() {
+    if (MYROOM_STATE.visitorMode) return; // フレンドの部屋では配置を変更できない
     const modal = document.getElementById('myroom-furniture-picker-modal');
     const list = document.getElementById('myroom-furniture-picker-list');
     const sortSelect = document.getElementById('myroom-furniture-sort-select');
@@ -897,7 +912,7 @@ function spawnMyRoomMonsterToken(placementKey, info, floor) {
     }
     floor.appendChild(token);
     MYROOM_STATE.monsterTokenEls[placementKey] = token;
-    updateMyRoomMonsterZIndex(token); // Y座標が低い（奥にいるように見える）ほど手前に表示する重なり順を反映
+    updateMyRoomMonsterZIndex(token); // 画面の下にいるほど手前になる重なり順を反映する
 
     if (walkSpriteConfig) {
         renderMyRoomWalkSprite(token, walkSpriteConfig, info.auraKey);
@@ -1087,7 +1102,7 @@ function wanderMyRoomMonsterStep(placementKey, token, onArrive) {
     token.style.left = `${targetX}%`;
     token.style.top = `${targetY}%`;
 
-    // 移動中も含めて、Y座標が低い（奥にいるように見える）ほど手前に表示されるよう重なり順を追従させる
+    // 移動中も含めて、画面の下にいるほど手前になるよう重なり順を追従させる
     animateMyRoomMonsterZIndex(token, duration);
 
     // 移動している間だけ歩行スプライトのコマ送りを再生し、目的地に着いたら指定の静止ポーズで止める
@@ -1099,9 +1114,12 @@ function wanderMyRoomMonsterStep(placementKey, token, onArrive) {
 }
 
 // --- モンスターの重なり順（z-index）を、その時点の画面上のY座標から算出して反映する ---
-//   Y座標が低い（画面の上の方にいる）モンスターほど手前に表示されるようにする。
+//   画面の下にいるモンスターほど「手前（カメラに近い）」、上にいるほど「奥」になるようにする。
+//   これは床を斜め上から見下ろしている絵に対して自然な遠近の見え方に合わせたもの。
 //   getBoundingClientRectで実際の描画位置を見ているため、CSSトランジションで移動している
 //   途中（style.top自体はもう目的地の値になっている）でも、今まさに見えている位置を基準にできる。
+//   ※z-indexの値は0〜1000の範囲に収めている。極端に大きな値にすると、
+//     （マイルームの外側にあるモーダル等と重なり順を競ってしまうため）不必要に大きくしない。
 function updateMyRoomMonsterZIndex(token) {
     if (!token || !token.isConnected) return;
     const floor = token.parentElement;
@@ -1110,8 +1128,8 @@ function updateMyRoomMonsterZIndex(token) {
     if (floorRect.height <= 0) return;
     const tokenRect = token.getBoundingClientRect();
     const centerY = tokenRect.top + tokenRect.height / 2 - floorRect.top;
-    const yPct = (centerY / floorRect.height) * 100;
-    token.style.zIndex = String(Math.round((100 - yPct) * 100));
+    const yPct = Math.max(0, Math.min(100, (centerY / floorRect.height) * 100));
+    token.style.zIndex = String(Math.round(yPct * 10)); // 下にいる（yPctが大きい）ほど手前
 }
 
 // --- 移動アニメーションの間、requestAnimationFrameで重なり順を継続的に更新し続ける ---
@@ -1162,6 +1180,7 @@ function setMyRoomMonsterSortMode(mode) {
 }
 
 function openMyRoomMonsterPicker() {
+    if (MYROOM_STATE.visitorMode) return; // フレンドの部屋では配置を変更できない
     const modal = document.getElementById('myroom-monster-picker-modal');
     const list = document.getElementById('myroom-monster-picker-list');
     const countLabel = document.getElementById('myroom-monster-count-label');
@@ -1565,19 +1584,30 @@ function playMyRoomPetMotion(token, effectLevel = 0) {
 
         // なつき度が高いと、撫でられている本人も小さく跳ねて喜ぶ
         if (lv >= 2) {
-            const spriteTarget = token.querySelector('.myroom-walk-sprite')
-                || token.querySelector('img.monster-visual-img');
-            if (spriteTarget) {
+            // オーラ着色オーバーレイは絵柄本体とは別の要素として重ねているだけなので、
+            // 本体だけを動かすと「色付けだけがその場に残る」ことになる。
+            // そのため、本体と着色オーバーレイの両方に同一のキーフレームを適用して一緒に動かす。
+            const bounceTargets = [
+                token.querySelector('.myroom-walk-sprite'),
+                token.querySelector('.myroom-walk-sprite-tint'),
+                token.querySelector('img.monster-visual-img'),
+                token.querySelector('.monster-visual-aura-tint')
+            ].filter(Boolean);
+
+            if (bounceTargets.length > 0) {
                 const bounceHeight = lv >= 4 ? 7 : 4;
-                try {
-                    spriteTarget.animate([
-                        { transform: 'translateY(0)' },
-                        { transform: `translateY(-${bounceHeight}px)`, offset: 0.25 },
-                        { transform: 'translateY(0)', offset: 0.5 },
-                        { transform: `translateY(-${bounceHeight}px)`, offset: 0.75 },
-                        { transform: 'translateY(0)' }
-                    ], { duration, easing: 'ease-in-out' });
-                } catch (e) { /* 非対応環境では跳ねないだけで、撫でるモーションは再生される */ }
+                const bounceKeyframes = [
+                    { transform: 'translateY(0)' },
+                    { transform: `translateY(-${bounceHeight}px)`, offset: 0.25 },
+                    { transform: 'translateY(0)', offset: 0.5 },
+                    { transform: `translateY(-${bounceHeight}px)`, offset: 0.75 },
+                    { transform: 'translateY(0)' }
+                ];
+                bounceTargets.forEach(target => {
+                    try {
+                        target.animate(bounceKeyframes, { duration, easing: 'ease-in-out' });
+                    } catch (e) { /* 非対応環境では跳ねないだけで、撫でるモーションは再生される */ }
+                });
             }
         }
 

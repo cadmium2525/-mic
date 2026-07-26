@@ -41,11 +41,6 @@ function returnToTitleFromDex() {
     changeScreen('screen-strategy-hub');
 }
 
-// 詳細ビューの「種族一覧に戻る」ボタンから呼ばれる
-function showMonsterDexList() {
-    renderMonsterDexList();
-}
-
 // --- 種族一覧（タップで詳細へ） ---
 function renderMonsterDexList() {
     document.getElementById('monster-dex-list-view').classList.remove('hidden');

@@ -390,10 +390,16 @@ function renderFriendListInto(container, profiles) {
         return;
     }
 
-    container.innerHTML = profiles.map(f => `
+    // 公開IDは自分たちが発行した形式（英数字・アンダースコア・ハイフンのみ）に限る。
+    // Firebaseのキーにはクォート文字も入れられてしまうため、
+    // 想定外の文字を含むIDをonclick属性にそのまま埋め込むと属性を抜け出されてしまう。
+    // 万一そうしたデータが混ざっていた場合は、埋め込まずに読み飛ばす。
+    const safeProfiles = profiles.filter(f => /^[A-Za-z0-9_-]+$/.test(String(f.pubId || '')));
+
+    container.innerHTML = safeProfiles.map(f => `
         <div class="flex items-center gap-2 bg-[#150b07] border border-emerald-900/50 rounded-lg px-2 py-2">
             <div class="friend-icon-slot w-9 h-9 flex-shrink-0 flex items-center justify-center text-xl bg-[#1a120b] rounded-full border border-emerald-800 overflow-hidden"
-                data-species="${f.iconSpeciesId || ''}" data-aura="${f.iconAuraKey || ''}"></div>
+                data-species="${escapeFriendText(f.iconSpeciesId || '')}" data-aura="${escapeFriendText(f.iconAuraKey || '')}"></div>
             <span class="flex-1 min-w-0 text-[11px] text-amber-100 font-bold truncate">${escapeFriendText(f.name)}</span>
             <button onclick="visitFriendRoom('${f.pubId}')"
                 class="shrink-0 px-2 py-1 bg-emerald-700 hover:bg-emerald-600 text-white font-bold rounded-lg text-[9px] transition-all active:scale-95">

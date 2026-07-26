@@ -282,15 +282,25 @@ input, textarea, select {
 }
 
 /* ===== マイルーム：時間帯演出 ===== */
+/* #myroom-area 自身を独立したスタッキングコンテキストにしておく（isolation:isolate）。
+   これが無いと、中のモンスター（Y座標に応じたz-index）や、ドラッグ中の家具のz-indexが
+   マイルームの枠を飛び越えて外側と重なり順を競ってしまい、
+   「家具一覧モーダル（z-50）よりモンスターが手前に出る」といった不具合になる。
+   isolateしておけば、中でどんなz-indexを使っても外側のモーダルより前には出られない。 */
+#myroom-area {
+    isolation: isolate;
+}
 /* #myroom-area に myroom-time-{morning|day|evening|night} クラスが付き、
    ::after の疑似要素で部屋全体に色味を重ねる。家具・モンスターより手前に来るが、
-   pointer-events:none なので操作の邪魔はしない。 */
+   pointer-events:none なので操作の邪魔はしない。
+   z-indexは部屋の中の要素（ドラッグ中の家具＝最大50）より大きくして、
+   どの状態でも部屋全体に均一に色味がかかるようにする。 */
 #myroom-area::after {
     content: '';
     position: absolute;
     inset: 0;
     pointer-events: none;
-    z-index: 30;
+    z-index: 100;
     transition: background 1.2s ease, opacity 1.2s ease;
     opacity: 0;
 }
