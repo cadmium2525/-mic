@@ -45,6 +45,9 @@ const MYROOM_FURNITURE_SCALE_MIN = 0.5;
 const MYROOM_FURNITURE_SCALE_MAX = 2.0;
 const MYROOM_FURNITURE_SCALE_STEP = 0.15;
 const MYROOM_FURNITURE_ROTATE_STEP = 45;
+// 灯り系家具が照らす「光だまり」の大きさ（家具の表示サイズの何倍まで光が届くか）。
+// 数字を大きくすると、より広い範囲がぼんやり明るくなる。
+const MYROOM_LIGHT_POOL_SIZE_RATIO = 3.4;
 
 function getCurrentMyRoomBackground() {
     return MYROOM_BACKGROUNDS[MYROOM_STATE.backgroundId] || MYROOM_BACKGROUNDS[MYROOM_DEFAULT_BACKGROUND_ID];
@@ -562,11 +565,42 @@ function renderMyRoomFurnitureItems() {
     if (!container) return;
     container.innerHTML = '';
 
+    // 光だまりのレイヤーも一緒に作り直す（家具を動かしたり時間帯が変わったら光の位置も変わるため）
+    const lightLayer = document.getElementById('myroom-light-layer');
+    if (lightLayer) lightLayer.innerHTML = '';
+
     const bg = getCurrentMyRoomBackground();
     const instances = getPlacedFurnitureForBg(bg.id);
+    const lit = getMyRoomTimePeriod().lit;
     Object.keys(instances).forEach(instanceKey => {
         spawnMyRoomFurnitureElement(instanceKey, instances[instanceKey], container);
+        // 灯り系家具かつ点灯する時間帯なら、その位置に光だまりを1つ置く
+        if (lit && lightLayer) {
+            const def = getMyRoomFurnitureDef(instances[instanceKey].furnitureId);
+            if (def && def.emitsLight) {
+                spawnMyRoomLightPool(instances[instanceKey], lightLayer);
+            }
+        }
     });
+}
+
+// --- 灯り系家具が周囲に落とす「光だまり」を、専用レイヤー上に生成する ---
+//   家具そのものを強く光らせると絵柄が白飛びしてしまうので、家具の明るさは控えめに保ち、
+//   代わりにこの光だまりで周囲を明るくして「灯りが部屋を照らしている」ように見せる。
+//   家具を大きくしている（scaleを上げている）場合は、照らす範囲もそれに比例して広くする。
+function spawnMyRoomLightPool(instance, lightLayer) {
+    const scale = instance.scale || 1;
+    const size = MYROOM_FURNITURE_BASE_SIZE_PX * scale * MYROOM_LIGHT_POOL_SIZE_RATIO;
+
+    const pool = document.createElement('div');
+    pool.className = 'myroom-light-pool';
+    pool.style.width = `${size}px`;
+    pool.style.height = `${size}px`;
+    pool.style.left = `${instance.xPct}%`;
+    pool.style.top = `${instance.yPct}%`;
+    // ゆらぎの位相を家具ごとにずらして、複数の灯りが同時に同じ明るさで脈打たないようにする
+    pool.style.animationDelay = `${-(Math.random() * 3.4).toFixed(2)}s`;
+    lightLayer.appendChild(pool);
 }
 
 function getMyRoomFurnitureDef(furnitureId) {

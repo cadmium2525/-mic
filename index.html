@@ -1249,6 +1249,12 @@
                     <!-- 配置済み家具（自由配置）。JS側でドラッグ可能な要素を動的に生成する -->
                     <div id="myroom-furniture-slots" class="absolute inset-0"></div>
 
+                    <!-- 灯り系家具が周囲に落とす「光だまり」だけを描く専用レイヤー。
+                         家具の要素自身はtransformが掛かっており独立した重ね合わせ領域を作るため、
+                         その内部（擬似要素など）からは時間帯の暗幕より手前に出ることができない。
+                         そこで光だけをこのレイヤーに分離し、暗幕より手前で合成させている。 -->
+                    <div id="myroom-light-layer" class="absolute inset-0 pointer-events-none"></div>
+
                     <!-- モンスターが歩き回る床エリア（家具のドラッグ・タップを邪魔しないようpointer-events:noneにし、
                          モンスター本体（トークン）だけ個別にクリックを受け付ける） -->
                     <div id="myroom-monster-floor" class="absolute inset-0 pointer-events-none"></div>

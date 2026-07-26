@@ -325,38 +325,79 @@ input, textarea, select {
     opacity: 1;
 }
 
-/* 灯り系の家具（emitsLight:true）は、夕方・夜だけほのかに光る。
-   家具の絵柄自体を明るくしつつ、::before で「光のにじみ（ハロー）」を重ねる。
-   ハローのz-indexは時間帯の色味オーバーレイ（#myroom-area::after = 100）より大きくしてある。
-   これは、夜は画面全体を暗く沈ませているため、その下で光らせても打ち消されてしまい、
-   灯りとして見えなくなるのを避けるため（＝光だけは暗がりの上に出す）。 */
-.myroom-furniture-lit {
-    filter: brightness(1.18) saturate(1.05);
+/* 灯り系の家具（emitsLight:true）は、夕方・夜だけ周囲を照らす。
+
+   ■なぜ光を別レイヤーに分けているか
+   家具の要素にはtransform（中央寄せ・回転・拡大）が掛かっている。transformが付いた要素は
+   「独立した重ね合わせ領域」を作るため、その内部にどれだけ大きなz-indexを指定しても
+   親より手前には出られない。つまり家具の擬似要素として光を描くと、必ず
+   時間帯の暗幕（#myroom-area::after = z-index 100）の下に潜ってしまい、
+   夜はせっかくの光が暗幕で打ち消されて「ほとんど光っていない」ように見えてしまう。
+   そこで光だけを #myroom-light-layer（暗幕より手前）に分離している。
+
+   ■考え方
+   家具そのものを強く光らせると絵柄が白飛びして見えなくなるので、家具の明るさは控えめに保ち、
+   代わりに「家具の周囲に広がる光だまり」で部屋を明るくする。
+   mix-blend-mode:screen は色を上に乗せるのではなく「下にあるものを明るくする」合成方法なので、
+   夜の暗く沈んだ床や壁を、実際に照らしたように明るくできる。
+
+   ★調整したい場合：
+     ・光が届く広さ   → myroom.js の MYROOM_LIGHT_POOL_SIZE_RATIO
+     ・光の強さ       → 下の radial-gradient の rgba() のアルファ値（0.xx の部分） */
+
+/* 光だまりのレイヤー自体は、時間帯の暗幕（z-index 100）より手前に置く */
+#myroom-light-layer {
+    z-index: 105;
+}
+
+/* モンスターが歩き回る床レイヤー。
+   モンスターは奥行き表現のためY座標に応じたz-index（0〜1000）を持つが、
+   この床自身が重ね合わせ領域を作っていないと、その値が枠を飛び越えて
+   時間帯の暗幕（z-index 100）より手前に出てしまい、
+   「部屋は暗いのにモンスターだけ昼のように明るい」状態になってしまう。
+   isolationで内部に閉じ込め、床全体を暗幕より奥に置くことで、
+   モンスターも部屋と同じ色味で暗くなるようにしている（奥行きの並び順は内部で保たれる）。 */
+#myroom-monster-floor {
+    z-index: 20;
+    isolation: isolate;
+}
+
+/* 灯り1つ分の光だまり。中心が最も明るく、外へ向かってなめらかに消えていく */
+.myroom-light-pool {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    pointer-events: none;
+    mix-blend-mode: screen;
+    background: radial-gradient(circle,
+        rgba(255, 236, 186, 0.72) 0%,
+        rgba(255, 210, 124, 0.52) 18%,
+        rgba(255, 186, 86, 0.32) 36%,
+        rgba(255, 168, 64, 0.16) 55%,
+        rgba(255, 156, 52, 0.06) 72%,
+        rgba(255, 156, 52, 0) 85%);
+    animation: myroomLightPoolFlicker 3.4s ease-in-out infinite;
+    will-change: opacity, transform;
+}
+
+/* 炎らしいゆらぎ（明るさと広がりがゆっくり脈打つ） */
+@keyframes myroomLightPoolFlicker {
+    0%, 100% { opacity: 0.92; transform: translate(-50%, -50%) scale(1); }
+    38%      { opacity: 1;    transform: translate(-50%, -50%) scale(1.06); }
+    64%      { opacity: 0.86; transform: translate(-50%, -50%) scale(0.97); }
+}
+
+/* 家具の絵柄自体は「ほんのり明るい」程度に留める（白飛びさせない）。
+   filterは家具の枠ではなく中の画像に掛ける。枠に掛けると重ね合わせ領域が増えるだけで、
+   光だまりを別レイヤーに分けた意図が薄れてしまうため。 */
+.myroom-furniture-lit img {
+    filter: brightness(1.14) saturate(1.05);
     animation: myroomLanternFlicker 3.4s ease-in-out infinite;
 }
-.myroom-furniture-lit::before {
-    content: '';
-    position: absolute;
-    inset: -30%;
-    z-index: 110;
-    pointer-events: none;
-    border-radius: 50%;
-    background: radial-gradient(circle,
-        rgba(255, 216, 130, 0.55) 0%,
-        rgba(255, 180, 70, 0.30) 38%,
-        rgba(255, 160, 50, 0.10) 62%,
-        rgba(255, 160, 50, 0) 78%);
-    animation: myroomLanternHalo 3.4s ease-in-out infinite;
-}
 @keyframes myroomLanternFlicker {
-    0%, 100% { filter: brightness(1.18) saturate(1.05); }
-    45%      { filter: brightness(1.30) saturate(1.10); }
-    70%      { filter: brightness(1.14) saturate(1.04); }
-}
-@keyframes myroomLanternHalo {
-    0%, 100% { opacity: 0.88; transform: scale(1); }
-    45%      { opacity: 1;    transform: scale(1.06); }
-    70%      { opacity: 0.80; transform: scale(0.98); }
+    0%, 100% { filter: brightness(1.14) saturate(1.05); }
+    45%      { filter: brightness(1.22) saturate(1.09); }
+    70%      { filter: brightness(1.11) saturate(1.04); }
 }
 
 /* ===== マイルーム：フレンドの部屋を閲覧中の表示 ===== */
