@@ -35,7 +35,7 @@ const MYROOM_BACKGROUNDS = {
         file: 'images/myroom/マイルームB.png',
         wanderBounds: { xMin: 8, xMax: 92, yMin: 48, yMax: 90 },
         furnitureBounds: { xMin: 5, xMax: 95, yMin: 30, yMax: 92 },
-        tokenSizePx: 56 // ちょうど良いサイズなので現状維持
+        tokenSizePx: 76 // 少し大きめに調整
     }
 };
 const MYROOM_DEFAULT_BACKGROUND_ID = 'A';
@@ -57,8 +57,12 @@ const MYROOM_STATE = {
     ownedFurniture: [],    // [{id, count, name, emoji, image}]
     ownedMonsters: [],     // [{key, speciesId, auraKey, count, name, emoji}]
     wanderTimers: {},      // placementKey -> timeoutId
+    monsterTokenEls: {},   // placementKey -> DOM要素（反応演出の表示位置を探すために使う）
     activeFurnitureKey: null, // 現在操作パネルを開いている家具インスタンスのキー
-    furnitureDragging: false
+    activeMonsterKey: null,   // 現在操作パネルを開いているモンスターの配置キー
+    furnitureDragging: false,
+    monsterSortMode: 'monclass', // 'monclass' | 'name' | 'count'
+    furnitureSortMode: 'rarity'  // 'rarity' | 'name'
 };
 
 // --- 現在の背景IDに対応する配置済み家具・配置モンスターのオブジェクトを取得する（無ければ作る） ---
@@ -83,6 +87,42 @@ function countFurnitureUsedAcrossBackgrounds(furnitureId, excludeBgId, excludeIn
         });
     });
     return count;
+}
+
+// --- モンスターへの「エサ」の種類。モン類ごとに好みが分かれる（好物を与えると絆ポイントが多く貯まる） ---
+const MYROOM_FOOD_TYPES = [
+    { id: 'meat', emoji: '🍖', name: 'お肉', likedByClass: 'beast' },
+    { id: 'fish', emoji: '🐟', name: 'お魚', likedByClass: 'monster' },
+    { id: 'mineral', emoji: '💎', name: '鉱石', likedByClass: 'inorganic' },
+    { id: 'herb', emoji: '🌿', name: '薬草', likedByClass: 'creation' },
+    { id: 'honey', emoji: '🍯', name: '蜜', likedByClass: 'spirit' },
+    { id: 'spice', emoji: '🌶️', name: '香辛料', likedByClass: 'demon' }
+];
+const MYROOM_BOND_PET_AMOUNT = 1;
+const MYROOM_BOND_LIKED_FOOD_AMOUNT = 3;
+const MYROOM_BOND_DISLIKED_FOOD_AMOUNT = 0;
+
+// --- 絆ポイント（種族＋オーラの組み合わせ単位で管理。床から外しても引き継がれる） ---
+async function fetchMyRoomBond(bondKey) {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return 0;
+    try {
+        const pid = getMyPlayerId();
+        const snap = await firebaseDb.ref(`player_myroom/${pid}/bonds/${bondKey}`).once('value');
+        return snap.val() || 0;
+    } catch (e) {
+        console.error('[マイルーム] 絆ポイント取得エラー:', e);
+        return 0;
+    }
+}
+
+async function addMyRoomBond(bondKey, amount) {
+    if (!amount || typeof initFirebase !== 'function' || !initFirebase()) return;
+    try {
+        const pid = getMyPlayerId();
+        await firebaseDb.ref(`player_myroom/${pid}/bonds/${bondKey}`).transaction(current => Math.max(0, (current || 0) + amount));
+    } catch (e) {
+        console.error('[マイルーム] 絆ポイント更新エラー:', e);
+    }
 }
 
 // =====================================================
@@ -249,6 +289,52 @@ function closeMyRoomScreen() {
 }
 
 // =====================================================
+// 絆バフ：絆ポイントが貯まったモンスターは、ガッツファクトリー／エンドレスモードで
+// 自分のパーティに編成された時だけ、ステータスが少し上昇する（味方専用のバフ）
+// =====================================================
+const MYROOM_BOND_BUFF_POINTS_PER_PERCENT = 20; // 20ポイントごとに+1%
+const MYROOM_BOND_BUFF_MAX_PERCENT = 25;        // 上限+25%（絆500ポイントで到達）
+
+// --- 現在の全ての絆ポイントをまとめて取得する（{speciesId_auraKey: points, ...}） ---
+async function fetchAllMyRoomBonds() {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return {};
+    try {
+        const pid = getMyPlayerId();
+        const snap = await firebaseDb.ref(`player_myroom/${pid}/bonds`).once('value');
+        return snap.val() || {};
+    } catch (e) {
+        console.error('[マイルーム] 絆一覧取得エラー:', e);
+        return {};
+    }
+}
+
+function getMyRoomBondBuffMultiplier(bondPoints) {
+    const pct = Math.min(MYROOM_BOND_BUFF_MAX_PERCENT, Math.floor((bondPoints || 0) / MYROOM_BOND_BUFF_POINTS_PER_PERCENT));
+    return 1 + pct / 100;
+}
+
+// --- パーティ（配列）内のモンスターに絆バフを適用する。既に適用済みのものはスキップする ---
+// bondsMap: fetchAllMyRoomBonds() で取得したもの。呼び出し側で1回だけ取得して渡す想定。
+function applyMyRoomBondBuffToParty(party, bondsMap) {
+    (party || []).forEach(m => {
+        if (!m || m.bondBuffApplied || !m.stats) return;
+        const bondKey = `${m.speciesId}_${m.aura}`;
+        const points = (bondsMap || {})[bondKey] || 0;
+        if (points <= 0) { m.bondBuffApplied = true; return; }
+        const mult = getMyRoomBondBuffMultiplier(points);
+        m.stats.maxLife = Math.round(m.stats.maxLife * mult);
+        m.stats.life = m.stats.maxLife;
+        m.stats.pow = Math.round(m.stats.pow * mult);
+        m.stats.int = Math.round(m.stats.int * mult);
+        m.stats.hit = Math.round(m.stats.hit * mult);
+        m.stats.spd = Math.round(m.stats.spd * mult);
+        m.stats.def = Math.round(m.stats.def * mult);
+        m.bondBuffApplied = true;
+        m.bondBuffPct = Math.round((mult - 1) * 100);
+    });
+}
+
+// =====================================================
 // 家具（自由配置）
 // ・ガチャの円盤石と同じ考え方：指でドラッグして好きな場所に配置
 // ・配置後もタップすると操作パネルが開き、サイズ・向き・反転を調整、再配置（再ドラッグ）、撤去ができる
@@ -373,16 +459,41 @@ function setupMyRoomFurnitureDragHandlers(el, instanceKey) {
 }
 
 // --- 家具ピッカー：所持している家具から新しく1つ配置する ---
+function getSortedOwnedFurniture() {
+    const list = [...MYROOM_STATE.ownedFurniture];
+    if (MYROOM_STATE.furnitureSortMode === 'name') {
+        list.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+    } else {
+        list.sort((a, b) => {
+            const defA = typeof GACHA_FURNITURE_POOL !== 'undefined' ? GACHA_FURNITURE_POOL.find(f => f.id === a.id) : null;
+            const defB = typeof GACHA_FURNITURE_POOL !== 'undefined' ? GACHA_FURNITURE_POOL.find(f => f.id === b.id) : null;
+            const rA = defA ? defA.rarity : 0;
+            const rB = defB ? defB.rarity : 0;
+            if (rA !== rB) return rB - rA; // レア度が高い順
+            return a.name.localeCompare(b.name, 'ja');
+        });
+    }
+    return list;
+}
+
+function setMyRoomFurnitureSortMode(mode) {
+    MYROOM_STATE.furnitureSortMode = mode;
+    openMyRoomFurniturePicker();
+}
+
 function openMyRoomFurniturePicker() {
     const modal = document.getElementById('myroom-furniture-picker-modal');
     const list = document.getElementById('myroom-furniture-picker-list');
+    const sortSelect = document.getElementById('myroom-furniture-sort-select');
     if (!modal || !list) return;
+    if (sortSelect) sortSelect.value = MYROOM_STATE.furnitureSortMode;
 
     const bg = getCurrentMyRoomBackground();
     if (MYROOM_STATE.ownedFurniture.length === 0) {
         list.innerHTML = `<p class="text-gray-500 text-[11px] text-center py-6">まだ家具を持っていません。<br>祈りの神殿（ガチャ）で手に入れよう！</p>`;
     } else {
-        list.innerHTML = MYROOM_STATE.ownedFurniture.map(f => {
+        const sorted = getSortedOwnedFurniture();
+        list.innerHTML = sorted.map(f => {
             const usedElsewhere = countFurnitureUsedAcrossBackgrounds(f.id, null, null);
             const remaining = f.count - usedElsewhere;
             const iconId = `myroom-furniture-picker-icon-${f.id}`;
@@ -406,7 +517,7 @@ function openMyRoomFurniturePicker() {
         }).join('');
 
         // アイコン（画像 or 絵文字）を後から個別に描画する
-        MYROOM_STATE.ownedFurniture.forEach(f => {
+        sorted.forEach(f => {
             const iconEl = document.getElementById(`myroom-furniture-picker-icon-${f.id}`);
             if (iconEl) renderFurnitureIcon(iconEl, f, { imgClassName: 'w-full h-full object-contain' });
         });
@@ -526,6 +637,7 @@ function renderMyRoomMonsterFloor() {
     if (!floor) return;
     stopAllMyRoomWander();
     floor.innerHTML = '';
+    MYROOM_STATE.monsterTokenEls = {};
 
     const bg = getCurrentMyRoomBackground();
     const monstersForBg = getPlacedMonstersForBg(bg.id);
@@ -555,8 +667,9 @@ function spawnMyRoomMonsterToken(placementKey, info, floor) {
     token.style.top = `${startY}%`;
     token.style.transform = 'translate(-50%,-50%)';
     token.dataset.placementKey = placementKey;
-    token.onclick = () => removeMyRoomMonster(placementKey);
+    token.onclick = () => openMyRoomMonsterOptions(placementKey);
     floor.appendChild(token);
+    MYROOM_STATE.monsterTokenEls[placementKey] = token;
 
     renderMonsterVisual(token, tmpl.name, tmpl.emoji, false, true, info.auraKey);
     startMyRoomMonsterWander(placementKey, token);
@@ -598,12 +711,40 @@ function stopAllMyRoomWander() {
 }
 
 // --- モンスター配置ピッカー ---
+const MYROOM_MONCLASS_ORDER = ['beast', 'monster', 'inorganic', 'creation', 'spirit', 'demon'];
+
+function getSortedOwnedMonsters() {
+    const list = [...MYROOM_STATE.ownedMonsters];
+    const mode = MYROOM_STATE.monsterSortMode;
+    if (mode === 'name') {
+        list.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+    } else if (mode === 'count') {
+        list.sort((a, b) => b.count - a.count);
+    } else {
+        // モン類順：モン類のグループごとにまとめ、グループ内は名前順にする
+        list.sort((a, b) => {
+            const idxA = MYROOM_MONCLASS_ORDER.indexOf(getMonClassKeyForName(a.name));
+            const idxB = MYROOM_MONCLASS_ORDER.indexOf(getMonClassKeyForName(b.name));
+            if (idxA !== idxB) return idxA - idxB;
+            return a.name.localeCompare(b.name, 'ja');
+        });
+    }
+    return list;
+}
+
+function setMyRoomMonsterSortMode(mode) {
+    MYROOM_STATE.monsterSortMode = mode;
+    openMyRoomMonsterPicker();
+}
+
 function openMyRoomMonsterPicker() {
     const modal = document.getElementById('myroom-monster-picker-modal');
     const list = document.getElementById('myroom-monster-picker-list');
     const countLabel = document.getElementById('myroom-monster-count-label');
     const maxLabel = document.getElementById('myroom-monster-max-label');
+    const sortSelect = document.getElementById('myroom-monster-sort-select');
     if (!modal || !list) return;
+    if (sortSelect) sortSelect.value = MYROOM_STATE.monsterSortMode;
 
     const bg = getCurrentMyRoomBackground();
     const placedCount = Object.keys(getPlacedMonstersForBg(bg.id)).length;
@@ -617,14 +758,18 @@ function openMyRoomMonsterPicker() {
     } else {
         // モンスターは所持数を消費しない観賞用の分身なので、他の背景に置いていても
         // ここではその点は気にせず、持っているものは全部選択肢に出す
-        list.innerHTML = MYROOM_STATE.ownedMonsters.map(m => `
+        const sorted = getSortedOwnedMonsters();
+        list.innerHTML = sorted.map(m => {
+            const monClass = MON_CLASS_TYPES[getMonClassKeyForName(m.name)];
+            return `
             <button onclick="placeMyRoomMonster('${m.speciesId}', '${m.auraKey}')"
                 class="w-full flex items-center gap-2 bg-[#1a120b] hover:bg-[#241b12] border border-emerald-900/50 rounded-lg px-2 py-2 text-left active:scale-[0.98] transition-all">
                 <span class="text-xl">${m.emoji}</span>
-                <span class="flex-1 text-xs text-amber-100 font-bold">${m.name}<span class="ml-1 text-[9px]" style="color:${(AURA_TYPES[m.auraKey] || {}).hex || '#fff'}">${(AURA_TYPES[m.auraKey] || {}).emoji || ''}</span></span>
+                <span class="flex-1 text-xs text-amber-100 font-bold">${m.name}<span class="ml-1 text-[9px]" style="color:${(AURA_TYPES[m.auraKey] || {}).hex || '#fff'}">${(AURA_TYPES[m.auraKey] || {}).emoji || ''}</span>${monClass ? ` <span class="text-[9px] text-gray-500">${monClass.emoji}${monClass.name}</span>` : ''}</span>
                 <span class="text-[10px] text-gray-400">×${m.count}</span>
             </button>
-        `).join('');
+        `;
+        }).join('');
     }
     modal.classList.remove('hidden');
 }
@@ -652,11 +797,125 @@ function removeMyRoomMonster(placementKey) {
         clearTimeout(MYROOM_STATE.wanderTimers[placementKey]);
         delete MYROOM_STATE.wanderTimers[placementKey];
     }
+    delete MYROOM_STATE.monsterTokenEls[placementKey];
     const bg = getCurrentMyRoomBackground();
     delete getPlacedMonstersForBg(bg.id)[placementKey];
     renderMyRoomMonsterFloor();
     saveMyRoomPlacement();
     if (typeof showToast === 'function') showToast('モンスターを床から外しました');
+}
+
+// =====================================================
+// モンスターの操作パネル（撫でる・エサをあげる・絆ポイント・撤去）
+// =====================================================
+function getActiveMyRoomMonsterInfo() {
+    const key = MYROOM_STATE.activeMonsterKey;
+    if (!key) return null;
+    const bg = getCurrentMyRoomBackground();
+    const info = getPlacedMonstersForBg(bg.id)[key];
+    return info ? { key, info } : null;
+}
+
+async function openMyRoomMonsterOptions(placementKey) {
+    MYROOM_STATE.activeMonsterKey = placementKey;
+    const active = getActiveMyRoomMonsterInfo();
+    if (!active) return;
+    const tmpl = MONSTER_TEMPLATES[active.info.speciesId];
+    if (!tmpl) return;
+
+    const modal = document.getElementById('myroom-monster-options-modal');
+    const iconEl = document.getElementById('myroom-monster-options-icon');
+    const nameEl = document.getElementById('myroom-monster-options-name');
+    const foodList = document.getElementById('myroom-monster-options-food-list');
+    if (!modal) return;
+
+    if (iconEl) {
+        iconEl.style.position = 'relative';
+        renderMonsterVisual(iconEl, tmpl.name, tmpl.emoji, false, true, active.info.auraKey);
+    }
+    const aura = AURA_TYPES[active.info.auraKey] || {};
+    if (nameEl) nameEl.innerHTML = `${tmpl.name} <span class="text-[11px]">${aura.emoji || ''}</span>`;
+    if (foodList) {
+        foodList.innerHTML = MYROOM_FOOD_TYPES.map(f => `
+            <button onclick="feedMyRoomMonster('${f.id}')" class="py-2 bg-[#1a120b] hover:bg-[#241b12] border border-emerald-900/50 rounded-lg text-lg active:scale-95 transition-all" title="${f.name}">
+                ${f.emoji}
+            </button>
+        `).join('');
+    }
+
+    modal.classList.remove('hidden');
+    refreshMyRoomMonsterOptionsBondDisplay();
+}
+
+function closeMyRoomMonsterOptions() {
+    const modal = document.getElementById('myroom-monster-options-modal');
+    if (modal) modal.classList.add('hidden');
+    MYROOM_STATE.activeMonsterKey = null;
+}
+
+async function refreshMyRoomMonsterOptionsBondDisplay() {
+    const active = getActiveMyRoomMonsterInfo();
+    const bondEl = document.getElementById('myroom-monster-options-bond');
+    if (!active || !bondEl) return;
+    const bondKey = `${active.info.speciesId}_${active.info.auraKey}`;
+    bondEl.textContent = '…';
+    const points = await fetchMyRoomBond(bondKey);
+    bondEl.textContent = points.toLocaleString();
+}
+
+async function petMyRoomMonster() {
+    const active = getActiveMyRoomMonsterInfo();
+    if (!active) return;
+    const bondKey = `${active.info.speciesId}_${active.info.auraKey}`;
+    await addMyRoomBond(bondKey, MYROOM_BOND_PET_AMOUNT);
+    showMyRoomMonsterReaction(active.key, '🥰');
+    refreshMyRoomMonsterOptionsBondDisplay();
+}
+
+async function feedMyRoomMonster(foodId) {
+    const active = getActiveMyRoomMonsterInfo();
+    if (!active) return;
+    const tmpl = MONSTER_TEMPLATES[active.info.speciesId];
+    const classKey = tmpl && typeof getMonClassKeyForName === 'function' ? getMonClassKeyForName(tmpl.name) : null;
+    const food = MYROOM_FOOD_TYPES.find(f => f.id === foodId);
+    const liked = !!(food && classKey && food.likedByClass === classKey);
+    const bondKey = `${active.info.speciesId}_${active.info.auraKey}`;
+    const amount = liked ? MYROOM_BOND_LIKED_FOOD_AMOUNT : MYROOM_BOND_DISLIKED_FOOD_AMOUNT;
+
+    await addMyRoomBond(bondKey, amount);
+    showMyRoomMonsterReaction(active.key, liked ? '😋💕' : '😒💢');
+    if (typeof showToast === 'function') {
+        showToast(liked ? `🍽️ 大喜びで食べた！絆+${MYROOM_BOND_LIKED_FOOD_AMOUNT}` : '🍽️ あまり好きな味じゃなかったみたい…');
+    }
+    refreshMyRoomMonsterOptionsBondDisplay();
+}
+
+function removeActiveMyRoomMonster() {
+    const key = MYROOM_STATE.activeMonsterKey;
+    if (!key) return;
+    closeMyRoomMonsterOptions();
+    removeMyRoomMonster(key);
+}
+
+// --- モンスターの頭上に反応の絵文字をふわっと表示する ---
+function showMyRoomMonsterReaction(placementKey, emojiText) {
+    const token = MYROOM_STATE.monsterTokenEls[placementKey];
+    if (!token || !token.isConnected) return;
+    const reaction = document.createElement('div');
+    reaction.textContent = emojiText;
+    reaction.style.cssText = 'position:absolute; left:50%; top:-10px; transform:translate(-50%,0); font-size:1.4rem; pointer-events:none; z-index:20; text-shadow:0 2px 4px rgba(0,0,0,0.5);';
+    token.appendChild(reaction);
+    try {
+        const anim = reaction.animate([
+            { transform: 'translate(-50%,0) scale(0.6)', opacity: 0 },
+            { transform: 'translate(-50%,-16px) scale(1.15)', opacity: 1, offset: 0.35 },
+            { transform: 'translate(-50%,-34px) scale(1)', opacity: 0 }
+        ], { duration: 1100, easing: 'ease-out' });
+        anim.onfinish = () => reaction.remove();
+        setTimeout(() => reaction.remove(), 1300);
+    } catch (e) {
+        setTimeout(() => reaction.remove(), 1000);
+    }
 }
 
 // =====================================================

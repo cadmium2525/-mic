@@ -1062,11 +1062,16 @@ async function trackKinNejikiMonsterUsage(speciesId) {
     }
 }
 
-function confirmKinNejikiParty() {
+async function confirmKinNejikiParty() {
     if (KIN_NEJIKI_STATE.selectedIdx.length !== 3) return;
     KIN_NEJIKI_STATE.playerParty = KIN_NEJIKI_STATE.selectedIdx.map(idx => JSON.parse(JSON.stringify(KIN_NEJIKI_STATE.offer[idx])));
     KIN_NEJIKI_STATE.playerParty.forEach(m => { if (m) trackKinNejikiMonsterUsage(m.speciesId); });
     incrementKinNejikiExchangeCount(); // 初手の3体選択も「交換1回」としてカウントする
+    // 絆ポイントが貯まったモンスターがいれば、自分のパーティに入っている間だけステータスを底上げする
+    if (typeof fetchAllMyRoomBonds === 'function') {
+        const bondsMap = await fetchAllMyRoomBonds();
+        applyMyRoomBondBuffToParty(KIN_NEJIKI_STATE.playerParty, bondsMap);
+    }
     advanceToNextKinNejikiBattle();
 }
 
@@ -1380,7 +1385,7 @@ function renderKinNejikiSwapLists() {
     if (btn) btn.disabled = (kinNejikiSwapMineIdx === null || kinNejikiSwapTheirsIdx === null);
 }
 
-function confirmKinNejikiSwap() {
+async function confirmKinNejikiSwap() {
     if (kinNejikiSwapMineIdx === null || kinNejikiSwapTheirsIdx === null) return;
     const theirs = KIN_NEJIKI_STATE.pendingSwap.defeatedTeam[kinNejikiSwapTheirsIdx];
     const cloned = JSON.parse(JSON.stringify(theirs));
@@ -1389,6 +1394,11 @@ function confirmKinNejikiSwap() {
     KIN_NEJIKI_STATE.playerParty[kinNejikiSwapMineIdx] = cloned;
     trackKinNejikiMonsterUsage(cloned.speciesId);
     incrementKinNejikiExchangeCount(); // 実際に交換した場合のみ「交換1回」としてカウントする（スキップ時はカウントしない）
+    // 新しく仲間になったモンスターも、絆ポイントが貯まっていればここでステータスを底上げする
+    if (typeof fetchAllMyRoomBonds === 'function') {
+        const bondsMap = await fetchAllMyRoomBonds();
+        applyMyRoomBondBuffToParty([cloned], bondsMap);
+    }
     showToast(`【${cloned.name}】を仲間に迎え入れた！`);
     showKinNejikiOrderStep();
 }

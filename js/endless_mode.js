@@ -541,9 +541,14 @@ function generateEndlessOpponentTeam(battleNumber, excludeSpeciesIds) {
 // =====================================================
 // バトル起動・終了処理
 // =====================================================
-function confirmEndlessParty() {
+async function confirmEndlessParty() {
     if (ENDLESS_STATE.selectedIdx.length !== 3) return;
     const chosenParty = ENDLESS_STATE.selectedIdx.map(idx => JSON.parse(JSON.stringify(ENDLESS_STATE.team[idx])));
+    // 絆ポイントが貯まったモンスターがいれば、自分のパーティに入っている間だけステータスを底上げする
+    if (typeof fetchAllMyRoomBonds === 'function') {
+        const bondsMap = await fetchAllMyRoomBonds();
+        applyMyRoomBondBuffToParty(chosenParty, bondsMap);
+    }
     const gen = generateEndlessOpponentTeam(ENDLESS_STATE.battleNumber, ENDLESS_STATE.lastOpponentSpeciesIds);
     const aiLevel = kinNejikiAiLevelForSet(gen.cycleNumber);
     const floorLabel = gen.isBoss

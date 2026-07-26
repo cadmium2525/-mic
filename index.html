@@ -1104,6 +1104,15 @@
                         </div>
 
                         <button onclick="debugResetMyRoomPlacement()" class="w-full py-1.5 bg-gray-700 hover:bg-gray-600 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">🔄 マイルームの設置状態をリセット</button>
+
+                        <div class="bg-[#1a120b] rounded-lg p-2 space-y-1 mt-2">
+                            <p class="text-[9px] text-gray-400 font-bold">💕 絆ポイントを付与（種族・オーラは上のセレクトを使用）</p>
+                            <div class="flex gap-1.5">
+                                <input id="debug-bond-amount" type="number" value="20" class="w-16 bg-[#241b12] border border-fuchsia-800 text-white text-[10px] rounded-lg px-2 py-1.5 text-center">
+                                <button onclick="debugAddBond()" class="flex-1 py-1.5 bg-fuchsia-800 hover:bg-fuchsia-700 text-white text-[10px] font-bold rounded-lg active:scale-95 transition-all">＋ 付与</button>
+                            </div>
+                            <p class="text-[9px] text-gray-500">絆20ポイントごとに味方バフ+1%（上限+25%＝絆500）</p>
+                        </div>
                     </div>
 
                 </div>
@@ -1311,6 +1320,13 @@
             <div id="myroom-furniture-picker-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeMyRoomFurniturePicker()">
                 <div class="bg-[#2a1b15] w-full max-w-xs rounded-2xl border-2 border-amber-600 shadow-2xl flex flex-col max-h-[75vh]" onclick="event.stopPropagation()">
                     <h4 class="text-sm font-black text-white pixel-font border-b border-amber-800 px-4 pt-4 pb-2 flex-shrink-0" id="myroom-furniture-picker-title">🪑 家具を選ぶ</h4>
+                    <div class="px-4 pt-2 flex items-center justify-end space-x-1.5 flex-shrink-0">
+                        <span class="text-[9px] text-gray-500">並び替え:</span>
+                        <select id="myroom-furniture-sort-select" onchange="setMyRoomFurnitureSortMode(this.value)" class="bg-[#1a120b] border border-amber-800 text-white text-[10px] rounded-lg px-1.5 py-1">
+                            <option value="rarity">レア度順</option>
+                            <option value="name">名前順</option>
+                        </select>
+                    </div>
                     <div id="myroom-furniture-picker-list" class="px-4 py-2 space-y-1.5 overflow-y-auto flex-1"></div>
                     <button onclick="closeMyRoomFurniturePicker()" class="w-full py-2 bg-[#1a120b] hover:bg-[#150b07] text-gray-300 font-bold rounded-xl text-xs transition-all border border-gray-700 mx-4 mb-4" style="width: calc(100% - 2rem);">
                         閉じる
@@ -1323,8 +1339,45 @@
                 <div class="bg-[#2a1b15] w-full max-w-xs rounded-2xl border-2 border-emerald-600 shadow-2xl flex flex-col max-h-[75vh]" onclick="event.stopPropagation()">
                     <h4 class="text-sm font-black text-white pixel-font border-b border-emerald-800 px-4 pt-4 pb-2 flex-shrink-0">🐾 配置するモンスターを選ぶ</h4>
                     <p class="text-[9px] text-gray-500 px-4 pt-2">床には最大<span id="myroom-monster-max-label">4</span>体まで配置できます（<span id="myroom-monster-count-label">0</span>体配置中）</p>
+                    <div class="px-4 pt-1.5 flex items-center justify-end space-x-1.5 flex-shrink-0">
+                        <span class="text-[9px] text-gray-500">並び替え:</span>
+                        <select id="myroom-monster-sort-select" onchange="setMyRoomMonsterSortMode(this.value)" class="bg-[#1a120b] border border-emerald-800 text-white text-[10px] rounded-lg px-1.5 py-1">
+                            <option value="monclass">モン類順</option>
+                            <option value="name">名前順</option>
+                            <option value="count">所持数順</option>
+                        </select>
+                    </div>
                     <div id="myroom-monster-picker-list" class="px-4 py-2 space-y-1.5 overflow-y-auto flex-1"></div>
                     <button onclick="closeMyRoomMonsterPicker()" class="w-full py-2 bg-[#1a120b] hover:bg-[#150b07] text-gray-300 font-bold rounded-xl text-xs transition-all border border-gray-700 mx-4 mb-4" style="width: calc(100% - 2rem);">
+                        閉じる
+                    </button>
+                </div>
+            </div>
+
+            <!-- モンスターの操作パネル（撫でる・エサをあげる・絆ポイント・撤去） -->
+            <div id="myroom-monster-options-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeMyRoomMonsterOptions()">
+                <div class="bg-[#2a1b15] w-full max-w-xs rounded-2xl border-2 border-emerald-600 shadow-2xl p-4 space-y-3" onclick="event.stopPropagation()">
+                    <div class="flex items-center gap-2">
+                        <div id="myroom-monster-options-icon" class="w-12 h-12 flex-shrink-0 flex items-center justify-center text-3xl bg-[#1a120b] rounded-lg border border-emerald-900/50"></div>
+                        <div class="flex-1 min-w-0">
+                            <p id="myroom-monster-options-name" class="text-sm font-bold text-amber-100"></p>
+                            <p class="text-[9px] text-pink-300 font-bold">💕 絆ポイント：<span id="myroom-monster-options-bond">0</span></p>
+                        </div>
+                    </div>
+
+                    <button onclick="petMyRoomMonster()" class="w-full py-2.5 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 text-white text-xs font-black rounded-lg active:scale-95 transition-all flex items-center justify-center space-x-1.5">
+                        <i class="fa-solid fa-hand"></i><span>撫でる（絆+1）</span>
+                    </button>
+
+                    <div>
+                        <p class="text-[9px] text-gray-400 mb-1">🍽️ エサをあげる（好物なら絆+3、苦手だと不機嫌に…）</p>
+                        <div id="myroom-monster-options-food-list" class="grid grid-cols-6 gap-1"></div>
+                    </div>
+
+                    <button onclick="removeActiveMyRoomMonster()" class="w-full py-2 bg-red-950/60 hover:bg-red-900/60 text-red-300 text-xs font-bold rounded-lg border border-red-800 active:scale-95 transition-all">
+                        🗑 床から外す
+                    </button>
+                    <button onclick="closeMyRoomMonsterOptions()" class="w-full py-2 bg-[#1a120b] hover:bg-[#150b07] text-gray-300 font-bold rounded-xl text-xs transition-all border border-gray-700">
                         閉じる
                     </button>
                 </div>

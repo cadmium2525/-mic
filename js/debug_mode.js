@@ -989,3 +989,15 @@ async function debugResetMyRoomPlacement() {
     }
     if (typeof showToast === 'function') showToast('🔄 マイルームの設置状態をリセットしました');
 }
+
+async function debugAddBond() {
+    const speciesSelect = document.getElementById('debug-gacha-species-select');
+    const auraSelect = document.getElementById('debug-gacha-aura-select');
+    const amountInput = document.getElementById('debug-bond-amount');
+    const speciesId = speciesSelect ? speciesSelect.value : null;
+    const auraKey = auraSelect ? auraSelect.value : null;
+    let amount = parseInt(amountInput ? amountInput.value : '0', 10);
+    if (!speciesId || !auraKey || !Number.isFinite(amount)) return;
+    if (typeof addMyRoomBond === 'function') await addMyRoomBond(`${speciesId}_${auraKey}`, amount);
+    if (typeof showToast === 'function') showToast(`🛠️ 絆ポイントを${amount}付与しました（実際のバフ量はマイルームの操作パネルで確認できます）`);
+}

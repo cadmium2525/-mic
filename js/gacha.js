@@ -33,7 +33,7 @@ const GACHA_FURNITURE_POOL = [
     { id: 'furniture_bookshelf', name: '古びた本棚', emoji: '📚', rarity: 1 },
     { id: 'furniture_candle', name: '燭台', emoji: '🕯️', rarity: 1 },
     { id: 'furniture_rug', name: 'ふかふかのラグ', emoji: '🟫', rarity: 2 },
-    { id: 'furniture_fountain', name: '小さな噴水', emoji: '⛲', rarity: 2 },
+    { id: 'furniture_fountain', name: '小さな噴水', emoji: '⛲', image: 'images/furniture/小さな噴水.png', rarity: 2 },
     { id: 'furniture_treasure_chest', name: '装飾された宝箱', emoji: '🗝️', rarity: 2 },
     { id: 'furniture_windowlight', name: 'ステンドグラスの窓', emoji: '🪟', rarity: 2 },
     // --- マイルームB（ファーム）向けに追加した専用イラスト付きアイテム ---
@@ -43,6 +43,11 @@ const GACHA_FURNITURE_POOL = [
     { id: 'furniture_feed_trough', name: '餌置き場', emoji: '🍖', image: 'images/furniture/餌置き場.png', rarity: 2 },
     { id: 'furniture_water_trough', name: '水のみ場', emoji: '💧', image: 'images/furniture/水のみ場.png', rarity: 2 },
     { id: 'furniture_barrel', name: '樽', emoji: '🛢️', image: 'images/furniture/樽.png', rarity: 1 },
+    { id: 'furniture_water_bucket', name: '水の入った桶', emoji: '🪣', image: 'images/furniture/水の入った桶.png', rarity: 1 },
+    { id: 'furniture_feed_sack', name: '餌', emoji: '🌾', image: 'images/furniture/餌.png', rarity: 1 },
+    { id: 'furniture_scarecrow', name: 'かかし', emoji: '🎎', image: 'images/furniture/かかし.png', rarity: 2 },
+    { id: 'furniture_hot_cauldron', name: 'お湯', emoji: '♨️', image: 'images/furniture/お湯.png', rarity: 2 },
+    { id: 'furniture_signpost', name: '看板', emoji: '🪧', image: 'images/furniture/看板.png', rarity: 1 },
 ];
 
 // --- 家具アイテムのアイコンを描画する共通ヘルパー（専用イラストがあれば画像、無ければ絵文字で代替） ---
@@ -365,7 +370,7 @@ function playGachaFlash(hasStarThree) {
         if (typeof AudioManager !== 'undefined' && AudioManager.playSE) {
             AudioManager.playSE(hasStarThree ? 'gacha_flash_rare' : 'gacha_flash');
         }
-        const flashDuration = hasStarThree ? 900 : 600;
+        const flashDuration = hasStarThree ? 1100 : 600;
         setTimeout(() => {
             flash.className = 'absolute inset-0 pointer-events-none opacity-0 z-30';
             resolve();

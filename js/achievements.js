@@ -8,14 +8,49 @@
 // =====================================================
 
 const ACHIEVEMENT_DEFS = [
+    // --- ガッツファクトリー：勝利数マイルストーン ---
+    { id: 'kin_win_1', emoji: '🔰', name: '初勝利（ガッツファクトリー）', desc: 'ガッツファクトリーで1勝する', check: stats => stats.kin.bestWins >= 1, diamondReward: 1500 },
+    { id: 'kin_win_3', emoji: '🔥', name: '連勝3（ガッツファクトリー）', desc: 'ガッツファクトリーで3連勝する', check: stats => stats.kin.bestWins >= 3, diamondReward: 100 },
+    { id: 'kin_win_5', emoji: '🔥', name: '連勝5（ガッツファクトリー）', desc: 'ガッツファクトリーで5連勝する', check: stats => stats.kin.bestWins >= 5, diamondReward: 150 },
     { id: 'kin_streak_10', emoji: '🔥', name: '連勝10（ガッツファクトリー）', desc: 'ガッツファクトリーで10連勝する', check: stats => stats.kin.bestWins >= 10, diamondReward: 500 },
+    { id: 'kin_win_15', emoji: '🔥', name: '連勝15（ガッツファクトリー）', desc: 'ガッツファクトリーで15連勝する', check: stats => stats.kin.bestWins >= 15, diamondReward: 650 },
+    { id: 'kin_win_20', emoji: '🔥', name: '連勝20（ガッツファクトリー）', desc: 'ガッツファクトリーで20連勝する', check: stats => stats.kin.bestWins >= 20, diamondReward: 800 },
     { id: 'kin_streak_25', emoji: '🔥', name: '連勝25（ガッツファクトリー）', desc: 'ガッツファクトリーで25連勝する', check: stats => stats.kin.bestWins >= 25, diamondReward: 1000 },
+    { id: 'kin_win_30', emoji: '🔥', name: '連勝30（ガッツファクトリー）', desc: 'ガッツファクトリーで30連勝する', check: stats => stats.kin.bestWins >= 30, diamondReward: 1300 },
+    { id: 'kin_win_35', emoji: '🔥', name: '連勝35（ガッツファクトリー）', desc: 'ガッツファクトリーで35連勝する', check: stats => stats.kin.bestWins >= 35, diamondReward: 1600 },
+    { id: 'kin_win_40', emoji: '🔥', name: '連勝40（ガッツファクトリー）', desc: 'ガッツファクトリーで40連勝する', check: stats => stats.kin.bestWins >= 40, diamondReward: 2000 },
+    { id: 'kin_win_45', emoji: '🔥', name: '連勝45（ガッツファクトリー）', desc: 'ガッツファクトリーで45連勝する', check: stats => stats.kin.bestWins >= 45, diamondReward: 2500 },
     { id: 'kin_streak_49', emoji: '👑', name: '完全制覇（ガッツファクトリー）', desc: 'ガッツファクトリーを49連勝（全セットクリア）する', check: stats => stats.kin.bestWins >= 49, diamondReward: 3000 },
+
+    // --- ガッツファクトリー：総プレイ回数マイルストーン ---
+    { id: 'kin_plays_10', emoji: '🎮', name: '挑戦10回（ガッツファクトリー）', desc: 'ガッツファクトリーに合計10回挑戦する', check: stats => stats.kin.totalRuns >= 10, diamondReward: 150 },
+    { id: 'kin_plays_20', emoji: '🎮', name: '挑戦20回（ガッツファクトリー）', desc: 'ガッツファクトリーに合計20回挑戦する', check: stats => stats.kin.totalRuns >= 20, diamondReward: 300 },
+    { id: 'kin_plays_30', emoji: '🎮', name: '挑戦30回（ガッツファクトリー）', desc: 'ガッツファクトリーに合計30回挑戦する', check: stats => stats.kin.totalRuns >= 30, diamondReward: 450 },
+    { id: 'kin_plays_40', emoji: '🎮', name: '挑戦40回（ガッツファクトリー）', desc: 'ガッツファクトリーに合計40回挑戦する', check: stats => stats.kin.totalRuns >= 40, diamondReward: 600 },
+    { id: 'kin_plays_50', emoji: '🎮', name: '挑戦50回（ガッツファクトリー）', desc: 'ガッツファクトリーに合計50回挑戦する', check: stats => stats.kin.totalRuns >= 50, diamondReward: 750 },
+
+    // --- エンドレスモード ---
     { id: 'endless_streak_10', emoji: '⭐', name: 'エンドレス10連勝', desc: 'エンドレスモードで10連勝する', check: stats => stats.endless.bestStreak >= 10, diamondReward: 300 },
     { id: 'endless_streak_25', emoji: '🌟', name: 'エンドレス25連勝', desc: 'エンドレスモードで25連勝する', check: stats => stats.endless.bestStreak >= 25, diamondReward: 600 },
     { id: 'endless_streak_50', emoji: '💫', name: 'エンドレス50連勝', desc: 'エンドレスモードで50連勝する', check: stats => stats.endless.bestStreak >= 50, diamondReward: 1200 },
     { id: 'endless_streak_100', emoji: '🌠', name: 'エンドレス100連勝', desc: 'エンドレスモードで100連勝する', check: stats => stats.endless.bestStreak >= 100, diamondReward: 2500 },
-    { id: 'all_monsters_used', emoji: '📖', name: '図鑑コンプリート', desc: 'ガッツファクトリーで全種類のモンスターを1回以上パーティに加える', check: stats => stats.usedSpeciesCount >= KIN_NEJIKI_SPECIES_POOL.length, diamondReward: 800 }
+
+    // --- モンスター使用（図鑑コンプリート） ---
+    { id: 'all_monsters_used', emoji: '📖', name: '図鑑コンプリート', desc: 'ガッツファクトリーで全種類のモンスターを1回以上パーティに加える', check: stats => stats.usedSpeciesCount >= KIN_NEJIKI_SPECIES_POOL.length, diamondReward: 800 },
+
+    // --- モン類別 使用回数マイルストーン（ガッツファクトリーでパーティに加えた回数の累計） ---
+    { id: 'monclass_beast_10', emoji: '🐾', name: '獣族使いの証（10回）', desc: 'ガッツファクトリーで獣族のモンスターを合計10回パーティに加える', check: stats => stats.monClassUsage.beast >= 10, diamondReward: 100 },
+    { id: 'monclass_beast_20', emoji: '🐾', name: '獣族使いの証（20回）', desc: 'ガッツファクトリーで獣族のモンスターを合計20回パーティに加える', check: stats => stats.monClassUsage.beast >= 20, diamondReward: 200 },
+    { id: 'monclass_monster_10', emoji: '👹', name: '怪物使いの証（10回）', desc: 'ガッツファクトリーで怪物のモンスターを合計10回パーティに加える', check: stats => stats.monClassUsage.monster >= 10, diamondReward: 100 },
+    { id: 'monclass_monster_20', emoji: '👹', name: '怪物使いの証（20回）', desc: 'ガッツファクトリーで怪物のモンスターを合計20回パーティに加える', check: stats => stats.monClassUsage.monster >= 20, diamondReward: 200 },
+    { id: 'monclass_inorganic_10', emoji: '⚙️', name: '無機使いの証（10回）', desc: 'ガッツファクトリーで無機のモンスターを合計10回パーティに加える', check: stats => stats.monClassUsage.inorganic >= 10, diamondReward: 100 },
+    { id: 'monclass_inorganic_20', emoji: '⚙️', name: '無機使いの証（20回）', desc: 'ガッツファクトリーで無機のモンスターを合計20回パーティに加える', check: stats => stats.monClassUsage.inorganic >= 20, diamondReward: 200 },
+    { id: 'monclass_creation_10', emoji: '✨', name: '創造使いの証（10回）', desc: 'ガッツファクトリーで創造のモンスターを合計10回パーティに加える', check: stats => stats.monClassUsage.creation >= 10, diamondReward: 100 },
+    { id: 'monclass_creation_20', emoji: '✨', name: '創造使いの証（20回）', desc: 'ガッツファクトリーで創造のモンスターを合計20回パーティに加える', check: stats => stats.monClassUsage.creation >= 20, diamondReward: 200 },
+    { id: 'monclass_spirit_10', emoji: '🪽', name: '幻霊使いの証（10回）', desc: 'ガッツファクトリーで幻霊のモンスターを合計10回パーティに加える', check: stats => stats.monClassUsage.spirit >= 10, diamondReward: 100 },
+    { id: 'monclass_spirit_20', emoji: '🪽', name: '幻霊使いの証（20回）', desc: 'ガッツファクトリーで幻霊のモンスターを合計20回パーティに加える', check: stats => stats.monClassUsage.spirit >= 20, diamondReward: 200 },
+    { id: 'monclass_demon_10', emoji: '😈', name: '魔族使いの証（10回）', desc: 'ガッツファクトリーで魔族のモンスターを合計10回パーティに加える', check: stats => stats.monClassUsage.demon >= 10, diamondReward: 100 },
+    { id: 'monclass_demon_20', emoji: '😈', name: '魔族使いの証（20回）', desc: 'ガッツファクトリーで魔族のモンスターを合計20回パーティに加える', check: stats => stats.monClassUsage.demon >= 20, diamondReward: 200 }
 ];
 
 // --- 実績判定に必要な統計情報をまとめて取得する ---
@@ -36,15 +71,26 @@ async function fetchAchievementStats() {
         })()
     ]);
 
+    // モン類（獣族／怪物／無機／創造／幻霊／魔族）ごとの使用回数を、種族別の使用回数から集計する
+    const monClassUsage = { beast: 0, monster: 0, inorganic: 0, creation: 0, spirit: 0, demon: 0 };
+    Object.keys(usageSnapVal || {}).forEach(speciesId => {
+        const tmpl = (typeof MONSTER_TEMPLATES !== 'undefined') ? MONSTER_TEMPLATES[speciesId] : null;
+        if (!tmpl) return;
+        const classKey = (typeof getMonClassKeyForName === 'function') ? getMonClassKeyForName(tmpl.name) : null;
+        if (classKey && classKey in monClassUsage) monClassUsage[classKey] += usageSnapVal[speciesId] || 0;
+    });
+
     return {
         kin: {
             bestWins: (kinStats && kinStats.bestWins) || 0,
-            bestCleared: !!(kinStats && kinStats.bestCleared)
+            bestCleared: !!(kinStats && kinStats.bestCleared),
+            totalRuns: (kinStats && kinStats.totalRuns) || 0
         },
         endless: {
             bestStreak: (endlessStats && endlessStats.bestStreak) || 0
         },
-        usedSpeciesCount: Object.keys(usageSnapVal || {}).length
+        usedSpeciesCount: Object.keys(usageSnapVal || {}).length,
+        monClassUsage
     };
 }
 
