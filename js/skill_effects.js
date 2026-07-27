@@ -520,7 +520,12 @@ function playSkillVisualEffectByType(effType, side, override) {
 //   opts.spin: 踏み込みながら回転させたい場合の角度
 //   戻り値: { duration, impactAt, from, to } … 着弾タイミングに合わせて演出を足すのに使う
 function playLungeMotion(side, opts = {}) {
-    const { reach = 0.55, duration = 600, scaleHit = 1.06, spin = 0 } = opts;
+    // durationは「基準の長さ」を受け取り、戦闘エフェクトの速度倍率はこの中で掛ける。
+    // 呼び出し側で掛けたり掛けなかったりすると、技ごとに速さがバラついてしまうため、
+    // 倍率の適用箇所はこのヘルパー1ヶ所に集約している。
+    // 戻り値のduration / impactAtは倍率適用後の値なので、そのままsetTimeoutに使える。
+    const { reach = 0.55, duration: baseDuration = 600, scaleHit = 1.06, spin = 0 } = opts;
+    const duration = baseDuration * EFFECT_SPEED_MULTIPLIER;
     const casterEl = getBattleSpriteContainerEl(side);
     const targetEl = getBattleSpriteContainerEl(otherSide(side));
     const result = { duration, impactAt: duration * 0.45, from: null, to: null };
@@ -545,7 +550,9 @@ function playLungeMotion(side, opts = {}) {
 
 // --- 攻撃を受けた側が仰け反る ---
 function playRecoilMotion(side, opts = {}) {
-    const { duration = 420, distance = 10, rotate = 8 } = opts;
+    // playLungeMotionと同様、速度倍率はこの中で掛ける（呼び出し側は基準の長さだけ渡す）
+    const { duration: baseDuration = 420, distance = 10, rotate = 8 } = opts;
+    const duration = baseDuration * EFFECT_SPEED_MULTIPLIER;
     animateSpriteLayers(side, [
         { transform: 'translateX(0) rotate(0deg)', offset: 0 },
         { transform: `translateX(${distance}px) rotate(${rotate}deg)`, offset: 0.3 },

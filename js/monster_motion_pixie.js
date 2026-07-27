@@ -426,7 +426,7 @@ function playPixieBigBangMotion(side) {
                 ]
             });
         }
-        playRecoilMotion(otherSide(side), { distance: 19, rotate: 14, duration: 640 * EFFECT_SPEED_MULTIPLIER });
+        playRecoilMotion(otherSide(side), { distance: 19, rotate: 14, duration: 640 });
     }, duration * 0.58);
 }
 registerCustomSkillMotion('pixie_bigbang', playPixieBigBangMotion, 'ピクシー');

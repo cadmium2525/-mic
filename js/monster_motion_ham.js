@@ -34,7 +34,7 @@ function playOneTwoPunchMotion(side) {
     [[0.26, -10, 26], [0.62, 8, 34]].forEach(([at, oy, size], i) => {
         setTimeout(() => {
             spawnImpactBurst(to.x, to.y + oy, { size, duration: 300 * EFFECT_SPEED_MULTIPLIER });
-            playRecoilMotion(otherSide(side), { distance: i === 1 ? 11 : 7, rotate: i === 1 ? 8 : 5, duration: 320 * EFFECT_SPEED_MULTIPLIER });
+            playRecoilMotion(otherSide(side), { distance: i === 1 ? 11 : 7, rotate: i === 1 ? 8 : 5, duration: 320 });
         }, duration * at);
     });
 }
@@ -178,7 +178,7 @@ function playChoAtamatsukiMotion(side) {
                 ]
             });
         }
-        playRecoilMotion(otherSide(side), { distance: 18, rotate: 13, duration: 600 * EFFECT_SPEED_MULTIPLIER });
+        playRecoilMotion(otherSide(side), { distance: 18, rotate: 13, duration: 600 });
     }, duration * 0.62);
 }
 registerCustomSkillMotion('cho_atamatsuki', playChoAtamatsukiMotion, 'ハム');

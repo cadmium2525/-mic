@@ -141,7 +141,7 @@ function playChoMonotaoreMotion(side) {
             });
         }
         spawnMonolithRings(to.x, to.y + 20, 2, MONOLITH_STONE, 520, { size: 60, stagger: 90, scaleTo: 2.4 });
-        playRecoilMotion(otherSide(side), { distance: 17, rotate: 13, duration: 620 * EFFECT_SPEED_MULTIPLIER });
+        playRecoilMotion(otherSide(side), { distance: 17, rotate: 13, duration: 620 });
     }, duration * 0.64);
 }
 registerCustomSkillMotion('cho_monotaore', playChoMonotaoreMotion, 'モノリス');
@@ -179,7 +179,7 @@ function playSanrenAttackMotion(side) {
                     { transform: 'translate(14px,-16px) translate(-50%,-50%) scale(0.7) rotate(300deg)', opacity: 0 }
                 ]
             });
-            playRecoilMotion(otherSide(side), { distance: i === 2 ? 13 : 7, rotate: i === 2 ? 10 : 5, duration: 340 * EFFECT_SPEED_MULTIPLIER });
+            playRecoilMotion(otherSide(side), { distance: i === 2 ? 13 : 7, rotate: i === 2 ? 10 : 5, duration: 340 });
         }, duration * at);
     });
 }

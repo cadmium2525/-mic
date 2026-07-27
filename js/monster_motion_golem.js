@@ -58,7 +58,7 @@ function playDekopinMotion(side) {
         });
         spawnImpactBurst(to.x, to.y, { size: 44, duration: 400 * EFFECT_SPEED_MULTIPLIER });
         spawnGolemDebris(to.x, to.y, 4);
-        playRecoilMotion(otherSide(side), { distance: 16, rotate: 12, duration: 520 * EFFECT_SPEED_MULTIPLIER });
+        playRecoilMotion(otherSide(side), { distance: 16, rotate: 12, duration: 520 });
     }, duration * 0.46);
 }
 registerCustomSkillMotion('dekopin', playDekopinMotion, 'ゴーレム');

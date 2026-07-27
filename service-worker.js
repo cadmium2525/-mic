@@ -4,7 +4,7 @@
 // キャッシュのバージョンを上げると、ユーザー環境の古いキャッシュが破棄され、
 // 新しいファイル一式が再取得されます。js/images 等を更新した場合は
 // 必ず CACHE_VERSION の値を変更してください（変更しないと更新が反映されません）。
-const CACHE_VERSION = 'v19';
+const CACHE_VERSION = 'v20';
 const CACHE_NAME = `guts-road-cache-${CACHE_VERSION}`;
 
 // 同一オリジンの静的アセット（アプリ本体）。ここに列挙したファイルは
@@ -47,6 +47,10 @@ const PRECACHE_URLS = [
   'js/monster_motion_ham.js',
   'js/monster_motion_golem.js',
   'js/monster_motion_pixie.js',
+  'js/monster_motion_nendoro.js',
+  'js/monster_motion_henger.js',
+  'js/monster_motion_arrowhead.js',
+  'js/monster_motion_kijin.js',
   'js/strategy_hub.js',
   'js/achievements.js',
   'js/debug_mode.js',

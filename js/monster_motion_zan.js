@@ -176,7 +176,7 @@ function playZanOhzantouMotion(side) {
         spawnSlashArc(to.x, to.y, 72, { length: 158, width: 15, color: ZAN_GREEN, duration: 380 * EFFECT_SPEED_MULTIPLIER });
         setTimeout(() => spawnSlashArc(to.x, to.y + 8, 96, { length: 130, width: 11, color: '#e6ffd0', duration: 340 * EFFECT_SPEED_MULTIPLIER }), 90);
         spawnImpactBurst(to.x, to.y, { size: 44, duration: 440 * EFFECT_SPEED_MULTIPLIER });
-        playRecoilMotion(otherSide(side), { distance: 15, rotate: 12, duration: 560 * EFFECT_SPEED_MULTIPLIER });
+        playRecoilMotion(otherSide(side), { distance: 15, rotate: 12, duration: 560 });
     }, duration * 0.58);
 }
 registerCustomSkillMotion('zan_ohzantou', playZanOhzantouMotion, 'ザン');
@@ -252,7 +252,7 @@ function playZanMeteorDriveMotion(side) {
                 ]
             });
         }
-        playRecoilMotion(otherSide(side), { distance: 16, rotate: 12, duration: 600 * EFFECT_SPEED_MULTIPLIER });
+        playRecoilMotion(otherSide(side), { distance: 16, rotate: 12, duration: 600 });
     }, duration * 0.7);
 }
 registerCustomSkillMotion('zan_meteor_drive', playZanMeteorDriveMotion, 'ザン');

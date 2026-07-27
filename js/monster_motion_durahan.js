@@ -136,7 +136,7 @@ function playMappufutatsuMotion(side) {
     setTimeout(() => {
         spawnSlashArc(to.x, to.y, 90, { length: 150, width: 14, color: '#ffffff', duration: 380 * EFFECT_SPEED_MULTIPLIER });
         spawnImpactBurst(to.x, to.y, { size: 40, duration: 420 * EFFECT_SPEED_MULTIPLIER });
-        playRecoilMotion(otherSide(side), { distance: 14, rotate: 11, duration: 520 * EFFECT_SPEED_MULTIPLIER });
+        playRecoilMotion(otherSide(side), { distance: 14, rotate: 11, duration: 520 });
     }, duration * 0.56);
 }
 registerCustomSkillMotion('mappufutatsu', playMappufutatsuMotion, 'デュラハン');
@@ -166,7 +166,7 @@ function playComboPunchMotion(side) {
         setTimeout(() => {
             const oy = (i - 1) * 12;
             spawnImpactBurst(to.x, to.y + oy, { size, duration: 300 * EFFECT_SPEED_MULTIPLIER });
-            playRecoilMotion(otherSide(side), { distance: i === 2 ? 12 : 7, rotate: i === 2 ? 9 : 5, duration: 340 * EFFECT_SPEED_MULTIPLIER });
+            playRecoilMotion(otherSide(side), { distance: i === 2 ? 12 : 7, rotate: i === 2 ? 9 : 5, duration: 340 });
         }, duration * at);
     });
 }
@@ -361,7 +361,7 @@ function playSaigoOugiMotion(side) {
                 ]
             });
         }
-        playRecoilMotion(otherSide(side), { distance: 18, rotate: 14, duration: 640 * EFFECT_SPEED_MULTIPLIER });
+        playRecoilMotion(otherSide(side), { distance: 18, rotate: 14, duration: 640 });
     }, duration * 0.62);
 }
 registerCustomSkillMotion('saigo_ougi', playSaigoOugiMotion, 'デュラハン');
