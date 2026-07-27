@@ -10,7 +10,7 @@
 // =====================================================
 
 // --- バージョン・最終更新日（タイトル画面左下に小さく表示。更新のたびにここを書き換える） ---
-const GAME_VERSION_INFO = { version: 'v1.0.0', updatedAt: '2026-07-26' };
+const GAME_VERSION_INFO = { version: 'ver1.0.1', updatedAt: '2026-07-27' };
 
 // --- ブリーダー名の永続化（LocalStorage） ---
 function loadStoredPlayerName() {
