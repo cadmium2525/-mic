@@ -48,6 +48,28 @@ function createEmptyPvpPresetDraft(slotIndex) {
     };
 }
 
+// --- 同一プリセット内での重複禁止ルール ---
+// Ⅰ. 同じモンスター（種族）は1つのプリセットに1体まで
+// Ⅱ. 同じ装備アイテムは1つのプリセットに1つまで（「装備なし」は何体でも可）
+// 編集中のスロット自身は除外して調べる（自分が今選んでいるものを重複扱いしないため）。
+function getPvpPresetUsedSpecies(excludeIndex) {
+    const preset = PVP_PRESET_STATE.draftPreset;
+    if (!preset || !Array.isArray(preset.monsters)) return [];
+    return preset.monsters
+        .map((mon, i) => (i === excludeIndex ? null : mon))
+        .filter(mon => mon && mon.speciesId)
+        .map(mon => mon.speciesId);
+}
+
+function getPvpPresetUsedEquips(excludeIndex) {
+    const preset = PVP_PRESET_STATE.draftPreset;
+    if (!preset || !Array.isArray(preset.monsters)) return [];
+    return preset.monsters
+        .map((mon, i) => (i === excludeIndex ? null : mon))
+        .filter(mon => mon && mon.equipId) // 「装備なし」(null)は重複対象外
+        .map(mon => mon.equipId);
+}
+
 function isPvpPresetMonsterComplete(m) {
     if (!m || !m.speciesId) return false;
     const tmpl = MONSTER_TEMPLATES[m.speciesId];
@@ -413,12 +435,15 @@ function renderPvpPresetMonsterEditorScreen() {
     const speciesContainer = document.getElementById('pvp-preset-monster-species-list');
     if (speciesContainer) {
         speciesContainer.innerHTML = '';
+        const usedSpecies = getPvpPresetUsedSpecies(PVP_PRESET_STATE.editingMonsterIndex);
         KIN_NEJIKI_SPECIES_POOL.forEach(speciesId => {
             const tmpl = MONSTER_TEMPLATES[speciesId];
             if (!tmpl) return;
             const isSelected = m.speciesId === speciesId;
+            // 同じプリセット内の他の枠で既に使われている種族は選べない
+            const isUsed = usedSpecies.includes(speciesId);
             const btn = document.createElement('div');
-            btn.className = `flex flex-col items-center justify-center p-1.5 rounded-lg border cursor-pointer active:scale-95 transition-all ${isSelected ? 'bg-sky-900 border-sky-400' : 'bg-[#16202b] border-sky-900/40'}`;
+            btn.className = `flex flex-col items-center justify-center p-1.5 rounded-lg border transition-all ${isSelected ? 'bg-sky-900 border-sky-400' : 'bg-[#16202b] border-sky-900/40'} ${isUsed ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer active:scale-95'}`;
             btn.onclick = () => selectPvpPresetMonsterSpecies(speciesId);
 
             const iconWrap = document.createElement('div');
@@ -507,10 +532,13 @@ function renderPvpPresetMonsterEditorScreen() {
         noneRow.innerHTML = `<span class="text-[11px] font-bold text-purple-200">${noneSelected ? '✅ ' : ''}装備なし</span>`;
         equipContainer.appendChild(noneRow);
 
+        const usedEquips = getPvpPresetUsedEquips(PVP_PRESET_STATE.editingMonsterIndex);
         Object.values(EQUIPMENT_DB).forEach(base => {
             const isSelected = m.equipId === base.id;
+            // 同じプリセット内の他の枠で既に使われている装備は選べない
+            const isUsed = usedEquips.includes(base.id);
             const row = document.createElement('div');
-            row.className = `p-2 rounded-lg border cursor-pointer active:scale-[0.98] transition-all ${isSelected ? 'bg-purple-900/60 border-purple-400' : 'bg-[#16202b] border-purple-900/30'}`;
+            row.className = `p-2 rounded-lg border transition-all ${isSelected ? 'bg-purple-900/60 border-purple-400' : 'bg-[#16202b] border-purple-900/30'} ${isUsed ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer active:scale-[0.98]'}`;
             row.onclick = () => selectPvpPresetMonsterEquip(base.id);
             const effectText = (typeof getEquipmentDexEffectText === 'function') ? getEquipmentDexEffectText(base) : (base.desc || '');
             row.innerHTML = `
@@ -548,6 +576,11 @@ function renderPvpPresetMonsterEditorScreen() {
 function selectPvpPresetMonsterSpecies(speciesId) {
     const m = PVP_PRESET_STATE.draftMonster;
     if (!m || m.speciesId === speciesId) return;
+    if (getPvpPresetUsedSpecies(PVP_PRESET_STATE.editingMonsterIndex).includes(speciesId)) {
+        const tmpl = MONSTER_TEMPLATES[speciesId];
+        showToast(`${tmpl ? tmpl.name : 'このモンスター'}は、このプリセット内で既に編成されています。`);
+        return;
+    }
     m.speciesId = speciesId;
     m.skills = []; // 種族が変わると技候補も変わるため選択済みの技はリセットする
     m.statType = null; // 種族が変わるとタイプ（ちから型/かしこさ型）の対象も変わるためリセットする
@@ -582,6 +615,12 @@ function togglePvpPresetMonsterSkill(skillKey) {
 function selectPvpPresetMonsterEquip(equipId) {
     const m = PVP_PRESET_STATE.draftMonster;
     if (!m) return;
+    // 「装備なし」(null)はいくつでも選べる。実際の装備のみ重複を禁止する。
+    if (equipId && getPvpPresetUsedEquips(PVP_PRESET_STATE.editingMonsterIndex).includes(equipId)) {
+        const base = EQUIPMENT_DB[equipId];
+        showToast(`${base ? base.name : 'この装備'}は、このプリセット内で既に使われています。`);
+        return;
+    }
     m.equipId = equipId;
     renderPvpPresetMonsterEditorScreen();
 }
@@ -618,6 +657,15 @@ function confirmPvpPresetMonsterEditor() {
         return;
     }
     const idx = PVP_PRESET_STATE.editingMonsterIndex;
+    // 保存直前の最終チェック（過去に保存された重複ありのデータを開いた場合などの保険）
+    if (getPvpPresetUsedSpecies(idx).includes(m.speciesId)) {
+        showToast('同じモンスターを、1つのプリセット内に2体以上編成することはできません。');
+        return;
+    }
+    if (m.equipId && getPvpPresetUsedEquips(idx).includes(m.equipId)) {
+        showToast('同じ装備アイテムを、1つのプリセット内で2つ以上使うことはできません。');
+        return;
+    }
     PVP_PRESET_STATE.draftPreset.monsters[idx] = JSON.parse(JSON.stringify(m));
     PVP_PRESET_STATE.draftMonster = null;
     PVP_PRESET_STATE.editingMonsterIndex = null;

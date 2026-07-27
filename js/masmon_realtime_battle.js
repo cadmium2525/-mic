@@ -52,7 +52,8 @@ const REALTIME_BATTLE = {
     seenLogKeys: {},          // 二重描画防止
     lastCanActTurnNumber: null, // 直前に「行動できる状態」として描画したturnNumber（技表示に戻す判定用）
     pendingLogHide: false,    // 新ターン突入でログを閉じたいが、直前ターンのログ表示がまだ終わっていないため保留中か
-    pendingLogHideTimer: null // pendingLogHideが立ったまま一定時間ログが届かなかった場合の保険タイマー
+    pendingLogHideTimer: null, // pendingLogHideが立ったまま一定時間ログが届かなかった場合の保険タイマー
+    battleStartedAt: 0        // 今回の対戦の開始時刻。これより古いログは前回対戦の残りとして無視する
 };
 
 // --- 現在のバトル状態から「場に出ているユニット」を取得するヘルパー ---
@@ -112,7 +113,7 @@ async function initializeRealtimeBattleState() {
             fetchPvpPlayerRating(ratingMode, ratingSeason, roomData.player2.id)
         ]);
 
-        await stateRef.transaction(current => {
+        const txResult = await stateRef.transaction(current => {
             // 相手クライアントが今回の対戦用に既に作成済みの battleState はそのまま採用する。
             // ただし前回対戦の「終了済み(finished)」データが片付け漏れで残っている場合は
             // 使い回さず、今回の対戦用に新しく作り直す。
@@ -124,6 +125,22 @@ async function initializeRealtimeBattleState() {
                 p2Rating
             });
         });
+
+        // ---- 前回対戦のログの後始末 ----
+        // battleLog は合言葉ルームを再利用すると前回分がそのまま残る。
+        // ログの購読は limitToLast(50).on('child_added') で行っているため、
+        // 購読を開始した瞬間に「前回の対戦の最後の50行」が child_added として一気に流れ込み、
+        // 今まさに起きている出来事として演出付きで再生されてしまう
+        // （＝相手が何もしていないのに行動ログが流れる＝同期がおかしく見える主因のひとつ）。
+        // 今回の対戦用に battleState を新規作成したクライアントが、古いログを消しておく。
+        const committedState = txResult.committed ? txResult.snapshot.val() : null;
+        if (committedState) {
+            REALTIME_BATTLE.battleStartedAt = committedState.createdAt || 0;
+            const isFreshBattle = !!committedState.createdAt && (Date.now() - committedState.createdAt < 15000);
+            if (isFreshBattle) {
+                try { await REALTIME_BATTLE.ref.child('battleLog').remove(); } catch (e) { /* 消せなくても下の時刻フィルタで防げる */ }
+            }
+        }
     } catch (e) {
         console.error('[Firebase] リアルタイムバトル初期化エラー:', e);
         showToast('バトルの初期化に失敗しました。');
@@ -273,6 +290,9 @@ function attachRealtimeBattleListeners() {
         if (REALTIME_BATTLE.seenLogKeys[snap.key]) return;
         REALTIME_BATTLE.seenLogKeys[snap.key] = true;
         const entry = snap.val();
+        // 上の削除が何らかの理由で間に合わなかった場合の保険として、
+        // 今回の対戦が始まる前に書かれたログは再生しない。
+        if (entry && REALTIME_BATTLE.battleStartedAt && entry.ts && entry.ts < REALTIME_BATTLE.battleStartedAt) return;
         if (entry && entry.text) {
             // 複数のログが一度に届いた場合も、CPU戦と同じテンポで1件ずつ間を空けて表示する
             if (!REALTIME_BATTLE.logRevealQueue) REALTIME_BATTLE.logRevealQueue = [];
@@ -513,7 +533,10 @@ function triggerRealtimeTurnTimeout(state) {
     const mySlot = REALTIME_BATTLE.mySlot;
     if (state.pendingActions && state.pendingActions[mySlot]) return; // 既に行動済み
 
-    REALTIME_BATTLE.autoTimeoutTurnNumber = state.turnNumber;
+    // 二重発火防止のフラグは「送信が成功した場合のみ」立てる。
+    // 先にフラグを立ててしまうと、送信がabort・通信エラーで失敗したときに
+    // このターンでは二度と自動行動を試みられなくなり、相手を待たせたまま完全に停止してしまう。
+    const markAutoDone = () => { REALTIME_BATTLE.autoTimeoutTurnNumber = state.turnNumber; };
 
     const me = getRealtimeActiveUnit(state, mySlot);
     const affordable = (me.skills || []).filter(skKey => {
@@ -522,11 +545,17 @@ function triggerRealtimeTurnTimeout(state) {
     });
 
     if (affordable.length === 0) {
-        performRealtimeAction({ kind: 'pass', auto: true });
+        markAutoDone();
+        performRealtimeAction({ kind: 'pass', auto: true }).catch(() => {
+            REALTIME_BATTLE.autoTimeoutTurnNumber = null; // 失敗したら次の1秒後にもう一度試せるようにする
+        });
         return;
     }
     const randomKey = affordable[Math.floor(Math.random() * affordable.length)];
-    performRealtimeAction({ kind: 'skill', key: randomKey, auto: true });
+    markAutoDone();
+    performRealtimeAction({ kind: 'skill', key: randomKey, auto: true }).catch(() => {
+        REALTIME_BATTLE.autoTimeoutTurnNumber = null;
+    });
 }
 
 // -----------------------------------------------------
@@ -1753,7 +1782,12 @@ async function performRealtimeAction(action) {
                 if (!target || action.targetIdx === myTeam.activeIdx || target.life <= 0) return; // abort：無効な交代先
             } else if (action.kind === 'item') {
                 if (!myItems || !myItems[action.key] || myItems[action.key] <= 0) return; // abort：アイテム切れ
-            } else if (action.kind !== 'defend' && action.kind !== 'pass') {
+            } else if (action.kind !== 'defend' && action.kind !== 'charge' && action.kind !== 'pass') {
+                // ★ここに 'charge'（ためる）が抜けていたため、「ためる」を選ぶと必ずこのabortに落ちて
+                //   行動がサーバーに一切送信されず、相手はこちらの行動を永久に待つことになっていた
+                //   （＝行動が同期されない・ターンが進まない、の主因）。
+                //   ためるはUIにボタンがあり resolveOneRealtimeAction 側でも実装済みなので、
+                //   ここでも正規の行動として受け付ける。
                 return; // abort：不明な行動
             }
 
@@ -2005,6 +2039,7 @@ function resetRealtimeBattleClientState() {
     REALTIME_BATTLE.cachedState = null;
     REALTIME_BATTLE.actionInProgress = false;
     REALTIME_BATTLE.seenLogKeys = {};
+    REALTIME_BATTLE.battleStartedAt = 0;
     REALTIME_BATTLE.lastCanActTurnNumber = null;
     REALTIME_BATTLE.autoTimeoutTurnNumber = null;
     REALTIME_BATTLE.logRevealQueue = [];

@@ -34,8 +34,162 @@ const ENDLESS_STATE = {
     battleNumber: 1,        // 現在のバトル番号（1始まり・上限なし）
     selectedIdx: [],        // 今回のバトルに出す3体（teamの中でのインデックス）
     lastOpponentSpeciesIds: [], // 直前のバトルで出てきた敵の種族ID（次のバトルでの重複回避用）
-    unlocked: false         // ガッツファクトリークリア済みでモード解禁されているか
+    unlocked: false,        // ガッツファクトリークリア済みでモード解禁されているか
+    // タスクキル（バトル中のアプリ強制終了）を検知した回数。
+    // ENDLESS_MAX_TASK_KILLS 回に達した時点でそのランを強制的にゲームオーバー扱いにする。
+    taskKillCount: 0
 };
+
+// =====================================================
+// 途中セーブ（一時中断・再開専用。コンティニューとしては使えない）
+// ・バトルとバトルの間（出撃メンバー選択画面）でセーブできる
+// ・再開後に敗北した場合は、そのセーブデータを削除する
+//
+// タスクキル対策：
+// ・バトル画面に入っている間だけ「バトル中フラグ」をlocalStorageに立てる
+// ・アプリ起動時にこのフラグが残っていた場合、直前の終了がバトル中の強制終了（タスクキル）
+//   だったと判断し、一時セーブに記録された回数をカウントアップする
+// ・規定回数に達した時点でそのランを強制的にゲームオーバー扱いとする
+//   （負けそうになったらタスクキルして再開する、というやり直しを防ぐための仕様）
+//
+// ★ゲームオーバーになる検知回数はこの定数だけで決まる。
+//   ガッツファクトリー（KIN_NEJIKI_MAX_TASK_KILLS）は3回、エンドレスモードは2回に設定している。
+// =====================================================
+const ENDLESS_SUSPEND_KEY = 'mfload_endless_suspend_v1';
+const ENDLESS_BATTLE_FLAG_KEY = 'mfload_endless_battle_flag_v1';
+const ENDLESS_MAX_TASK_KILLS = 2;
+
+function markEndlessBattleStarted() {
+    try { localStorage.setItem(ENDLESS_BATTLE_FLAG_KEY, '1'); } catch (e) { /* ignore */ }
+}
+
+function clearEndlessBattleFlag() {
+    try { localStorage.removeItem(ENDLESS_BATTLE_FLAG_KEY); } catch (e) { /* ignore */ }
+}
+
+function hasEndlessSuspendSave() {
+    try { return !!localStorage.getItem(ENDLESS_SUSPEND_KEY); } catch (e) { return false; }
+}
+
+function readEndlessSuspendSave() {
+    try {
+        const raw = localStorage.getItem(ENDLESS_SUSPEND_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+}
+
+function clearEndlessSuspendSave() {
+    try { localStorage.removeItem(ENDLESS_SUSPEND_KEY); } catch (e) { /* ignore */ }
+}
+
+// --- 一時セーブして中断する（出撃メンバー選択画面から呼ばれる） ---
+function saveEndlessSuspend() {
+    if (!ENDLESS_STATE.active) {
+        showToast('挑戦中のみ一時セーブできます。');
+        return;
+    }
+    // セーブ時点ではバトル中ではないはずなので、念のためバトル中フラグをクリアしておく
+    clearEndlessBattleFlag();
+    try {
+        const payload = {
+            battleNumber: ENDLESS_STATE.battleNumber,
+            currentStreak: ENDLESS_STATE.currentStreak,
+            team: ENDLESS_STATE.team,
+            lastOpponentSpeciesIds: ENDLESS_STATE.lastOpponentSpeciesIds || [],
+            // タスクキル検知回数も保存し、再開後の別セッションへ引き継ぐ
+            taskKillCount: ENDLESS_STATE.taskKillCount || 0,
+            savedAt: Date.now()
+        };
+        localStorage.setItem(ENDLESS_SUSPEND_KEY, JSON.stringify(payload));
+        ENDLESS_STATE.active = false;
+        showToast('一時セーブしました。ホームに戻ります。');
+        setTimeout(() => {
+            changeScreen('screen-endless-home');
+            renderEndlessHomeScreen();
+        }, 800);
+    } catch (e) {
+        console.error('[エンドレス] 一時セーブエラー:', e);
+        showToast('一時セーブに失敗しました。');
+    }
+}
+
+// --- セーブデータから再開する ---
+function resumeEndlessRun() {
+    const saved = readEndlessSuspendSave();
+    if (!saved) {
+        showToast('一時セーブデータが見つかりませんでした。');
+        return;
+    }
+    if (!Array.isArray(saved.team) || saved.team.length === 0) {
+        showToast('セーブデータが壊れているため再開できませんでした。');
+        clearEndlessSuspendSave();
+        return;
+    }
+
+    ENDLESS_STATE.active = true;
+    ENDLESS_STATE.team = saved.team;
+    ENDLESS_STATE.battleNumber = saved.battleNumber || 1;
+    ENDLESS_STATE.currentStreak = saved.currentStreak || 0;
+    ENDLESS_STATE.lastOpponentSpeciesIds = saved.lastOpponentSpeciesIds || [];
+    ENDLESS_STATE.taskKillCount = saved.taskKillCount || 0;
+    ENDLESS_STATE.selectedIdx = [];
+
+    const remaining = Math.max(0, ENDLESS_MAX_TASK_KILLS - ENDLESS_STATE.taskKillCount);
+    showToast(`セーブデータから再開します（${ENDLESS_STATE.currentStreak}連勝・強制終了はあと${remaining}回まで）`);
+    changeScreen('screen-endless-select');
+    renderEndlessSelectScreen();
+}
+
+// --- ホーム画面の「続きから再開する」ボタンの表示を切り替える ---
+function updateEndlessResumeButtonVisibility() {
+    const btn = document.getElementById('endless-resume-btn');
+    if (btn) btn.classList.toggle('hidden', !hasEndlessSuspendSave());
+}
+
+// --- アプリ起動時に1度だけ呼ばれ、直前の終了がタスクキルだったかどうかを判定する ---
+function checkEndlessTaskKillOnLoad() {
+    let battleWasInProgress = false;
+    try {
+        battleWasInProgress = !!localStorage.getItem(ENDLESS_BATTLE_FLAG_KEY);
+    } catch (e) {
+        battleWasInProgress = false;
+    }
+    if (!battleWasInProgress) return;
+
+    // バトル画面のまま終了された形跡があるので、フラグは一旦クリアする
+    clearEndlessBattleFlag();
+
+    const saved = readEndlessSuspendSave();
+    if (!saved) return; // 一時セーブが無ければ判定対象外
+
+    const newCount = (saved.taskKillCount || 0) + 1;
+
+    if (newCount >= ENDLESS_MAX_TASK_KILLS) {
+        // 規定回数に達したので、そのランを強制的にゲームオーバー扱いにする
+        const finalStreak = saved.currentStreak || 0;
+        clearEndlessSuspendSave();
+        try {
+            if (typeof saveEndlessBestStreakIfNeeded === 'function') saveEndlessBestStreakIfNeeded(finalStreak);
+        } catch (e) { /* ignore */ }
+        setTimeout(() => {
+            if (typeof showToast === 'function') {
+                showToast(`⚠️ タスクキルを${ENDLESS_MAX_TASK_KILLS}回検知したため、エンドレスモードの挑戦がゲームオーバーになりました（${finalStreak}連勝）`);
+            }
+        }, 900);
+    } else {
+        saved.taskKillCount = newCount;
+        try {
+            localStorage.setItem(ENDLESS_SUSPEND_KEY, JSON.stringify(saved));
+        } catch (e) { /* ignore */ }
+        setTimeout(() => {
+            if (typeof showToast === 'function') {
+                showToast(`⚠️ バトル中の強制終了を検知しました（${newCount}/${ENDLESS_MAX_TASK_KILLS}回。${ENDLESS_MAX_TASK_KILLS}回で挑戦は強制終了となります）`);
+            }
+        }, 900);
+    }
+}
+
+window.addEventListener('load', checkEndlessTaskKillOnLoad);
 
 // =====================================================
 // 解禁判定（ガッツファクトリーの bestCleared フラグを流用）
@@ -141,6 +295,21 @@ function renderEndlessHomeScreen() {
         }).join('')
         : `<p class="text-gray-500 text-[10px]">まだチームが編成されていません。</p>`;
 
+    // 一時セーブがある場合のみ「続きから再開する」を出す
+    const saved = readEndlessSuspendSave();
+    const hasSuspend = !!saved;
+    const remainingKills = saved ? Math.max(0, ENDLESS_MAX_TASK_KILLS - (saved.taskKillCount || 0)) : 0;
+    const resumeHtml = hasSuspend ? `
+        <div class="bg-[#132a20] border-2 border-emerald-700 rounded-xl p-3 space-y-2 mt-3 fantasy-btn">
+            <div class="text-xs font-bold text-emerald-300">💾 中断中の挑戦があります</div>
+            <div class="text-[10px] text-gray-300">${saved.currentStreak || 0}連勝／通算${saved.battleNumber || 1}戦目</div>
+            <div class="text-[9px] text-gray-500">バトル中の強制終了はあと${remainingKills}回まで（${ENDLESS_MAX_TASK_KILLS}回で挑戦は終了）</div>
+            <button onclick="resumeEndlessRun()"
+                class="fantasy-btn w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-black rounded-lg text-xs active:scale-95 transition-all border-teal-800">
+                ▶ 続きから再開する
+            </button>
+        </div>` : '';
+
     container.innerHTML = `
         <div class="bg-[#2a1b15] border-2 border-purple-900/50 rounded-xl p-3 space-y-2 fantasy-btn">
             <div class="grid grid-cols-2 gap-2 text-center">
@@ -162,12 +331,15 @@ function renderEndlessHomeScreen() {
                 class="fantasy-btn w-full py-2 bg-purple-800 hover:bg-purple-700 text-white text-xs font-bold rounded-lg active:scale-95 transition-all border-purple-600">✏️ チームを編成する</button>
         </div>
 
+        ${resumeHtml}
+
         <button onclick="startEndlessChallenge()"
             class="fantasy-btn w-full py-3.5 mt-3 bg-gradient-to-r from-purple-600 to-fuchsia-700 hover:from-purple-500 hover:to-fuchsia-600 text-white font-black rounded-xl text-md shadow-lg transform active:scale-95 transition-all pixel-font border-fuchsia-900 flex items-center justify-center space-x-2 ${teamCount !== 4 ? 'opacity-40 pointer-events-none' : ''}">
             <i class="fa-solid fa-infinity"></i>
-            <span>挑戦開始！</span>
+            <span>${hasSuspend ? '最初から挑戦する' : '挑戦開始！'}</span>
         </button>
         ${teamCount !== 4 ? '<p class="text-[10px] text-gray-500 text-center mt-1">4体編成すると挑戦できます</p>' : ''}
+        ${hasSuspend ? '<p class="text-[10px] text-amber-500/80 text-center mt-1">※「最初から挑戦する」を選ぶと、一時セーブは破棄されます</p>' : ''}
     `;
 }
 
@@ -383,6 +555,11 @@ function startEndlessChallenge() {
     ENDLESS_STATE.currentStreak = 0;
     ENDLESS_STATE.selectedIdx = [];
     ENDLESS_STATE.lastOpponentSpeciesIds = [];
+    // 新しい挑戦を始めるので、前回の一時セーブとタスクキル回数は破棄する
+    // （残しておくと、前のランの強制終了カウントを引き継いでしまう）
+    ENDLESS_STATE.taskKillCount = 0;
+    clearEndlessSuspendSave();
+    clearEndlessBattleFlag();
     changeScreen('screen-endless-select');
     renderEndlessSelectScreen();
 }
@@ -459,12 +636,16 @@ function toggleEndlessSelect(idx) {
 
 // 挑戦を中断してホームへ戻る（ラン自体は終了扱いにする。連勝数は0にリセットされる）
 function abandonEndlessChallenge() {
-    if (!confirm('挑戦を中断してホームに戻りますか？現在の連勝数は0にリセットされます。')) return;
+    if (!confirm('挑戦をやめてホームに戻りますか？現在の連勝数は0にリセットされます。\n（続きから再開したい場合は「一時セーブ」を使ってください）')) return;
     ENDLESS_STATE.active = false;
     ENDLESS_STATE.battleNumber = 1;
     ENDLESS_STATE.currentStreak = 0;
     ENDLESS_STATE.selectedIdx = [];
     ENDLESS_STATE.lastOpponentSpeciesIds = [];
+    ENDLESS_STATE.taskKillCount = 0;
+    // 「やめる」を選んだ以上そのランは破棄されるので、一時セーブも消しておく
+    clearEndlessSuspendSave();
+    clearEndlessBattleFlag();
     changeScreen('screen-endless-home');
     renderEndlessHomeScreen();
 }
@@ -589,11 +770,16 @@ function launchEndlessBattleEngine(playerParty, opponentTeamRaw, floorText, isBo
         aiLevel,
         aiPersonality: pickKinNejikiAiPersonality()
     };
+    // ここから勝敗が決まるまでの間にアプリが強制終了された場合、タスクキルとして検知する
+    markEndlessBattleStarted();
     startMasmonBattleCommon(floorText);
 }
 
 // --- バトル終了後の分岐（masmon_battle.js の handleMasmonBattleWin/Lose から呼ばれる） ---
 async function endlessHandleBattleEnd(isWin) {
+    // 勝敗が確定した時点でバトル中フラグを下ろす
+    // （下ろし忘れると、正常終了なのに次回起動時タスクキルと誤検知されてしまう）
+    clearEndlessBattleFlag();
     if (!isWin) {
         await endlessFinishRun();
         return;
@@ -620,7 +806,12 @@ async function endlessFinishRun() {
     ENDLESS_STATE.currentStreak = 0;
     ENDLESS_STATE.selectedIdx = [];
     ENDLESS_STATE.lastOpponentSpeciesIds = [];
+    ENDLESS_STATE.taskKillCount = 0;
     MASMON_BATTLE_STATE.endless = null;
+    // 一時セーブは「中断・再開」専用でコンティニューには使えないため、
+    // ランが終わった時点で必ず削除する（残すと敗北後に巻き戻せてしまう）
+    clearEndlessSuspendSave();
+    clearEndlessBattleFlag();
 
     if (finalStreak > ENDLESS_STATE.bestStreak) ENDLESS_STATE.bestStreak = finalStreak;
     await saveEndlessBestStreakIfNeeded(finalStreak);

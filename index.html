@@ -918,7 +918,8 @@
             <!-- ==================== SCREEN: エンドレスモード 3/4体選択画面 ==================== -->
             <div id="screen-endless-select" class="screen flex-col justify-between h-full p-4 bg-[#1a120b] space-y-3">
                 <div class="bg-purple-950/40 p-2.5 rounded-xl border border-purple-700 text-center relative">
-                    <button onclick="abandonEndlessChallenge()" class="absolute left-2 top-2 text-[9px] text-gray-400 hover:text-gray-300">✕ 中断</button>
+                    <button onclick="abandonEndlessChallenge()" class="absolute left-2 top-2 text-[9px] text-gray-400 hover:text-gray-300">✕ やめる</button>
+                    <button onclick="saveEndlessSuspend()" class="absolute right-2 top-2 text-[9px] text-emerald-400 hover:text-emerald-300 font-bold">💾 一時セーブ</button>
                     <h2 class="text-sm font-black text-purple-300 pixel-font">出撃する3体を選ぼう！</h2>
                     <p id="endless-select-header" class="text-[9px] text-gray-400 mt-0.5">通算1戦目・現在0連勝</p>
                 </div>

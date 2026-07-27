@@ -105,13 +105,18 @@ function switchPvpRentalBattleType(battleType) {
 // --- 候補モンスター1体分のカードを描画する共通ヘルパー ---
 // clickable/selected を切り替えられるようにし、この画面（プレビューのみ）と
 // マッチング後の選出フェーズ（enterPvpPickPhase以下）の両方から使い回す。
+// opts.hideLoadout を true にすると、技と装備を伏せて表示する。
+// 対戦相手の候補は「どのモンスターがいるか」までは見せるが、
+// 技構成と装備まで見えてしまうと型が完全に割れて読み合いが成立しないため、
+// 選出画面では相手側にのみこれを指定している。
 function renderPvpMonsterOfferCard(m, opts) {
     opts = opts || {};
     const isSelected = !!opts.selected;
     const clickable = !!opts.clickable;
+    const hideLoadout = !!opts.hideLoadout;
 
-    const skillNames = buildSkillListWithAuraText(m.skills);
-    const equipText = m.equip ? getEquipmentDisplayName(m.equip) : '未装備';
+    const skillNames = hideLoadout ? '???' : buildSkillListWithAuraText(m.skills);
+    const equipText = hideLoadout ? '???' : (m.equip ? getEquipmentDisplayName(m.equip) : '未装備');
     const aura = AURA_TYPES[m.aura];
     const monClassKey = getMonClassKeyForName(m.monsterBaseName);
     const monClassInfo = monClassKey ? MON_CLASS_TYPES[monClassKey] : null;
@@ -130,8 +135,8 @@ function renderPvpMonsterOfferCard(m, opts) {
             <div class="flex-1 min-w-0">
                 <div class="text-xs font-bold text-sky-200">${m.name} ${auraBadge} ${isSelected ? '✅' : ''}</div>
                 <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def}</div>
-                <div class="text-[9px] text-gray-500 mt-0.5">技: ${skillNames}</div>
-                <div class="text-[9px] text-purple-300 mt-0.5">装備: ${equipText}</div>
+                <div class="text-[9px] ${hideLoadout ? 'text-gray-600 italic' : 'text-gray-500'} mt-0.5">技: ${skillNames}</div>
+                <div class="text-[9px] ${hideLoadout ? 'text-gray-600 italic' : 'text-purple-300'} mt-0.5">装備: ${equipText}</div>
             </div>
         </div>
     `;
@@ -281,7 +286,9 @@ function renderPvpPickScreen() {
         oppContainer.innerHTML = '';
         PVP_PICK_STATE.oppOffer.forEach(m => {
             if (!m) return;
-            oppContainer.appendChild(renderPvpMonsterOfferCard(m, { clickable: false, selected: false }));
+            // 相手の候補は、モンスターの顔ぶれ・種族・ステータスまでは見えるが、
+            // 技構成と装備は伏せる（型を読み合う余地を残すため）
+            oppContainer.appendChild(renderPvpMonsterOfferCard(m, { clickable: false, selected: false, hideLoadout: true }));
         });
     }
 
