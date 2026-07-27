@@ -578,7 +578,7 @@ function renderMyRoomFurnitureItems() {
         if (lit && lightLayer) {
             const def = getMyRoomFurnitureDef(instances[instanceKey].furnitureId);
             if (def && def.emitsLight) {
-                spawnMyRoomLightPool(instances[instanceKey], lightLayer);
+                spawnMyRoomLightPool(instanceKey, instances[instanceKey], lightLayer);
             }
         }
     });
@@ -588,19 +588,56 @@ function renderMyRoomFurnitureItems() {
 //   家具そのものを強く光らせると絵柄が白飛びしてしまうので、家具の明るさは控えめに保ち、
 //   代わりにこの光だまりで周囲を明るくして「灯りが部屋を照らしている」ように見せる。
 //   家具を大きくしている（scaleを上げている）場合は、照らす範囲もそれに比例して広くする。
-function spawnMyRoomLightPool(instance, lightLayer) {
-    const scale = instance.scale || 1;
-    const size = MYROOM_FURNITURE_BASE_SIZE_PX * scale * MYROOM_LIGHT_POOL_SIZE_RATIO;
-
+//   ※光だまりは家具とは別のレイヤーにある独立した要素なので、家具を動かしたり大きさを変えたら
+//     こちら側も追従させる必要がある（syncMyRoomLightPool を呼ぶ）。
+//     追従を忘れると「家具は動いたのに光だけ元の場所に取り残される」ことになる。
+function spawnMyRoomLightPool(instanceKey, instance, lightLayer) {
     const pool = document.createElement('div');
     pool.className = 'myroom-light-pool';
-    pool.style.width = `${size}px`;
-    pool.style.height = `${size}px`;
-    pool.style.left = `${instance.xPct}%`;
-    pool.style.top = `${instance.yPct}%`;
+    pool.dataset.instanceKey = instanceKey; // どの家具の光かを紐づけておく（移動時に探せるように）
     // ゆらぎの位相を家具ごとにずらして、複数の灯りが同時に同じ明るさで脈打たないようにする
     pool.style.animationDelay = `${-(Math.random() * 3.4).toFixed(2)}s`;
     lightLayer.appendChild(pool);
+    applyMyRoomLightPoolGeometry(pool, instance);
+    return pool;
+}
+
+// --- 光だまりの位置と大きさを、家具の状態に合わせて設定する ---
+//   overridePos: ドラッグ中など、まだinstanceに保存されていない「今の位置」を渡したい場合に使う
+function applyMyRoomLightPoolGeometry(pool, instance, overridePos) {
+    if (!pool || !instance) return;
+    const scale = instance.scale || 1;
+    const size = MYROOM_FURNITURE_BASE_SIZE_PX * scale * MYROOM_LIGHT_POOL_SIZE_RATIO;
+    const xPct = overridePos ? overridePos.xPct : instance.xPct;
+    const yPct = overridePos ? overridePos.yPct : instance.yPct;
+    pool.style.width = `${size}px`;
+    pool.style.height = `${size}px`;
+    pool.style.left = `${xPct}%`;
+    pool.style.top = `${yPct}%`;
+}
+
+// --- 指定した家具の光だまりを、現在の状態に合わせて追従させる ---
+//   家具を動かした／大きさを変えた／撤去した、いずれの場合もこれを呼べば整合が取れる。
+//   ・光るべき家具なのに光だまりが無ければ作る
+//   ・光らないはず（灯り家具でない／点灯しない時間帯）なら取り除く
+//   overridePos: ドラッグ中の「今の位置」（instanceにはまだ保存されていない座標）
+function syncMyRoomLightPool(instanceKey, overridePos) {
+    const lightLayer = document.getElementById('myroom-light-layer');
+    if (!lightLayer) return;
+
+    const instances = getPlacedFurnitureForBg(getCurrentMyRoomBackground().id);
+    const instance = instances[instanceKey];
+    const existing = lightLayer.querySelector(`.myroom-light-pool[data-instance-key="${CSS.escape(instanceKey)}"]`);
+
+    const def = instance ? getMyRoomFurnitureDef(instance.furnitureId) : null;
+    const shouldGlow = !!(instance && def && def.emitsLight && getMyRoomTimePeriod().lit);
+
+    if (!shouldGlow) {
+        if (existing) existing.remove();
+        return;
+    }
+    if (existing) applyMyRoomLightPoolGeometry(existing, instance, overridePos);
+    else applyMyRoomLightPoolGeometry(spawnMyRoomLightPool(instanceKey, instance, lightLayer), instance, overridePos);
 }
 
 function getMyRoomFurnitureDef(furnitureId) {
@@ -685,6 +722,9 @@ function setupMyRoomFurnitureDragHandlers(el, instanceKey) {
         yPct = Math.min(bounds.yMax, Math.max(bounds.yMin, yPct));
         el.style.left = `${xPct}%`;
         el.style.top = `${yPct}%`;
+        // 光だまりは家具とは別レイヤーの独立した要素なので、ドラッグ中も一緒に動かす
+        // （これを忘れると、家具だけが動いて光がその場に取り残される）
+        syncMyRoomLightPool(instanceKey, { xPct, yPct });
         e.preventDefault();
     });
 
@@ -712,6 +752,7 @@ function setupMyRoomFurnitureDragHandlers(el, instanceKey) {
                 instance.xPct = xPct;
                 instance.yPct = yPct;
             }
+            syncMyRoomLightPool(instanceKey); // 着地位置に光だまりを合わせる
             saveMyRoomPlacement();
         } else {
             // タップ操作：操作パネル（サイズ・回転・反転・撤去）を開く
@@ -894,6 +935,8 @@ function applyActiveMyRoomFurnitureTransform() {
     if (!key || !instance) return;
     const el = document.querySelector(`.myroom-furniture-item[data-instance-key="${CSS.escape(key)}"]`);
     if (el) el.style.transform = buildMyRoomFurnitureTransform(instance);
+    // 大きさを変えたら、照らす範囲もそれに合わせて広げる／狭める
+    syncMyRoomLightPool(key);
     saveMyRoomPlacement();
 }
 
