@@ -186,12 +186,25 @@ function playShinkouYoKegareMotion(side) {
 }
 registerCustomSkillMotion('shinkou_yo_kegare_wo_harae', playShinkouYoKegareMotion, 'アーク');
 
-// --- 今こそ真なる目醒め：自身が覚醒し、力を解放する（自己強化） ---
+// --- 今こそ真なる目醒め：覚醒し、解放した力をそのまま相手へ叩きつける ---
+//   ※自己強化専用技ではなく、force1.45の攻撃技（命中後に自身の会心率が上がる）。
+//     覚醒の演出だけで終わらせず、解放した光が相手に届くところまでを見せる。
 function playImaKosoShinNaruMezameMotion(side) {
     const casterEl = getBattleSpriteContainerEl(side);
-    if (!casterEl) return;
+    const targetEl = getBattleSpriteContainerEl(otherSide(side));
+    if (!casterEl || !targetEl) return;
     const { x, y } = getElCenter(casterEl);
+    const to = getElCenter(targetEl);
     const duration = 1250 * EFFECT_SPEED_MULTIPLIER;
+
+    // 覚醒で解放された力が、そのまま衝撃となって相手へ向かう
+    setTimeout(() => {
+        spawnBeamLine(x, y, to.x - x, to.y - y, ARK_HOLY, 520 * EFFECT_SPEED_MULTIPLIER, 14);
+        setTimeout(() => {
+            spawnImpactBurst(to.x, to.y, { size: 44, duration: 460 * EFFECT_SPEED_MULTIPLIER, color: ARK_HOLY });
+            playRecoilMotion(otherSide(side), { distance: 14, rotate: 10, duration: 540 });
+        }, 200 * EFFECT_SPEED_MULTIPLIER);
+    }, duration * 0.62);
 
     // 目醒め：静→動。ゆっくり力を溜め、一気に解き放つ
     animateSpriteLayers(side, [
@@ -452,30 +465,70 @@ function playInoreRinneMotion(side) {
 }
 registerCustomSkillMotion('inore_rinne_no_wa_yo', playInoreRinneMotion, 'アーク');
 
-// --- 天の慈悲よ示されよ：天から慈悲の光が降り、自らを癒す ---
+// --- 天の慈悲よ示されよ：アーク最大の切り札。天の慈悲そのものを相手に叩きつける ---
+//   ※この技は回復技ではなく、force2.7・GUTS-20の攻撃技（命中時に自身の与ダメージが永続上昇）。
+//     以前は「自分に慈悲の光が降り注ぐ」演出にしていたが、効果と食い違っていたため、
+//     相手に降ろす形に修正した。永続強化の分は、最後に術者側の淡い光で控えめに示している。
 function playTenNoJihiMotion(side) {
     const casterEl = getBattleSpriteContainerEl(side);
-    if (!casterEl) return;
-    const { x, y } = getElCenter(casterEl);
-    const chant = playArkChant(side, { duration: 620, count: 6 });
+    const targetEl = getBattleSpriteContainerEl(otherSide(side));
+    if (!casterEl || !targetEl) return;
+    const to = getElCenter(targetEl);
+    // 最大の切り札なので、他のどの技より長く詠唱する
+    const chant = playArkChant(side, { duration: 760, count: 8, radius: 70 });
     if (!chant) return;
 
     setTimeout(() => {
-        // 頭上から柔らかな光が差し込む
-        spawnArkJudgementPillar(x, y, { color: ARK_HOLY, width: 26, height: 130, duration: 620 });
-        // 降り注ぐ光の粒
-        for (let i = 0; i < 6; i++) {
-            spawnCustomParticle('✨', x + (Math.random() - 0.5) * 54, y - 52, {
-                size: 20, delay: i * 80, duration: 660 * EFFECT_SPEED_MULTIPLIER, color: ARK_HOLY,
+        // 相手の頭上に慈悲の輪が開く
+        for (let i = 0; i < 3; i++) {
+            spawnCustomParticle('◯', to.x, to.y - 60, {
+                size: 58, delay: i * 130, duration: 640 * EFFECT_SPEED_MULTIPLIER,
+                color: i % 2 === 0 ? ARK_HOLY : ARK_JUDGE,
                 keyframes: [
-                    { transform: 'translate(-50%,-50%) scale(0.4)', opacity: 0 },
-                    { transform: 'translate(0,32px) translate(-50%,-50%) scale(1.1)', opacity: 1, offset: 0.5 },
-                    { transform: 'translate(0,60px) translate(-50%,-50%) scale(0.6)', opacity: 0 }
+                    { transform: 'translate(-50%,-50%) scale(0.2) rotate(0deg)', opacity: 0 },
+                    { transform: 'translate(-50%,-50%) scale(1.1) rotate(120deg)', opacity: 0.95, offset: 0.5 },
+                    { transform: 'translate(-50%,-50%) scale(1.5) rotate(220deg)', opacity: 0 }
                 ]
             });
         }
-        // 癒しの緑がまとわりつく
-        spawnSelfParticleRing(casterEl, '💚', 6, 18, 760 * EFFECT_SPEED_MULTIPLIER, 38);
+
+        // 極太の光柱が相手に降り注ぐ
+        setTimeout(() => {
+            spawnArkJudgementPillar(to.x, to.y, { color: '#ffffff', width: 30, height: 165, duration: 620 });
+            spawnArkJudgementPillar(to.x, to.y, { color: ARK_HOLY, width: 46, height: 150, duration: 560 });
+
+            // 降り注ぐ光の粒
+            for (let i = 0; i < 7; i++) {
+                spawnCustomParticle('✨', to.x + (Math.random() - 0.5) * 62, to.y - 54, {
+                    size: 22, delay: i * 60, duration: 620 * EFFECT_SPEED_MULTIPLIER, color: ARK_HOLY,
+                    keyframes: [
+                        { transform: 'translate(-50%,-50%) scale(0.4)', opacity: 0 },
+                        { transform: 'translate(0,34px) translate(-50%,-50%) scale(1.15)', opacity: 1, offset: 0.5 },
+                        { transform: 'translate(0,64px) translate(-50%,-50%) scale(0.6)', opacity: 0 }
+                    ]
+                });
+            }
+
+            // 着弾：光が四方へ弾ける
+            spawnImpactBurst(to.x, to.y, { size: 60, duration: 560 * EFFECT_SPEED_MULTIPLIER });
+            for (let i = 0; i < 6; i++) {
+                const a = (Math.PI * 2 * i) / 6;
+                spawnCustomParticle('✦', to.x, to.y, {
+                    size: 26, delay: i * 45, duration: 560 * EFFECT_SPEED_MULTIPLIER, color: ARK_JUDGE,
+                    keyframes: [
+                        { transform: 'translate(-50%,-50%) scale(0.3)', opacity: 0 },
+                        { transform: `translate(${Math.cos(a) * 48}px,${Math.sin(a) * 38}px) translate(-50%,-50%) scale(1.25)`, opacity: 1, offset: 0.42 },
+                        { transform: `translate(${Math.cos(a) * 82}px,${Math.sin(a) * 64}px) translate(-50%,-50%) scale(0.6)`, opacity: 0 }
+                    ]
+                });
+            }
+            playRecoilMotion(otherSide(side), { distance: 20, rotate: 15, duration: 660 });
+
+            // 命中後、術者が永続的に力を得たことを控えめに示す（あくまで副次的な演出）
+            setTimeout(() => {
+                spawnSelfParticleRing(casterEl, '✦', 4, 16, 620 * EFFECT_SPEED_MULTIPLIER, 34);
+            }, 420 * EFFECT_SPEED_MULTIPLIER);
+        }, 420 * EFFECT_SPEED_MULTIPLIER);
     }, chant.duration);
 }
 registerCustomSkillMotion('ten_no_jihi_yo_shimesareyo', playTenNoJihiMotion, 'アーク');

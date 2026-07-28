@@ -342,12 +342,36 @@ function playPixieVanMotion(side) {
 }
 registerCustomSkillMotion('pixie_van', playPixieVanMotion, 'ピクシー');
 
-// --- ヒールレイド：温かい光に包まれて自身を癒す ---
+// --- ヒールレイド：癒しの光を相手に叩きつけ、その反動で自らも癒える ---
+//   ※回復専用技ではなく、force2.3の攻撃技（命中時に自身のライフを15%回復する）。
+//     攻撃部分が無いと効果と食い違うため、相手への着弾を主役にし、自己回復は締めに置く。
 function playPixieHealRaidMotion(side) {
     const casterEl = getBattleSpriteContainerEl(side);
-    if (!casterEl) return;
+    const targetEl = getBattleSpriteContainerEl(otherSide(side));
+    if (!casterEl || !targetEl) return;
     const { x, y } = getElCenter(casterEl);
+    const to = getElCenter(targetEl);
     const duration = 1000 * EFFECT_SPEED_MULTIPLIER;
+
+    // ① 攻撃：癒しの光を相手へ撃ち込む
+    setTimeout(() => {
+        spawnBeamLine(x, y, to.x - x, to.y - y, PIXIE_LIGHT, 520 * EFFECT_SPEED_MULTIPLIER, 15);
+        setTimeout(() => {
+            spawnImpactBurst(to.x, to.y, { size: 44, duration: 460 * EFFECT_SPEED_MULTIPLIER, color: PIXIE_LIGHT });
+            for (let i = 0; i < 4; i++) {
+                const a = (Math.PI * 2 * i) / 4;
+                spawnCustomParticle('✨', to.x, to.y, {
+                    size: 22, delay: i * 45, duration: 440 * EFFECT_SPEED_MULTIPLIER, color: PIXIE_LIGHT,
+                    keyframes: [
+                        { transform: 'translate(-50%,-50%) scale(0.4)', opacity: 0 },
+                        { transform: `translate(${Math.cos(a) * 36}px,${Math.sin(a) * 28}px) translate(-50%,-50%) scale(1.2)`, opacity: 1, offset: 0.45 },
+                        { transform: `translate(${Math.cos(a) * 60}px,${Math.sin(a) * 46}px) translate(-50%,-50%) scale(0.6)`, opacity: 0 }
+                    ]
+                });
+            }
+            playRecoilMotion(otherSide(side), { distance: 14, rotate: 10, duration: 520 });
+        }, 200 * EFFECT_SPEED_MULTIPLIER);
+    }, duration * 0.32);
 
     // 静かに浮かび、光を受け止める
     animateSpriteLayers(side, [
@@ -357,10 +381,10 @@ function playPixieHealRaidMotion(side) {
         { transform: 'translateY(0) scale(1)', offset: 1 }
     ], { duration, easing: 'ease-in-out' });
 
-    // 上から降り注ぐ光
+    // ② 反動で自らも癒える（攻撃が当たった後に見せる）
     for (let i = 0; i < 5; i++) {
         spawnCustomParticle('✨', x + (Math.random() - 0.5) * 50, y - 50, {
-            size: 20, delay: i * 90, duration: 640 * EFFECT_SPEED_MULTIPLIER, color: PIXIE_LIGHT,
+            size: 20, delay: duration * 0.6 + i * 90, duration: 640 * EFFECT_SPEED_MULTIPLIER, color: PIXIE_LIGHT,
             keyframes: [
                 { transform: 'translate(-50%,-50%) scale(0.4)', opacity: 0 },
                 { transform: 'translate(0,30px) translate(-50%,-50%) scale(1.1)', opacity: 1, offset: 0.5 },
@@ -369,7 +393,7 @@ function playPixieHealRaidMotion(side) {
         });
     }
     // 癒しの緑がまとわりつく
-    spawnSelfParticleRing(casterEl, '💚', 6, 18, 760 * EFFECT_SPEED_MULTIPLIER, 38);
+    setTimeout(() => spawnSelfParticleRing(casterEl, '💚', 6, 18, 760 * EFFECT_SPEED_MULTIPLIER, 38), duration * 0.6);
 }
 registerCustomSkillMotion('pixie_healraid', playPixieHealRaidMotion, 'ピクシー');
 

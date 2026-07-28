@@ -257,12 +257,29 @@ function playOnikokushouMotion(side) {
 }
 registerCustomSkillMotion('onikokushou', playOnikokushouMotion, 'キジン');
 
-// --- 阿修羅：三面六臂の幻影を纏い、自身を高める（自己強化） ---
+// --- 阿修羅：三面六臂の幻影を纏い、無数の腕で殴りつける ---
+//   ※自己強化専用技ではなく、force2.2の攻撃技（命中後に次の攻撃力が上がる）。
+//     多腕の幻影を出すだけでは効果と食い違うため、その腕で連打する部分を主役にしている。
 function playAshuraMotion(side) {
     const casterEl = getBattleSpriteContainerEl(side);
-    if (!casterEl) return;
+    const targetEl = getBattleSpriteContainerEl(otherSide(side));
+    if (!casterEl || !targetEl) return;
     const { x, y } = getElCenter(casterEl);
+    const to = getElCenter(targetEl);
     const duration = 1100 * EFFECT_SPEED_MULTIPLIER;
+
+    // 多腕による連打（幻影が出そろった後に一斉に殴りかかる）
+    for (let i = 0; i < 5; i++) {
+        setTimeout(() => {
+            const oy = (i - 2) * 14;
+            spawnKijinClawMarks(to.x, to.y + oy, { angle: i % 2 === 0 ? -36 : 36, length: 92, gap: 12, duration: 230 });
+            spawnImpactBurst(to.x, to.y + oy, { size: 24, duration: 250 * EFFECT_SPEED_MULTIPLIER, color: KIJIN_ONI });
+        }, duration * (0.5 + i * 0.08));
+    }
+    setTimeout(() => {
+        spawnImpactBurst(to.x, to.y, { size: 42, duration: 400 * EFFECT_SPEED_MULTIPLIER });
+        playRecoilMotion(otherSide(side), { distance: 15, rotate: 11, duration: 560 });
+    }, duration * 0.9);
 
     // 静かに構え、力を膨れ上がらせる
     animateSpriteLayers(side, [

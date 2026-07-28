@@ -157,8 +157,9 @@ function playChoRollinmochiMotion(side) {
     try {
         // オーラ着色オーバーレイがあれば、img本体と全く同じキーフレームで一緒に動かす
         // （transformの値は共通、offsetでズレを一切作らないことが「一体として動いて見える」ポイント）
-        if (rollVisual && rollVisual.tintEl) rollVisual.tintEl.animate(keyframes, { duration, easing: 'ease-in-out' });
-        anim = animTarget.animate(keyframes, { duration, easing: 'ease-in-out' });
+        // 敵側の左右反転を維持するため、キーフレームは applySpriteFlipToKeyframes を通す
+        if (rollVisual && rollVisual.tintEl) rollVisual.tintEl.animate(applySpriteFlipToKeyframes(rollVisual.tintEl, keyframes), { duration, easing: 'ease-in-out' });
+        anim = animTarget.animate(applySpriteFlipToKeyframes(animTarget, keyframes), { duration, easing: 'ease-in-out' });
     } catch (e) { /* 非対応環境ではスプライトは動かないが、下の衝撃エフェクトだけは再生される */ }
     const restoreVisual = () => { if (rollVisual) rollVisual.restore(); };
     if (anim) anim.onfinish = restoreVisual;
@@ -204,8 +205,9 @@ function playMossamaMotion(side) {
     ];
     let anim;
     try {
-        if (rollVisual && rollVisual.tintEl) rollVisual.tintEl.animate(keyframes, { duration, easing: 'ease-in-out' });
-        anim = animTarget.animate(keyframes, { duration, easing: 'ease-in-out' });
+        // 敵側の左右反転を維持するため、キーフレームは applySpriteFlipToKeyframes を通す
+        if (rollVisual && rollVisual.tintEl) rollVisual.tintEl.animate(applySpriteFlipToKeyframes(rollVisual.tintEl, keyframes), { duration, easing: 'ease-in-out' });
+        anim = animTarget.animate(applySpriteFlipToKeyframes(animTarget, keyframes), { duration, easing: 'ease-in-out' });
     } catch (e) { /* 非対応環境ではスプライトは動かないが、下の着地エフェクトだけは再生される */ }
     const restoreVisual = () => { if (rollVisual) rollVisual.restore(); };
     if (anim) anim.onfinish = restoreVisual;
@@ -234,3 +236,120 @@ function playYaezakuraMotion(side) {
     spawnSelfParticleRing(casterContainer, '✨', 5, 15, 650 * EFFECT_SPEED_MULTIPLIER, 38);
 }
 registerCustomSkillMotion('yaezakura', playYaezakuraMotion, 'モッチー');
+
+// --- みがわり餅：自身と同じ大きさの桜餅を設置し、身代わりに立てる ---
+//   ダメージは無く相手にも干渉しない技なので、攻撃の演出は入れない。
+//   発動時に自身も最大ライフの20%を消耗するため、餅を生み出した後に軽く消耗を見せる。
+function playMigawarimochiMotion(side) {
+    const casterEl = getBattleSpriteContainerEl(side);
+    if (!casterEl) return;
+    const { x, y } = getElCenter(casterEl);
+    const duration = 1050 * EFFECT_SPEED_MULTIPLIER;
+
+    // 身を削って餅を練り出す（大きく膨らんでから、切り分けるようにしぼむ）
+    animateSpriteLayers(side, [
+        { transform: 'translateX(0) scale(1,1)', offset: 0 },
+        { transform: 'translateX(0) scale(1.14,1.1)', offset: 0.26 },   // 力を込める
+        { transform: 'translateX(-8px) scale(0.9,1.04)', offset: 0.48 }, // 削り出して身を引く
+        { transform: 'translateX(-4px) scale(0.97,1.01)', offset: 0.7 },
+        { transform: 'translateX(0) scale(1,1)', offset: 1 }
+    ], { duration, easing: 'ease-in-out' });
+
+    // 身代わりの桜餅が隣に生まれる
+    setTimeout(() => {
+        spawnCustomParticle('🍡', x + 26, y, {
+            size: 42, duration: 700 * EFFECT_SPEED_MULTIPLIER, color: '#ffb3cc',
+            keyframes: [
+                { transform: 'translate(-50%,-50%) scale(0.2,0.3)', opacity: 0 },
+                { transform: 'translate(-50%,-50%) scale(1.15,0.92)', opacity: 1, offset: 0.4 },  // ぷるんと出現
+                { transform: 'translate(-50%,-50%) scale(0.96,1.06)', opacity: 1, offset: 0.62 },
+                { transform: 'translate(-50%,-50%) scale(1,1)', opacity: 1 }
+            ]
+        });
+        // 出現時のもちもちした余韻
+        for (let i = 0; i < 3; i++) {
+            spawnCustomParticle('🌸', x + 26 + (i - 1) * 18, y - 10, {
+                size: 18, delay: i * 70, duration: 560 * EFFECT_SPEED_MULTIPLIER, color: '#ffb3cc',
+                keyframes: [
+                    { transform: 'translate(-50%,-50%) scale(0.4) rotate(0deg)', opacity: 0 },
+                    { transform: 'translate(0,-16px) translate(-50%,-50%) scale(1.05) rotate(160deg)', opacity: 1, offset: 0.45 },
+                    { transform: 'translate(0,-30px) translate(-50%,-50%) scale(0.7) rotate(300deg)', opacity: 0 }
+                ]
+            });
+        }
+    }, duration * 0.4);
+}
+registerCustomSkillMotion('migawarimochi', playMigawarimochiMotion, 'モッチー');
+
+// --- 超もっち砲：最大出力のエネルギー弾を撃ち込む（モッチー最大の攻撃技） ---
+function playChoMochihouMotion(side) {
+    const casterEl = getBattleSpriteContainerEl(side);
+    const targetEl = getBattleSpriteContainerEl(otherSide(side));
+    if (!casterEl || !targetEl) return;
+    const from = getElCenter(casterEl);
+    const to = getElCenter(targetEl);
+    const duration = 1350 * EFFECT_SPEED_MULTIPLIER;
+    const dx = to.x - from.x, dy = to.y - from.y;
+
+    // 体を大きく反らして力を溜め、撃つ反動で仰け反る
+    animateSpriteLayers(side, [
+        { transform: 'translateX(0) scale(1,1)', offset: 0 },
+        { transform: 'translateX(0) scale(0.92,1.12)', offset: 0.24 },                        // 溜める
+        { transform: 'translateX(0) scale(1.18,1.16)', offset: 0.46 },                        // 膨れ上がる
+        { transform: `translateX(${-Math.sign(dx) * 14}px) scale(0.88,0.92)`, offset: 0.6 },   // 撃つ反動
+        { transform: 'translateX(0) scale(1.04,1.02)', offset: 0.78 },
+        { transform: 'translateX(0) scale(1,1)', offset: 1 }
+    ], { duration, easing: 'ease-in-out' });
+
+    // 溜めの間、桜色のエネルギーが集まる
+    for (let i = 0; i < 6; i++) {
+        const a = (Math.PI * 2 * i) / 6;
+        const r = 56;
+        spawnCustomParticle('🌸', from.x + Math.cos(a) * r, from.y + Math.sin(a) * r * 0.75, {
+            size: 20, delay: 100 + i * 60, duration: 520 * EFFECT_SPEED_MULTIPLIER, color: '#ff9ec4',
+            keyframes: [
+                { transform: 'translate(-50%,-50%) scale(0.3)', opacity: 0 },
+                { transform: 'translate(-50%,-50%) scale(1.1)', opacity: 1, offset: 0.45 },
+                { transform: `translate(${-Math.cos(a) * r}px,${-Math.sin(a) * r * 0.75}px) translate(-50%,-50%) scale(0.35)`, opacity: 0 }
+            ]
+        });
+    }
+
+    // 発射：極太のエネルギー弾が飛ぶ
+    setTimeout(() => {
+        spawnBeamLine(from.x, from.y, dx, dy, '#ff9ec4', 620 * EFFECT_SPEED_MULTIPLIER, 22);
+        spawnCustomParticle('⬤', from.x, from.y, {
+            size: 34, duration: 460 * EFFECT_SPEED_MULTIPLIER, color: '#ffb3cc', easing: 'ease-in',
+            keyframes: [
+                { transform: 'translate(-50%,-50%) scale(0.5)', opacity: 0 },
+                { transform: `translate(${dx * 0.5}px,${dy * 0.5}px) translate(-50%,-50%) scale(1.2)`, opacity: 1, offset: 0.5 },
+                { transform: `translate(${dx}px,${dy}px) translate(-50%,-50%) scale(1.3)`, opacity: 1 }
+            ]
+        });
+        setTimeout(() => {
+            // 着弾：桜色の爆発
+            spawnCustomParticle('◯', to.x, to.y, {
+                size: 86, duration: 600 * EFFECT_SPEED_MULTIPLIER, color: '#ff9ec4',
+                keyframes: [
+                    { transform: 'translate(-50%,-50%) scale(0.1)', opacity: 0 },
+                    { transform: 'translate(-50%,-50%) scale(1.8)', opacity: 1, offset: 0.3 },
+                    { transform: 'translate(-50%,-50%) scale(3)', opacity: 0 }
+                ]
+            });
+            for (let i = 0; i < 6; i++) {
+                const a = (Math.PI * 2 * i) / 6;
+                spawnCustomParticle('🌸', to.x, to.y, {
+                    size: 24, delay: i * 40, duration: 560 * EFFECT_SPEED_MULTIPLIER, color: '#ffb3cc',
+                    keyframes: [
+                        { transform: 'translate(-50%,-50%) scale(0.3) rotate(0deg)', opacity: 0 },
+                        { transform: `translate(${Math.cos(a) * 48}px,${Math.sin(a) * 38}px) translate(-50%,-50%) scale(1.25) rotate(180deg)`, opacity: 1, offset: 0.4 },
+                        { transform: `translate(${Math.cos(a) * 82}px,${Math.sin(a) * 64}px) translate(-50%,-50%) scale(0.6) rotate(340deg)`, opacity: 0 }
+                    ]
+                });
+            }
+            spawnImpactBurst(to.x, to.y, { size: 58, duration: 560 * EFFECT_SPEED_MULTIPLIER });
+            playRecoilMotion(otherSide(side), { distance: 20, rotate: 14, duration: 640 });
+        }, 460 * EFFECT_SPEED_MULTIPLIER);
+    }, duration * 0.56);
+}
+registerCustomSkillMotion('cho_mochihou', playChoMochihouMotion, 'モッチー');

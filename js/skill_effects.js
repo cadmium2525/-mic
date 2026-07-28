@@ -181,11 +181,30 @@ function animateSpriteLayers(side, keyframes, options) {
     layers.forEach((el, i) => {
         el.style.willChange = 'transform';
         try {
-            const anim = el.animate(keyframes, options);
+            const anim = el.animate(applySpriteFlipToKeyframes(el, keyframes), options);
             if (i === 0) mainAnim = anim;
         } catch (e) { /* Web Animations API 非対応環境では動かないだけ */ }
     });
     return mainAnim;
+}
+
+// --- 敵側スプライトの「左右反転」を、モーションのtransformに引き継がせる ---
+// 敵側の画像は、素材が右向きで作られているため CSSクラス（-scale-x-100 = scaleX(-1)）で
+// 左右反転して表示している。ところが Web Animations API で transform を指定すると、
+// このクラスによる transform を丸ごと上書きしてしまうため、
+// モーションが再生されている間だけ反転が外れ、敵がプレイヤーと逆（右）を向いてしまう。
+//
+// そこで、反転クラスが付いている要素に対しては、各キーフレームの transform の末尾に
+// scaleX(-1) を足して反転を維持する。
+// ※末尾に足すのが重要。先頭に置くと、以降の translateX が反転した座標系で解釈され、
+//   移動方向まで左右逆になってしまう。末尾なら「反転してから画面座標で動かす」順になる。
+function applySpriteFlipToKeyframes(el, keyframes) {
+    if (!el || !el.classList || !el.classList.contains('-scale-x-100')) return keyframes;
+    if (!Array.isArray(keyframes)) return keyframes;
+    return keyframes.map(frame => {
+        if (!frame || typeof frame.transform !== 'string') return frame;
+        return Object.assign({}, frame, { transform: `${frame.transform} scaleX(-1)` });
+    });
 }
 function otherSide(side) {
     return side === 'player' ? 'enemy' : 'player';

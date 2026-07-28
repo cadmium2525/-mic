@@ -257,7 +257,9 @@ function playTornadoAttackMotion(side) {
 }
 registerCustomSkillMotion('tornado_attack', playTornadoAttackMotion, 'アローヘッド');
 
-// --- 地雷針：相手の足元に針を撒いて仕掛ける（設置技なので相手を直接殴らない） ---
+// --- 地雷針：針を飛ばして突き刺しつつ、残りを足元に仕掛ける ---
+//   ※純粋な設置技ではなく、force1.2の攻撃技（命中時に継続ダメージの罠も残る）。
+//     撒くだけだと効果と食い違うため、まず数本が相手に刺さる部分を見せる。
 function playJiraibariMotion(side) {
     const casterEl = getBattleSpriteContainerEl(side);
     const targetEl = getBattleSpriteContainerEl(otherSide(side));
@@ -274,9 +276,19 @@ function playJiraibariMotion(side) {
     ], { duration, easing: 'ease-out' });
 
     setTimeout(() => {
-        spawnScatterOnField(to.x, to.y + 24, '✦', 6, {
-            size: 15, duration: 680 * EFFECT_SPEED_MULTIPLIER, spread: 72, color: ARROWHEAD_NEEDLE
-        });
+        // ① まず数本が相手に突き刺さる
+        for (let i = 0; i < 3; i++) {
+            const oy = (i - 1) * 16;
+            spawnSlashArc(to.x, to.y + oy, 0, { length: 70, width: 5, color: ARROWHEAD_NEEDLE, duration: 220 * EFFECT_SPEED_MULTIPLIER });
+            spawnImpactBurst(to.x, to.y + oy, { emoji: '✦', size: 20, duration: 240 * EFFECT_SPEED_MULTIPLIER, color: ARROWHEAD_NEEDLE });
+        }
+        playRecoilMotion(otherSide(side), { distance: 9, rotate: 6, duration: 400 });
+        // ② 残りが足元に散らばって罠として残る
+        setTimeout(() => {
+            spawnScatterOnField(to.x, to.y + 24, '✦', 6, {
+                size: 15, duration: 680 * EFFECT_SPEED_MULTIPLIER, spread: 72, color: ARROWHEAD_NEEDLE
+            });
+        }, 220 * EFFECT_SPEED_MULTIPLIER);
     }, duration * 0.4);
 }
 registerCustomSkillMotion('jiraibari', playJiraibariMotion, 'アローヘッド');

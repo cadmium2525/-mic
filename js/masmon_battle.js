@@ -1523,7 +1523,16 @@ function executeMasmonPlayerSkill(skKey) {
 // （育成中バトルからのみ呼び出される。マスモンCPU戦・PvPではこのボタン自体が非表示）
 function handleEndTurnClick(defendMode) {
     if (ACTIVE_BATTLE_MODE === 'adventure') {
-        endPlayerTurn(defendMode);
+        // endPlayerTurn は現在どこにも定義されていない（育成中バトルの実装が未完のまま残っている）。
+        // 直接呼ぶと ReferenceError で例外になり、クリック処理がそこで止まってしまうため
+        // （ボタンを押しても何も起きず、ターンが進まない＝操作不能に見える）、
+        // 存在確認をしてから呼ぶようにしている。
+        if (typeof endPlayerTurn === 'function') {
+            endPlayerTurn(defendMode);
+        } else {
+            console.warn('[バトル] endPlayerTurn が未実装のため、ターン終了を処理できません（育成中バトル）');
+            if (typeof showToast === 'function') showToast('この画面ではターン終了を実行できません。');
+        }
     }
 }
 
