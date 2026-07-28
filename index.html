@@ -184,71 +184,68 @@
                 </div>
 
                 <!-- バトルフィールド（ビジュアル） -->
-                <div class="h-44 relative flex items-center justify-around px-4 bg-gradient-to-b from-[#18110d] via-[#331c12] to-[#18110d]">
+                <div class="battle-field-bg h-64 relative flex items-center justify-around px-4">
                     <!-- エフェクトアニメーション用オーバーレイ -->
                     <div id="battle-effect-overlay" class="absolute inset-0 flex items-center justify-center pointer-events-none z-20 text-3xl font-extrabold text-white scale-0 transition-all duration-300"></div>
 
                     <!-- 味方モンスター -->
-                    <div class="flex flex-col items-center relative transition-all duration-300" id="battle-player-sprite-container">
-                        <!-- 状態変化表示 (赤の太文字で点滅) -->
-                        <div id="player-status-effect-display" class="absolute -top-7 text-xs font-black text-red-500 animate-status-blink hidden z-10"></div>
-                        <div class="relative w-16 h-16 flex items-center justify-center mb-2 animate-pulse" id="battle-player-icon">
-                            🍪
+                    <!-- translate-y-16はこの外側ラッパーだけに持たせる。内側(battle-player-sprite-container)は
+                         被弾/命中演出（animate-ping・translate-x-6等）でJSがtransform系クラスを直接付け外しするため、
+                         同じ要素に乗せてしまうと演出中だけtransformが上書きされ表示位置がずれてしまう。 -->
+                    <div class="translate-y-16">
+                        <div class="flex flex-col items-center relative transition-all duration-300" id="battle-player-sprite-container">
+                            <!-- 状態変化表示 (赤の太文字で点滅) -->
+                            <div id="player-status-effect-display" class="absolute -top-7 text-xs font-black text-red-500 animate-status-blink hidden z-10"></div>
+                            <div class="relative w-16 h-16 flex items-center justify-center mb-2" id="battle-player-icon">
+                                🍪
+                            </div>
+                            <!-- ダメージ数値表示用 -->
+                            <div id="player-dmg-popup" class="absolute -top-8 text-lg font-bold text-red-500 opacity-0 transition-all duration-500 pointer-events-none"></div>
                         </div>
-                        <div class="bg-amber-900/80 px-2 py-0.5 rounded text-[9px] text-amber-200 flex items-center space-x-1">
-                            <span id="battle-player-name">モッチー</span>
-                            <span id="player-aura-badge" class="hidden px-1 py-0.5 rounded text-[8px] font-bold text-slate-900"></span>
-                            <span id="player-status-badge" class="hidden px-1 py-0.5 rounded text-[8px] font-bold bg-black/60 text-white tracking-tight"></span>
-                        </div>
-                        <!-- ダメージ数値表示用 -->
-                        <div id="player-dmg-popup" class="absolute -top-8 text-lg font-bold text-red-500 opacity-0 transition-all duration-500 pointer-events-none"></div>
                     </div>
 
                     <!-- VSの文字 -->
                     <div class="pixel-font font-black text-sm text-amber-700 opacity-40">VS</div>
 
                     <!-- 敵モンスター -->
-                    <div class="flex flex-col items-center relative transition-all duration-300" id="battle-enemy-sprite-container">
-                        <!-- 状態変化表示 (赤の太文字で点滅・相手側) -->
-                        <div id="enemy-status-effect-display" class="absolute -top-7 text-xs font-black text-red-500 animate-status-blink hidden z-10"></div>
-                        <div class="relative w-16 h-16 flex items-center justify-center mb-2" id="battle-enemy-icon">
-                            👁️
+                    <div class="translate-y-16">
+                        <div class="flex flex-col items-center relative transition-all duration-300" id="battle-enemy-sprite-container">
+                            <!-- 状態変化表示 (赤の太文字で点滅・相手側) -->
+                            <div id="enemy-status-effect-display" class="absolute -top-7 text-xs font-black text-red-500 animate-status-blink hidden z-10"></div>
+                            <div class="relative w-16 h-16 flex items-center justify-center mb-2" id="battle-enemy-icon">
+                                👁️
+                            </div>
+                            <span id="battle-enemy-type" class="hidden">スエゾー</span>
+                            <!-- ダメージ数値表示用 -->
+                            <div id="enemy-dmg-popup" class="absolute -top-8 text-lg font-bold text-white opacity-0 transition-all duration-500 pointer-events-none"></div>
                         </div>
-                        <div class="bg-red-950/80 px-2 py-0.5 rounded text-[9px] text-red-300" id="battle-enemy-type">スエゾー</div>
-                        <!-- ダメージ数値表示用 -->
-                        <div id="enemy-dmg-popup" class="absolute -top-8 text-lg font-bold text-white opacity-0 transition-all duration-500 pointer-events-none"></div>
                     </div>
                 </div>
 
-                <!-- 味方ステータス（ライフ：敵側と同じくガッツより上に配置） -->
+                <!-- 味方ステータスカード（名前・バッジ・LIFE・GUTSを1つにまとめて表示） -->
                 <div class="bg-[#24150e] p-3 border-t border-amber-950 space-y-2">
                     <!-- 団体戦：味方チームアイコン -->
                     <div id="player-team-icons" class="hidden flex justify-center space-x-2 mb-1"></div>
 
                     <div class="flex justify-between items-center">
-                        <div class="flex-1 pr-4">
-                            <div class="flex justify-between text-[11px] mb-1">
-                                <span class="text-emerald-400 font-bold">LIFE:</span>
-                                <span class="text-emerald-400 font-bold" id="player-hp-text">200/200</span>
-                            </div>
-                            <div class="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
-                                <div id="player-hp-bar" class="bg-emerald-500 h-full transition-all duration-300" style="width: 100%"></div>
-                            </div>
-                        </div>
+                        <span class="font-bold text-xs text-emerald-400 flex items-center">
+                            <span id="battle-player-name">モッチー</span>
+                            <span id="player-aura-badge" class="hidden ml-1 px-1 py-0.5 rounded text-[8px] font-bold text-slate-900"></span>
+                            <span id="player-status-badge" class="hidden ml-1 px-1 py-0.5 rounded text-[8px] font-bold bg-black/60 text-white tracking-tight"></span>
+                        </span>
+                        <span class="text-[10px]">
+                            <span class="text-white font-bold">LIFE:</span>
+                            <span class="text-emerald-400 font-bold" id="player-hp-text">200/200</span>
+                        </span>
                     </div>
-                </div>
-
-                <!-- 味方ガッツ(GUTS)システム UI（敵側と同じくライフの下に配置） -->
-                <div class="bg-[#110906] px-4 py-2 border-t border-amber-950/50 flex items-center justify-between">
-                    <div class="flex flex-col">
-                        <span class="text-[10px] font-bold text-orange-400 tracking-wider">GUTS / ガッツ</span>
-                        <div class="flex items-center space-x-1 mt-0.5">
-                            <div class="text-lg font-bold text-orange-500 pixel-font" id="guts-number">50</div>
-                            <span class="text-[10px] text-gray-500">/ 100</span>
-                        </div>
+                    <!-- HPゲージ -->
+                    <div class="w-full bg-gray-800 h-2 rounded-full overflow-hidden">
+                        <div id="player-hp-bar" class="bg-emerald-500 h-full transition-all duration-300" style="width: 100%"></div>
                     </div>
+                    <!-- ガッツ数値 -->
+                    <div class="text-[10px] text-gray-400">GUTS: <span id="guts-number" class="text-orange-400 font-bold">50</span>/100</div>
                     <!-- ガッツ蓄積ゲージ -->
-                    <div class="flex-1 ml-4 bg-gray-900 h-3 rounded-full overflow-hidden border border-amber-900/30 p-[1px]">
+                    <div class="w-full bg-gray-900 h-3 rounded-full overflow-hidden border border-amber-900/30 p-[1px]">
                         <div id="guts-progress-bar" class="bg-gradient-to-r from-orange-600 via-yellow-500 to-amber-400 h-full rounded-full transition-all" style="width: 50%"></div>
                     </div>
                 </div>

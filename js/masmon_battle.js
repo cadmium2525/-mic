@@ -846,23 +846,10 @@ function startMasmonPlayerTurn(isFirstTurn = false) {
     MASMON_BATTLE_STATE.isEnemyDefending = false;
     updateMasmonBattleStatsUI();
 
-    // マヒ／混乱（意味不明）／出血の残ターン消化と行動失敗判定（プレイヤー側）
-    const confusionResult = tickStatusTurnsAndCheckConfusion(p);
-    if (confusionResult.dotDamage > 0) {
-        const dotLogs = applyDotDamageAndBuildLogs(p.name, confusionResult, () => p.stats.life, (v) => { p.stats.life = v; });
-        dotLogs.forEach(m => addLog(m.short, m.detail));
-        if (e) {
-            const michizureLog = checkMichizureTrigger(p, e, () => p.stats.life, () => e.stats.life, (v) => { e.stats.life = v; });
-            if (michizureLog) addLog(michizureLog);
-        }
-        updateMasmonBattleStatsUI();
-        handleFaintAndSwitch('player', (result) => {
-            if (result.battleEnded) return;
-            finishMasmonPlayerTurnSetup(confusionResult);
-        });
-        return;
-    }
-
+    // マヒ／混乱（意味不明）等の行動失敗判定（プレイヤー側）。
+    // ※出血・やけど・猛毒・のろいの継続ダメージはここでは処理しない
+    //  （→ ターン終了間際にまとめて処理する。applyMasmonEndOfTurnStatusDotを参照）。
+    const confusionResult = tickStatusFailureCheck(p);
     finishMasmonPlayerTurnSetup(confusionResult);
 }
 
@@ -1653,63 +1640,48 @@ function decideMasmonEnemyAction(onDecided) {
         e = getEnemyActive();
         if (!e || e.stats.life <= 0) { onDecided({ actionType: 'none' }); return; }
 
-        // マヒ／混乱（意味不明）／出血の残ターン消化と行動失敗判定（敵側）
-        const enemyConfusionResult = tickStatusTurnsAndCheckConfusion(e);
-        if (enemyConfusionResult.dotDamage > 0) {
-            const dotLogs = applyDotDamageAndBuildLogs(e.name, enemyConfusionResult, () => e.stats.life, (v) => { e.stats.life = v; });
-            dotLogs.forEach(m => addLog(m.short, m.detail));
-            const playerActiveForMichizure = getPlayerActive();
-            if (playerActiveForMichizure) {
-                const michizureLog = checkMichizureTrigger(e, playerActiveForMichizure, () => e.stats.life, () => playerActiveForMichizure.stats.life, (v) => { playerActiveForMichizure.stats.life = v; });
-                if (michizureLog) addLog(michizureLog);
-            }
-            updateMasmonBattleStatsUI();
+        // マヒ／混乱（意味不明）等の行動失敗判定（敵側）。
+        // ※出血・やけど・猛毒・のろいの継続ダメージはここでは処理しない
+        //  （→ ターン終了間際にまとめて処理する。applyMasmonEndOfTurnStatusDotを参照）。
+        const enemyConfusionResult = tickStatusFailureCheck(e);
+
+        e = getEnemyActive();
+        if (!e || e.stats.life <= 0) { onDecided({ actionType: 'none' }); return; }
+        if (enemyConfusionResult.confused) {
+            onDecided({ actionType: 'none', reason: enemyConfusionResult.failReason });
+            return;
         }
 
-        // 出血等で戦闘不能になった場合も、通常の戦闘不能と全く同じ流れで処理する
-        // （このターンは仕切り直しになり、敵はこのターン攻撃してこない）。
-        handleFaintAndSwitch('enemy', (r2) => {
-            if (r2.battleEnded) { onDecided({ actionType: 'none', battleEnded: true }); return; }
-            if (r2.turnShouldEnd) { onDecided({ actionType: 'none', turnShouldEnd: true }); return; }
+        const p = getPlayerActive();
+        const affordableSkills = e.skills
+            .map(skKey => ({ key: skKey, info: getMasmonEffectiveSkill(e, skKey) }))
+            .filter(skObj => skObj.info && e.guts >= skObj.info.cost && !isSkillUseLimitReached(e, skObj.key));
 
-            e = getEnemyActive();
-            if (!e || e.stats.life <= 0) { onDecided({ actionType: 'none' }); return; }
-            if (enemyConfusionResult.confused) {
-                onDecided({ actionType: 'none', reason: enemyConfusionResult.failReason });
-                return;
-            }
+        if (affordableSkills.length === 0) {
+            onDecided({ actionType: 'none', reason: 'noguts' });
+            return;
+        }
 
-            const p = getPlayerActive();
-            const affordableSkills = e.skills
-                .map(skKey => ({ key: skKey, info: getMasmonEffectiveSkill(e, skKey) }))
-                .filter(skObj => skObj.info && e.guts >= skObj.info.cost && !isSkillUseLimitReached(e, skObj.key));
+        // 「ガッツファクトリー」レンタルバトル中はAIレベルに応じた判断ロジックを使用し、
+        // それ以外（従来のマスモンCPU戦）は従来通り「最もガッツ消費が大きい技」を選ぶ簡易AIのままとする。
+        const skKey = (MASMON_BATTLE_STATE.kinNejiki && typeof chooseKinNejikiEnemySkill === 'function')
+            ? chooseKinNejikiEnemySkill(e, p, affordableSkills, MASMON_BATTLE_STATE.kinNejiki.aiLevel || 1, MASMON_BATTLE_STATE.kinNejiki.aiPersonality)
+            : affordableSkills.slice().sort((a, b) => b.info.cost - a.info.cost)[0].key;
 
-            if (affordableSkills.length === 0) {
-                onDecided({ actionType: 'none', reason: 'noguts' });
-                return;
-            }
+        // モスト専用ハイブリッドAIが「防御」を選んだ場合（'__most_defend__'は kinnejiki.js の
+        // KIN_NEJIKI_MOST_DEFEND_SENTINEL と同じ文字列。変更時は両方同時に直すこと）
+        if (skKey === '__most_defend__') {
+            onDecided({ actionType: 'defend' });
+            return;
+        }
+        // 敵AIが「気合をためる」を選んだ場合（'__charge__'は kinnejiki.js の
+        // KIN_NEJIKI_CHARGE_SENTINEL と同じ文字列。変更時は両方同時に直すこと）
+        if (skKey === '__charge__') {
+            onDecided({ actionType: 'charge' });
+            return;
+        }
 
-            // 「ガッツファクトリー」レンタルバトル中はAIレベルに応じた判断ロジックを使用し、
-            // それ以外（従来のマスモンCPU戦）は従来通り「最もガッツ消費が大きい技」を選ぶ簡易AIのままとする。
-            const skKey = (MASMON_BATTLE_STATE.kinNejiki && typeof chooseKinNejikiEnemySkill === 'function')
-                ? chooseKinNejikiEnemySkill(e, p, affordableSkills, MASMON_BATTLE_STATE.kinNejiki.aiLevel || 1, MASMON_BATTLE_STATE.kinNejiki.aiPersonality)
-                : affordableSkills.slice().sort((a, b) => b.info.cost - a.info.cost)[0].key;
-
-            // モスト専用ハイブリッドAIが「防御」を選んだ場合（'__most_defend__'は kinnejiki.js の
-            // KIN_NEJIKI_MOST_DEFEND_SENTINEL と同じ文字列。変更時は両方同時に直すこと）
-            if (skKey === '__most_defend__') {
-                onDecided({ actionType: 'defend' });
-                return;
-            }
-            // 敵AIが「気合をためる」を選んだ場合（'__charge__'は kinnejiki.js の
-            // KIN_NEJIKI_CHARGE_SENTINEL と同じ文字列。変更時は両方同時に直すこと）
-            if (skKey === '__charge__') {
-                onDecided({ actionType: 'charge' });
-                return;
-            }
-
-            onDecided({ actionType: 'skill', skKey: skKey });
-        });
+        onDecided({ actionType: 'skill', skKey: skKey });
     });
 }
 
@@ -1832,7 +1804,47 @@ function finishMasmonTurn() {
     if (MASMON_BATTLE_STATE.isBattleEnd) return;
     MASMON_BATTLE_STATE.turn++;
     document.getElementById('battle-turn-counter').textContent = MASMON_BATTLE_STATE.turn;
-    startMasmonPlayerTurn(false);
+    // ターン終了間際に、出血・やけど・猛毒・のろいの継続ダメージをプレイヤー・敵まとめて処理する
+    // （次のターンの行動選択が始まる前＝実質「ターン終了時」の1点に統一する）
+    applyMasmonEndOfTurnStatusDot((result) => {
+        if (result.battleEnded) return;
+        startMasmonPlayerTurn(false);
+    });
+}
+
+// --- ターン終了間際：出血／やけど／猛毒／のろいの継続ダメージをプレイヤー・敵の両方に適用する ---
+// ・どちらか一方の継続ダメージがみちづれを誘発する可能性があるため、
+//   1体ずつ計算→適用し、既に戦闘不能な側はスキップする（二重処理防止）。
+// ・処理後は相手側→自分側の順で戦闘不能チェックを行う（通常の攻撃解決と同じ順序・同じ関数を使う）。
+function applyMasmonEndOfTurnStatusDot(onResolved) {
+    if (MASMON_BATTLE_STATE.isBattleEnd) { onResolved({ battleEnded: true }); return; }
+    const p = getPlayerActive();
+    const e = getEnemyActive();
+
+    const tickOne = (unit, opponent, isEnemySide) => {
+        if (!unit || unit.stats.life <= 0) return; // 既に戦闘不能な側は継続ダメージを処理しない
+        const dot = computeStatusDotDamage(unit);
+        if (dot.dotDamage > 0) {
+            const dotLogs = applyDotDamageAndBuildLogs(unit.name, dot, () => unit.stats.life, (v) => { unit.stats.life = v; });
+            dotLogs.forEach(m => addLog(m.short, m.detail));
+            if (opponent) {
+                const michizureLog = checkMichizureTrigger(unit, opponent, () => unit.stats.life, () => opponent.stats.life, (v) => { opponent.stats.life = v; });
+                if (michizureLog) addLog(michizureLog);
+            }
+        }
+    };
+
+    tickOne(p, e, false);
+    tickOne(e, p, true); // pの継続ダメージ側のみちづれで既にeが戦闘不能なら、tickOne内の判定でスキップされる
+    updateMasmonBattleStatsUI();
+
+    // 相手側→自分側の順で戦闘不能チェック（通常の攻撃解決時と同じ順序・同じ関数）
+    handleFaintAndSwitch('enemy', (r1) => {
+        if (r1.battleEnded) { onResolved({ battleEnded: true }); return; }
+        handleFaintAndSwitch('player', (r2) => {
+            onResolved({ battleEnded: !!r2.battleEnded });
+        });
+    });
 }
 
 // --- 1体分の行動を実際に実行する（技効果計算・演出・ガッツ消費など） ---

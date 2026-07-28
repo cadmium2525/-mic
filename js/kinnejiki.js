@@ -372,7 +372,17 @@ function generateKinNejikiOffer(setNumber, excludeSpeciesIds, excludeEquipIds, c
 
     const shuffledSpecies = [...candidatePool].sort(() => Math.random() - 0.5);
     const chosenSpecies = shuffledSpecies.slice(0, n);
-    return chosenSpecies.map(sp => generateKinNejikiRentalMonster(sp, setNumber, excludeEquipIds, guaranteeEquip, forceLatestMoldOnly));
+
+    // 同じ生成バッチ（この1回のofferの中）で装備が重複しないよう、
+    // 1体生成するたびにその装備IDを除外リストへ積み増ししながら次の1体を生成する。
+    // （excludeEquipIdsを固定のまま渡すと、バッチ内の別個体同士でたまたま
+    //   同じ装備が独立に抽選されてしまうことがあったための対応）
+    const runningExcludeEquip = [...(excludeEquipIds || [])];
+    return chosenSpecies.map(sp => {
+        const m = generateKinNejikiRentalMonster(sp, setNumber, runningExcludeEquip, guaranteeEquip, forceLatestMoldOnly);
+        if (m && m.equip && m.equip.equipId) runningExcludeEquip.push(m.equip.equipId);
+        return m;
+    });
 }
 
 // --- 対戦相手チーム（3体）を生成。ボス戦の場合は専用ボス＋帯同2体を返す ---
@@ -1305,8 +1315,10 @@ function kinNejikiHandleBattleEnd(isWin) {
     // 1セット先の強さのボーナスモンスターを交換画面の候補に追加する。
     const bonusSlotCount = Math.floor((KIN_NEJIKI_STATE.exchangeCount || 0) / 7);
     if (bonusSlotCount > 0) {
-        const usedSpecies = defeatedTeam.map(m => m && m.speciesId).filter(Boolean);
-        const bonusCandidates = generateKinNejikiOffer(next.set + 1, usedSpecies, exclusions.equip, bonusSlotCount, true, true);
+        // 「倒した相手チーム」だけでなく「現在の自陣パーティ」の種族も除外しないと、
+        // 自陣に既にいるモンスターと同じ種族のボーナスモンスターが出てしまい、
+        // 交換で選んだ場合にチーム内で同じモンスターが重複してしまう。
+        const bonusCandidates = generateKinNejikiOffer(next.set + 1, exclusions.species, exclusions.equip, bonusSlotCount, true, true);
         bonusCandidates.forEach(m => {
             if (!m) return;
             m.isBonusSlot = true;

@@ -1354,47 +1354,15 @@ function applyShieldAbsorption(defender, damage) {
     return { finalDamage: damage - absorbed, absorbed };
 }
 
-// --- そのユニットの行動ターン開始時に呼び出す：各種状態異常の残ターン消化と行動失敗判定 ---
-// 戻り値: {
-//   confused: true/false,
-//   failReason: 'sleep'|'confuse'|'paralyze'|'flinch'|null,
-//   dotDamage: 数値（出血・やけど・猛毒・のろいの合計。実際にライフへ反映する処理は各バトルエンジン側で行う）,
-//   bleedDamage / burnDamage / poisonDamage / curseDamage: 内訳（個別にログ表示するため）
-// }
+// --- そのユニットの行動ターン開始時に呼び出す：行動失敗判定のみ（ねむり／混乱／マヒ／怯み）と、
+//     それに付随する各種残ターン数の消化を行う。
+//     ※ 出血／やけど／猛毒／のろいの継続ダメージはここでは扱わない（→ computeStatusDotDamage を
+//        ターン終了間際にまとめて呼び出すこと。CPU戦・PvPどちらも「継続ダメージはターン終了間際に
+//        まとめて反映する」という仕様に統一するための分割）。
+// 戻り値: { confused: true/false, failReason: 'sleep'|'confuse'|'paralyze'|'flinch'|null }
 //   confused=true の場合、そのターンは状態異常により行動失敗（failReasonで原因を判別できる）
-function tickStatusTurnsAndCheckConfusion(unit) {
-    if (!unit) return { confused: false, failReason: null, dotDamage: 0, bleedDamage: 0, burnDamage: 0, poisonDamage: 0, curseDamage: 0 };
-
-    const maxLifeVal = unit.stats ? unit.stats.maxLife : unit.maxLife;
-
-    // 出血（まっぷたつ・地雷針等）：指定ターンの間、最大ライフの一定割合の継続ダメージ
-    let bleedDamage = 0;
-    if (unit.dotTurns > 0) {
-        bleedDamage = Math.max(1, Math.floor((maxLifeVal || 0) * (unit.dotPct || 0.08)));
-        unit.dotTurns--;
-    }
-
-    // やけど：治るまでターン数の制限なく、毎ターン終了時に最大ライフの1/16のダメージを受け続ける
-    let burnDamage = 0;
-    if (unit.isBurned) {
-        burnDamage = Math.max(1, Math.floor((maxLifeVal || 0) / 16));
-    }
-
-    // 猛毒：ターンが経過するごとに最大ライフの1/16, 2/16…と受けるダメージが増えていく（最大15/16）。
-    // 交代するとダメージ量は1/16からやり直しになる（clearBattleStatModifiersOnSwitchでリセット）。
-    let poisonDamage = 0;
-    if (unit.isPoisoned) {
-        unit.poisonCounter = Math.min(15, (unit.poisonCounter || 0) + 1);
-        poisonDamage = Math.max(1, Math.floor((maxLifeVal || 0) * unit.poisonCounter / 16));
-    }
-
-    // のろい：猛毒と異なり増加はせず、バトル終了まで治らず毎ターン終了時に最大ライフの1/4の固定ダメージを受け続ける。
-    let curseDamage = 0;
-    if (unit.isCursed) {
-        curseDamage = Math.max(1, Math.floor((maxLifeVal || 0) / 4));
-    }
-
-    const dotDamage = bleedDamage + burnDamage + poisonDamage + curseDamage;
+function tickStatusFailureCheck(unit) {
+    if (!unit) return { confused: false, failReason: null };
 
     // 衰弱（weaken_pow_int）はターン経過では解除されず、交代するまで持続する（clearBattleStatModifiersOnSwitchでリセット）。
     if (unit.defDownTurns > 0) unit.defDownTurns--;
@@ -1436,7 +1404,54 @@ function tickStatusTurnsAndCheckConfusion(unit) {
         if (Math.random() < 0.5 && !failReason) failReason = 'flinch';
     }
 
-    return { confused: !!failReason, failReason, dotDamage, bleedDamage, burnDamage, poisonDamage, curseDamage };
+    return { confused: !!failReason, failReason };
+}
+
+// --- 出血／やけど／猛毒／のろいの継続ダメージを計算する（ライフへの反映はせず、量の計算と
+//     残ターン数／猛毒カウンターの消化のみを行う）。ターン終了間際にまとめて呼び出すこと。
+// 戻り値: { dotDamage, bleedDamage, burnDamage, poisonDamage, curseDamage }
+function computeStatusDotDamage(unit) {
+    if (!unit) return { dotDamage: 0, bleedDamage: 0, burnDamage: 0, poisonDamage: 0, curseDamage: 0 };
+
+    const maxLifeVal = unit.stats ? unit.stats.maxLife : unit.maxLife;
+
+    // 出血（まっぷたつ・地雷針等）：指定ターンの間、最大ライフの一定割合の継続ダメージ
+    let bleedDamage = 0;
+    if (unit.dotTurns > 0) {
+        bleedDamage = Math.max(1, Math.floor((maxLifeVal || 0) * (unit.dotPct || 0.08)));
+        unit.dotTurns--;
+    }
+
+    // やけど：治るまでターン数の制限なく、毎ターン終了時に最大ライフの1/16のダメージを受け続ける
+    let burnDamage = 0;
+    if (unit.isBurned) {
+        burnDamage = Math.max(1, Math.floor((maxLifeVal || 0) / 16));
+    }
+
+    // 猛毒：ターンが経過するごとに最大ライフの1/16, 2/16…と受けるダメージが増えていく（最大15/16）。
+    // 交代するとダメージ量は1/16からやり直しになる（clearBattleStatModifiersOnSwitchでリセット）。
+    let poisonDamage = 0;
+    if (unit.isPoisoned) {
+        unit.poisonCounter = Math.min(15, (unit.poisonCounter || 0) + 1);
+        poisonDamage = Math.max(1, Math.floor((maxLifeVal || 0) * unit.poisonCounter / 16));
+    }
+
+    // のろい：猛毒と異なり増加はせず、バトル終了まで治らず毎ターン終了時に最大ライフの1/4の固定ダメージを受け続ける。
+    let curseDamage = 0;
+    if (unit.isCursed) {
+        curseDamage = Math.max(1, Math.floor((maxLifeVal || 0) / 4));
+    }
+
+    const dotDamage = bleedDamage + burnDamage + poisonDamage + curseDamage;
+    return { dotDamage, bleedDamage, burnDamage, poisonDamage, curseDamage };
+}
+
+// --- 互換用ラッパー：旧仕様のまま両方をまとめて呼び出したい場合用（新規コードでは
+//     tickStatusFailureCheck / computeStatusDotDamage を使い分けること） ---
+function tickStatusTurnsAndCheckConfusion(unit) {
+    const dot = computeStatusDotDamage(unit);
+    const failure = tickStatusFailureCheck(unit);
+    return { ...failure, ...dot };
 }
 
 // --- 出血／やけど／猛毒／のろいのダメージを種類ごとに個別のログ行として構築しつつ、実際にライフへ反映する ---

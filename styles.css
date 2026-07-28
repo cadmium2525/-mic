@@ -67,6 +67,19 @@ input, textarea, select {
 .title-logo-img {
     filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.65));
 }
+/* ===== バトル画面：闘技場の背景画像（上下を暗めのグラデーションで馴染ませる） ===== */
+.battle-field-bg {
+    background-image:
+        linear-gradient(180deg, rgba(24, 17, 13, 0.55) 0%, rgba(24, 17, 13, 0.15) 30%, rgba(24, 17, 13, 0.15) 65%, rgba(24, 17, 13, 0.75) 100%),
+        url('images/battle/arena.png');
+    background-size: cover;
+    background-position: center 60%;
+    background-repeat: no-repeat;
+}
+/* 団体戦用のチームアイコン一覧は、機能（JS側のtoggle/描画処理）は残しつつ見た目だけ非表示にする */
+#player-team-icons, #enemy-team-icons {
+    display: none !important;
+}
 /* 木製の看板＋金属の鋲を思わせるボタンの縁取り（各ボタン固有の色はそのまま活かし、質感だけ揃える） */
 .fantasy-btn {
     position: relative;

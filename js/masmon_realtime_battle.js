@@ -47,6 +47,7 @@ const REALTIME_BATTLE = {
     disconnectTimer: null,
     actionTimerInterval: null,   // 行動選択の制限時間カウントダウン用（1秒毎）
     autoTimeoutTurnNumber: null, // 自動選択（タイムアウト）を既に行ったturnNumber（二重発火防止）
+    autoTimeoutForcedSwitchTurnNumber: null, // 強制交代の自動選択を既に行ったturnNumber（二重発火防止）
     cachedState: null,
     actionInProgress: false,
     seenLogKeys: {},          // 二重描画防止
@@ -370,7 +371,11 @@ function renderRealtimeBattleUI(state) {
     const pending = state.pendingActions || {};
     const myActed = !!pending[mySlot];
     const oppActed = !!pending[oppSlot];
-    const canAct = state.status === 'active' && !myActed && !REALTIME_BATTLE.actionInProgress;
+    const forcedSwitch = state.pendingForcedSwitch || {};
+    const iNeedForcedSwitch = !!forcedSwitch[mySlot];
+    const oppNeedsForcedSwitch = !!forcedSwitch[oppSlot];
+    const awaitingAnyForcedSwitch = iNeedForcedSwitch || oppNeedsForcedSwitch;
+    const canAct = state.status === 'active' && !myActed && !REALTIME_BATTLE.actionInProgress && !awaitingAnyForcedSwitch;
 
     // 新しいターンになって再び行動できるようになった瞬間だけログを閉じて技表示に戻す。
     // 自分が行動送信済み（相手を待っている間）に「ログ確認」ボタンで開いた場合はここでは閉じない。
@@ -382,17 +387,31 @@ function renderRealtimeBattleUI(state) {
     // 技選択画面へ戻ってしまう（＝「先に行動した方はログが見れない」バグ）。
     // そのため、ログの順次表示（processRealtimeLogQueue）がまだ残っている／進行中の場合は
     // 一旦保留し、その表示が完全に終わった時点で改めて閉じるようにする。
+    //
+    // ★もう一つの注意：lastCanActTurnNumberの更新は必ず canAct（actionInProgress込み）と
+    // 同じ条件で行うこと。以前は「!myActed」のみで判定していたため、自分の行動が
+    // ターン解決を確定させた側（＝まだ結果ログをFirebaseへ送信中でactionInProgressがtrue）で、
+    // 新ターンのstateが先に届いた時点でこのフラグだけ更新されてしまい、その直後に
+    // actionInProgressがfalseに戻っても「もう見た新ターン」と誤判定されてrequestRealtimeLogAutoHide()が
+    // 一生呼ばれず、ログ画面が開いたまま技選択に進めなくなる不具合があった。
     if (canAct && REALTIME_BATTLE.lastCanActTurnNumber !== state.turnNumber) {
         requestRealtimeLogAutoHide();
-    }
-    if (state.status === 'active' && !myActed) {
         REALTIME_BATTLE.lastCanActTurnNumber = state.turnNumber;
     }
 
     document.getElementById('battle-turn-counter').textContent = state.turnNumber || 1;
 
+    // みがわり設置中（team.substituteHits > 0）は、場に出ているモンスターが誰であっても
+    // 常にみがわり画像を優先して表示する（CPU戦のrenderBattleFieldIconと同じ考え方）。
+    const oppSubstituteHits = (state.teams[oppSlot] && state.teams[oppSlot].substituteHits) || 0;
+    const mySubstituteHits = (state.teams[mySlot] && state.teams[mySlot].substituteHits) || 0;
+
     document.getElementById('enemy-name').textContent = `${opp.name}（${oppOwnerName}）`;
-    renderMonsterVisual(document.getElementById('battle-enemy-icon'), opp.monsterBaseName, opp.emoji, opp.isAwakened, false, opp.aura);
+    if (oppSubstituteHits > 0) {
+        renderSubstituteVisual(document.getElementById('battle-enemy-icon'), false);
+    } else {
+        renderMonsterVisual(document.getElementById('battle-enemy-icon'), opp.monsterBaseName, opp.emoji, opp.isAwakened, false, opp.aura);
+    }
     document.getElementById('battle-enemy-type').textContent = opp.name;
     renderAuraBadge('enemy-aura-badge', opp.aura, opp.monsterBaseName);
     renderStatusAilmentBadge('enemy-status-badge', opp);
@@ -401,7 +420,11 @@ function renderRealtimeBattleUI(state) {
     document.getElementById('enemy-guts-text').textContent = Math.floor(opp.guts);
     document.getElementById('enemy-guts-bar').style.width = `${opp.guts}%`;
 
-    renderMonsterVisual(document.getElementById('battle-player-icon'), me.monsterBaseName, me.emoji, me.isAwakened, true, me.aura);
+    if (mySubstituteHits > 0) {
+        renderSubstituteVisual(document.getElementById('battle-player-icon'), true);
+    } else {
+        renderMonsterVisual(document.getElementById('battle-player-icon'), me.monsterBaseName, me.emoji, me.isAwakened, true, me.aura);
+    }
     document.getElementById('battle-player-name').textContent = me.name;
     renderAuraBadge('player-aura-badge', me.aura, me.monsterBaseName);
     renderStatusAilmentBadge('player-status-badge', me);
@@ -417,7 +440,13 @@ function renderRealtimeBattleUI(state) {
     const turnIndicator = document.getElementById('realtime-turn-indicator');
     if (state.status === 'active') {
         let label, cls;
-        if (!myActed) {
+        if (iNeedForcedSwitch) {
+            label = '💥 次に出すマスモンを選んでください';
+            cls = 'bg-rose-800';
+        } else if (oppNeedsForcedSwitch) {
+            label = '⏳ 相手が次に出すマスモンを選んでいます';
+            cls = 'bg-amber-800';
+        } else if (!myActed) {
             label = '🟢 行動選択中';
             cls = 'bg-emerald-700';
         } else if (!oppActed) {
@@ -435,9 +464,13 @@ function renderRealtimeBattleUI(state) {
     }
 
     const myGutsRecovery = 30 + getEquipmentGutsRecoveryBonus(me) + getSkillGutsRecoveryBonus(me);
-    document.getElementById('turn-guts-notice').textContent = canAct
-        ? `💡 行動を選んでください（GUTS回復:+${myGutsRecovery}）。両者の選択が揃うと同時に解決されます`
-        : (myActed ? `✅ 行動を送信しました。相手の選択を待っています…` : `⏳ お待ちください…`);
+    document.getElementById('turn-guts-notice').textContent = iNeedForcedSwitch
+        ? `💥 【${me.name}】が戦闘不能になりました。次に出すマスモンを選んでください。`
+        : oppNeedsForcedSwitch
+            ? `⏳ 相手が次に出すマスモンを選んでいます…`
+            : canAct
+                ? `💡 行動を選んでください（GUTS回復:+${myGutsRecovery}）。両者の選択が揃うと同時に解決されます`
+                : (myActed ? `✅ 行動を送信しました。相手の選択を待っています…` : `⏳ お待ちください…`);
 
     renderRealtimeBattleSkills(state);
     renderRealtimeBattleItems(state);
@@ -506,8 +539,16 @@ function updateRealtimeTimerDisplay(state) {
     const mySlot = REALTIME_BATTLE.mySlot;
     const pending = state.pendingActions || {};
     const myActed = !!pending[mySlot];
+    const iNeedForcedSwitch = !!(state.pendingForcedSwitch && state.pendingForcedSwitch[mySlot]);
 
-    if (state.status !== 'active' || myActed || !state.turnDeadline) {
+    // 強制交代待ちの間は pendingActions が（前ターン分のまま）残っているため myActed だけでは判定できない。
+    // 自分が交代先を選ぶ必要がある間はタイマーを表示し続け、選び終わるまでは非表示にしない。
+    if (state.status !== 'active' || (myActed && !iNeedForcedSwitch) || !state.turnDeadline) {
+        timerEl.classList.add('hidden');
+        return;
+    }
+    // 相手が強制交代を選んでいる間（自分は待つだけ）はタイマー表示しない
+    if (!iNeedForcedSwitch && state.pendingForcedSwitch && state.pendingForcedSwitch[REALTIME_BATTLE.oppSlot]) {
         timerEl.classList.add('hidden');
         return;
     }
@@ -520,7 +561,11 @@ function updateRealtimeTimerDisplay(state) {
     timerEl.classList.toggle('bg-amber-900', remainingSec > 5);
 
     if (remainingMs <= 0) {
-        triggerRealtimeTurnTimeout(state);
+        if (iNeedForcedSwitch) {
+            triggerRealtimeForcedSwitchTimeout(state);
+        } else {
+            triggerRealtimeTurnTimeout(state);
+        }
     }
 }
 
@@ -555,6 +600,25 @@ function triggerRealtimeTurnTimeout(state) {
     markAutoDone();
     performRealtimeAction({ kind: 'skill', key: randomKey, auto: true }).catch(() => {
         REALTIME_BATTLE.autoTimeoutTurnNumber = null;
+    });
+}
+
+// --- 強制交代の選択に時間切れした場合：控えの中からランダムに1体を自動選択する ---
+function triggerRealtimeForcedSwitchTimeout(state) {
+    if (!REALTIME_BATTLE.active) return;
+    if (REALTIME_BATTLE.actionInProgress) return;
+    if (REALTIME_BATTLE.autoTimeoutForcedSwitchTurnNumber === state.turnNumber) return; // 二重発火防止
+
+    const mySlot = REALTIME_BATTLE.mySlot;
+    if (!state.pendingForcedSwitch || !state.pendingForcedSwitch[mySlot]) return; // 既に解決済み
+
+    const candidates = getRealtimeSwitchCandidates(state);
+    if (candidates.length === 0) return; // 本来ここには来ないはず（全滅ならbattleOver済み）
+
+    REALTIME_BATTLE.autoTimeoutForcedSwitchTurnNumber = state.turnNumber;
+    const randomCandidate = candidates[Math.floor(Math.random() * candidates.length)];
+    performRealtimeForcedSwitch(randomCandidate.idx).catch(() => {
+        REALTIME_BATTLE.autoTimeoutForcedSwitchTurnNumber = null;
     });
 }
 
@@ -853,8 +917,23 @@ function renderRealtimeBattleSkills(state) {
     container.innerHTML = '';
 
     const mySlot = REALTIME_BATTLE.mySlot;
+    const oppSlot = REALTIME_BATTLE.oppSlot;
+    const forcedSwitch = state.pendingForcedSwitch || {};
+
+    // 自分の場のマスモンが戦闘不能になった直後は、通常の技選択の代わりに
+    // 「次に出すマスモンを選ぶ」専用ピッカーを表示する（キャンセル不可＝必ず選ぶ）。
+    if (forcedSwitch[mySlot]) {
+        renderRealtimeForcedSwitchPicker(state, container);
+        return;
+    }
+    // 相手が次に出すマスモンを選んでいる間は、こちらは何も操作できない（待機表示のみ）
+    if (forcedSwitch[oppSlot]) {
+        container.innerHTML = `<div class="col-span-2 text-center text-[10px] text-gray-400 py-4">⏳ 相手が次に出すマスモンを選んでいます…</div>`;
+        return;
+    }
+
     const me = getRealtimeActiveUnit(state, mySlot);
-    const opp = getRealtimeActiveUnit(state, REALTIME_BATTLE.oppSlot);
+    const opp = getRealtimeActiveUnit(state, oppSlot);
     const isMyTurn = state.status === 'active' && !(state.pendingActions && state.pendingActions[mySlot]) && !REALTIME_BATTLE.actionInProgress;
     const gutsModsForHit = getGutsModifiers(me.guts);
 
@@ -1011,6 +1090,41 @@ function getRealtimeSwitchCandidates(state) {
         .filter(({ idx, unit }) => idx !== myTeam.activeIdx && unit.life > 0);
 }
 
+// --- 強制交代（自分の場のマスモンが戦闘不能になった直後）専用のピッカーを描画する ---
+// 通常の交代メニュー（openRealtimeSwitchMenu）と違い、キャンセルボタンは出さない（必ず1体選ぶ）。
+function renderRealtimeForcedSwitchPicker(state, container) {
+    const candidates = getRealtimeSwitchCandidates(state);
+    if (candidates.length === 0) {
+        // 本来は全滅判定側でbattleOverになっているはずだが、念のための保険表示
+        container.innerHTML = `<div class="col-span-2 text-center text-[10px] text-gray-400 py-4">…</div>`;
+        return;
+    }
+
+    const title = document.createElement('div');
+    title.className = 'col-span-2 text-center text-[10px] font-bold text-rose-300 mb-1';
+    title.textContent = '💥 次に出すマスモンを選んでください';
+    container.appendChild(title);
+
+    candidates.forEach(({ idx, unit }) => {
+        const lifePct = Math.max(0, Math.floor((unit.life / unit.maxLife) * 100));
+        const btn = document.createElement('button');
+        btn.className = `text-left p-2 rounded border transition-all active:scale-95 flex flex-col justify-between bg-emerald-950/40 border-emerald-700 text-emerald-200 ${REALTIME_BATTLE.actionInProgress ? 'opacity-40 pointer-events-none' : ''}`;
+        btn.onclick = () => performRealtimeForcedSwitch(idx);
+        const equipBase = unit.equippedItem ? EQUIPMENT_DB[unit.equippedItem.equipId] : null;
+        const equipBadge = equipBase
+            ? `<span class="px-1 py-0.5 rounded text-[8px] font-bold bg-amber-900/60 text-amber-200">${equipBase.icon || '🎒'}${equipBase.name}</span>`
+            : '';
+        btn.innerHTML = `
+            <div class="flex justify-between items-center w-full">
+                <span class="font-bold text-xs">${unit.name}</span>
+                <span class="text-[9px] font-bold">HP ${unit.life}/${unit.maxLife} (${lifePct}%)</span>
+            </div>
+            <div class="flex gap-1 mt-1">${equipBadge}</div>
+        `;
+        container.appendChild(btn);
+    });
+}
+
 // --- 交代先選択メニューを技一覧エリアに一時的に表示する ---
 function openRealtimeSwitchMenu(state) {
     if (REALTIME_BATTLE.actionInProgress) return;
@@ -1148,6 +1262,70 @@ function executeRealtimeSwitch(targetIdx) {
     performRealtimeAction({ kind: 'switch', targetIdx: targetIdx });
 }
 
+// --- 強制交代（自分の場のマスモンが戦闘不能になった際、控えから次に出す1体を選ぶ）を送信する ---
+// 通常のperformRealtimeAction（pendingActionsへ書き込む「今ターンの行動」）とは別枠の処理。
+// ・現在のターン内で自分がまだ選んでいない普通の行動（技等）とは独立で、
+//   pendingForcedSwitch[mySlot] が立っている間だけ有効。
+// ・双方とも強制交代が不要になった時点で、このtransaction内で次のターンへの移行まで行う。
+async function performRealtimeForcedSwitch(targetIdx) {
+    if (!REALTIME_BATTLE.active || REALTIME_BATTLE.actionInProgress) return;
+    const mySlot = REALTIME_BATTLE.mySlot;
+    const oppSlot = REALTIME_BATTLE.oppSlot;
+    const stateRef = REALTIME_BATTLE.ref.child('battleState');
+    const logRef = REALTIME_BATTLE.ref.child('battleLog');
+
+    REALTIME_BATTLE.actionInProgress = true;
+    disableRealtimeActionButtons();
+
+    let resultLogs = [];
+    let committedTurnNumber = (REALTIME_BATTLE.cachedState && REALTIME_BATTLE.cachedState.turnNumber) || 1;
+
+    try {
+        const txResult = await stateRef.transaction(current => {
+            if (!current || current.status !== 'active') return; // abort：既にバトル終了
+            if (!current.pendingForcedSwitch || !current.pendingForcedSwitch[mySlot]) return; // abort：対象外（二重送信等）
+
+            const myTeam = current.teams[mySlot];
+            const target = myTeam.units[targetIdx];
+            if (!target || target.life <= 0) return; // abort：無効な交代先
+
+            resultLogs = [];
+            myTeam.activeIdx = targetIdx;
+            const ownerLabel = current.ownerNames ? current.ownerNames[mySlot] : 'あなた';
+            resultLogs.push(`${ownerLabel}は【${target.name}】を繰り出した！`);
+            delete current.pendingForcedSwitch[mySlot];
+
+            const stillWaitingOpponent = !!(current.pendingForcedSwitch && current.pendingForcedSwitch[oppSlot]);
+            if (!stillWaitingOpponent) {
+                // 双方の強制交代が解決した（相手側は元々不要だった場合も含む）＝次のターンへ進める
+                current.pendingForcedSwitch = {};
+                current.pendingActions = { player1: null, player2: null };
+                current.turnNumber = (current.turnNumber || 1) + 1;
+                current.turnDeadline = Date.now() + REALTIME_TURN_TIME_LIMIT_MS;
+            }
+            current.lastActionAt = Date.now();
+            return current;
+        });
+
+        if (!txResult.committed || !txResult.snapshot.exists()) {
+            showToast('その交代は選択できませんでした（タイミングがずれた可能性があります）。');
+        } else {
+            committedTurnNumber = txResult.snapshot.val().turnNumber || committedTurnNumber;
+            for (const text of resultLogs) {
+                await logRef.push({ turn: committedTurnNumber, actor: mySlot, text, ts: Date.now() });
+            }
+        }
+    } catch (e) {
+        console.error('[Firebase] 強制交代エラー:', e);
+        showToast('通信エラーが発生しました。');
+    } finally {
+        REALTIME_BATTLE.actionInProgress = false;
+        if (REALTIME_BATTLE.active && REALTIME_BATTLE.cachedState) {
+            renderRealtimeBattleUI(REALTIME_BATTLE.cachedState);
+        }
+    }
+}
+
 // --- チーム内で最初に見つかる生存ユニットのインデックスを返す（いなければ-1） ---
 function findFirstAliveIdx(teamObj) {
     for (let i = 0; i < teamObj.units.length; i++) {
@@ -1199,12 +1377,16 @@ function buildRealtimeTurnActionDescriptor(unit, action) {
     return createTurnAction('none', 0, speed); // 'pass' やタイムアウト時の未行動など
 }
 
-// --- 片方の陣営が戦闘不能になっていないかを判定し、必要なら自動交代／勝敗確定を行う ---
-// 戻り値: バトルが終了した場合は true
+// --- 片方の陣営が戦闘不能になっていないかを判定する ---
+// ・全滅していれば勝敗を確定する
+// ・控えがいればCPU戦と同様「本人に選ばせる」ため、自動交代はせず pendingForcedSwitch フラグを立てるだけに留める
+//   （以前は自動的に先頭の生存ユニットに交代していたが、団体戦のプレイヤーが次に出す
+//    マスモンを選べない＝「気づいたら次のモンスターが出されている」不具合の原因だった）
+// 戻り値: 'none'（戦闘不能なし） / 'ko'（バトル終了） / 'needSwitch'（強制交代待ち）
 function checkRealtimeFaintAndWin(current, teamSlot, otherSlot, resultLogs) {
     const team = current.teams[teamSlot];
     const unit = team.units[team.activeIdx];
-    if (!unit || unit.life > 0) return false;
+    if (!unit || unit.life > 0) return 'none';
 
     resultLogs.push(`💥 ${unit.name} は戦闘不能になった！`);
     const nextIdx = findFirstAliveIdx(team);
@@ -1215,14 +1397,17 @@ function checkRealtimeFaintAndWin(current, teamSlot, otherSlot, resultLogs) {
         const winnerTeam = current.teams[otherSlot];
         const winnerUnit = winnerTeam.units[winnerTeam.activeIdx];
         resultLogs.push(`${winnerUnit ? winnerUnit.name : (current.ownerNames && current.ownerNames[otherSlot])} の勝利！`);
-        return true;
+        return 'ko';
     }
 
-    team.activeIdx = nextIdx;
-    const newUnit = team.units[nextIdx];
+    current.pendingForcedSwitch = current.pendingForcedSwitch || {};
+    current.pendingForcedSwitch[teamSlot] = true;
+    // 強制交代の選択にも制限時間を設ける（無操作で試合が止まってしまうのを防ぐ）。
+    // triggerRealtimeForcedSwitchTimeout側でこのdeadlineを見て自動選択する。
+    current.turnDeadline = Date.now() + REALTIME_TURN_TIME_LIMIT_MS;
     const ownerLabel = current.ownerNames ? current.ownerNames[teamSlot] : '相手';
-    resultLogs.push(`${ownerLabel}は【${newUnit.name}】を繰り出した！`);
-    return false;
+    resultLogs.push(`${ownerLabel}は次に出すマスモンを選んでいる…`);
+    return 'needSwitch';
 }
 
 // --- 1体分の行動を実際に解決する（技効果計算・ガッツ消費・交代・アイテム使用など） ---
@@ -1675,12 +1860,18 @@ function startRealtimeNextTurn(current, aSlot, bSlot, resultLogs) {
     applyRealtimeTurnStartEffects(aUnit, bUnit, resultLogs);
     applyRealtimeTurnStartEffects(bUnit, aUnit, resultLogs);
 
-    let battleOver = checkRealtimeFaintAndWin(current, aSlot, bSlot, resultLogs);
+    const aResult = checkRealtimeFaintAndWin(current, aSlot, bSlot, resultLogs);
+    const battleOver = aResult === 'ko';
+    let needSwitch = aResult === 'needSwitch';
     if (!battleOver) {
-        battleOver = checkRealtimeFaintAndWin(current, bSlot, aSlot, resultLogs);
+        const bResult = checkRealtimeFaintAndWin(current, bSlot, aSlot, resultLogs);
+        if (bResult === 'ko') return; // current.statusは既にfinished済み
+        if (bResult === 'needSwitch') needSwitch = true;
     }
 
-    if (!battleOver) {
+    // 戦闘不能で強制交代待ちの陣営がある場合、そちらの選択が揃うまで次のターンには進めない
+    // （performRealtimeForcedSwitchが両陣営分解決した時点で改めてpendingActions/turnNumberを進める）
+    if (!battleOver && !needSwitch) {
         current.pendingActions = { player1: null, player2: null };
         current.turnNumber = (current.turnNumber || 1) + 1;
         current.turnDeadline = Date.now() + REALTIME_TURN_TIME_LIMIT_MS;
@@ -1705,7 +1896,8 @@ function resolveRealtimeTurn(current, aSlot, bSlot, resultLogs) {
     const order = result.order.map(tag => (tag === 'A') ? aSlot : bSlot);
 
     let battleOver = false;
-    for (let i = 0; i < order.length && !battleOver; i++) {
+    let needSwitch = false;
+    for (let i = 0; i < order.length && !battleOver && !needSwitch; i++) {
         const actingSlot = order[i];
         const otherSlot = (actingSlot === aSlot) ? bSlot : aSlot;
         const actingTeam = current.teams[actingSlot];
@@ -1715,13 +1907,17 @@ function resolveRealtimeTurn(current, aSlot, bSlot, resultLogs) {
         resolveOneRealtimeAction(current, actingSlot, otherSlot, pending[actingSlot], resultLogs);
 
         // 相手側→自分側の順にチェック（攻撃で相手が倒れていないか／反動等で自滅していないか）
-        battleOver = checkRealtimeFaintAndWin(current, otherSlot, actingSlot, resultLogs);
-        if (!battleOver) {
-            battleOver = checkRealtimeFaintAndWin(current, actingSlot, otherSlot, resultLogs);
-        }
+        // ・'ko' ならバトル終了、'needSwitch' なら「その陣営が交代先を選ぶまで」このターンの
+        //   残りの行動（後攻側の行動）は実行せず打ち切る（CPU戦の強制交代と同じ考え方）。
+        const r1 = checkRealtimeFaintAndWin(current, otherSlot, actingSlot, resultLogs);
+        if (r1 === 'ko') { battleOver = true; break; }
+        if (r1 === 'needSwitch') { needSwitch = true; break; }
+        const r2 = checkRealtimeFaintAndWin(current, actingSlot, otherSlot, resultLogs);
+        if (r2 === 'ko') { battleOver = true; break; }
+        if (r2 === 'needSwitch') { needSwitch = true; break; }
     }
 
-    if (!battleOver) {
+    if (!battleOver && !needSwitch) {
         startRealtimeNextTurn(current, aSlot, bSlot, resultLogs);
     }
 }
@@ -2042,6 +2238,7 @@ function resetRealtimeBattleClientState() {
     REALTIME_BATTLE.battleStartedAt = 0;
     REALTIME_BATTLE.lastCanActTurnNumber = null;
     REALTIME_BATTLE.autoTimeoutTurnNumber = null;
+    REALTIME_BATTLE.autoTimeoutForcedSwitchTurnNumber = null;
     REALTIME_BATTLE.logRevealQueue = [];
     REALTIME_BATTLE.isRevealingLog = false;
     REALTIME_BATTLE.pendingLogHide = false;
