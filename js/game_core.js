@@ -10,7 +10,7 @@
 // =====================================================
 
 // --- バージョン・最終更新日（タイトル画面左下に小さく表示。更新のたびにここを書き換える） ---
-const GAME_VERSION_INFO = { version: 'ver1.0.3', updatedAt: '2026-07-29' };
+const GAME_VERSION_INFO = { version: 'ver1.0.2', updatedAt: '2026-07-27' };
 
 // --- ブリーダー名の永続化（LocalStorage） ---
 function loadStoredPlayerName() {
@@ -281,6 +281,11 @@ function hideAppLoadingOverlay() {
 //   ③ ブリーダー名入力欄をフェードイン
 //   「Now loading」画面がまだ覆っている間に演出前の状態（非表示・重なった状態）を作っておくので、
 //   画面が切り替わる瞬間に一瞬チラつく、といったことは起きない。
+// ホームメニュー（ボタン群・名前入力欄）の展開演出が完了したか。
+// PRESS START待ちの間に解禁判定（例：エンドレスモード）でボタンが unhidden になっても、
+// この演出が終わるまでは見た目上フェードインさせない（checkEndlessModeUnlockAndUpdateHomeButton参照）
+window.HOME_INTRO_MENU_REVEALED = false;
+
 function playTitleBootIntro() {
     const logoEl = document.querySelector('.title-logo-img');
     const buttonsContainer = document.getElementById('title-menu-buttons');
@@ -322,8 +327,26 @@ function playTitleBootIntro() {
     // メニュー展開（②③）を実行する処理。「PRESS START」タップ/キー入力後に呼ばれる
     function revealHomeMenu() {
         const MENU_STAGGER_MS = 110;
+        window.HOME_INTRO_MENU_REVEALED = true;
         if (buttonsContainer) buttonsContainer.style.pointerEvents = '';
         if (nameInputBox) nameInputBox.style.pointerEvents = '';
+
+        // PRESS START待ちの間に解禁判定が完了して新たに表示された項目（エンドレスモード等）も
+        // 取りこぼさないよう、演出開始の直前に改めて表示中の項目を数え直す。
+        // まだ非表示スタイル（opacity/transform）が設定されていない項目には、ここで即座に
+        // 設定してから他の項目と同じタイミングでフェードインさせる。
+        if (buttonsContainer) {
+            const latestItems = Array.from(buttonsContainer.children).filter(el => getComputedStyle(el).display !== 'none');
+            const baseTop = latestItems.length > 0 ? latestItems[0].offsetTop : 0;
+            latestItems.forEach(el => {
+                if (!items.includes(el)) {
+                    el.style.transition = 'none';
+                    el.style.opacity = '0';
+                    el.style.transform = `translateY(${baseTop - el.offsetTop}px)`;
+                }
+            });
+            items = latestItems;
+        }
 
         items.forEach((el, i) => {
             setTimeout(() => {

@@ -203,7 +203,15 @@ async function checkEndlessModeUnlockAndUpdateHomeButton() {
     } catch (e) {
         ENDLESS_STATE.unlocked = false;
     }
+    const wasHidden = btn.classList.contains('hidden');
     btn.classList.toggle('hidden', !ENDLESS_STATE.unlocked);
+    // PRESS START待ち～ホームメニュー展開演出が完了する前に解禁判定が終わった場合、
+    // ボタンが unhidden（display復活）になっても、演出が追いつくまでは見た目上は
+    // 非表示のままにしておく（playTitleBootIntro内のrevealHomeMenuが改めてフェードインさせる）
+    if (ENDLESS_STATE.unlocked && wasHidden && typeof window !== 'undefined' && !window.HOME_INTRO_MENU_REVEALED) {
+        btn.style.opacity = '0';
+        btn.style.pointerEvents = 'none';
+    }
 }
 
 // =====================================================

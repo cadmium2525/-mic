@@ -55,7 +55,10 @@ const REALTIME_BATTLE = {
     lastForcedSwitchRevealed: false, // 交代待ち画面を既に表示済みか（ログに隠れて出ない不具合の対策用）
     pendingLogHide: false,    // 新ターン突入でログを閉じたいが、直前ターンのログ表示がまだ終わっていないため保留中か
     pendingLogHideTimer: null, // pendingLogHideが立ったまま一定時間ログが届かなかった場合の保険タイマー
-    battleStartedAt: 0        // 今回の対戦の開始時刻。これより古いログは前回対戦の残りとして無視する
+    battleStartedAt: 0,       // 今回の対戦の開始時刻。これより古いログは前回対戦の残りとして無視する
+    pendingFinalGuts: null,   // ログ表示の進行に合わせて反映する、直近state時点でのガッツ最終値
+    pendingRenderState: null, // ログ表示が終わるまで反映を保留している「次ターン」の完全なstate
+    endHandling: false        // 決着後の終了処理（handleRealtimeBattleEnd）の多重実行防止
 };
 
 // --- 現在のバトル状態から「場に出ているユニット」を取得するヘルパー ---
@@ -382,6 +385,21 @@ function applyRealtimeHpBars(hpMap) {
     }
 }
 
+// HPと同じ考え方で、ガッツバーもログの進行に合わせて追従させる
+function applyRealtimeGutsBars(gutsMap) {
+    if (!gutsMap || !REALTIME_BATTLE.mySlot || !REALTIME_BATTLE.oppSlot) return;
+    const myGuts = gutsMap[REALTIME_BATTLE.mySlot];
+    const oppGuts = gutsMap[REALTIME_BATTLE.oppSlot];
+    if (myGuts !== undefined && myGuts !== null) {
+        document.getElementById('guts-number').textContent = Math.floor(myGuts);
+        document.getElementById('guts-progress-bar').style.width = `${myGuts}%`;
+    }
+    if (oppGuts !== undefined && oppGuts !== null) {
+        document.getElementById('enemy-guts-text').textContent = Math.floor(oppGuts);
+        document.getElementById('enemy-guts-bar').style.width = `${oppGuts}%`;
+    }
+}
+
 // -----------------------------------------------------
 // 画面描画
 // -----------------------------------------------------
@@ -438,6 +456,39 @@ function renderRealtimeBattleUI(state) {
         REALTIME_BATTLE.lastForcedSwitchRevealed = false;
     }
 
+    const logAnimationPending = REALTIME_BATTLE.isRevealingLog ||
+        (REALTIME_BATTLE.logRevealQueue && REALTIME_BATTLE.logRevealQueue.length > 0);
+
+    // ★テンポ改善：直前ターンの結果ログをまだ全て見せ終えていない間は、次のターンの情報
+    // （ターン数・モンスターの見た目・ガッツ・行動選択UI・交代UI等）をここで先出ししない。
+    // HP・ガッツはログ1行ごとのスナップショットで追いつかせ、それ以外（ターン数や行動選択の
+    // 解禁など）は「行動を解決中…」の中立表示のままにしておく。
+    // ログを全て見せ終えたタイミング（processRealtimeLogQueue のキュー空き分岐）で、この関数を
+    // 保留していたstateで呼び直し、その時に以下の本描画をまとめて反映する。
+    if (logAnimationPending) {
+        REALTIME_BATTLE.pendingRenderState = state;
+        REALTIME_BATTLE.pendingFinalHp = {
+            player1: { life: Math.max(0, Math.round(state.teams.player1.units[state.teams.player1.activeIdx].life)), maxLife: state.teams.player1.units[state.teams.player1.activeIdx].maxLife },
+            player2: { life: Math.max(0, Math.round(state.teams.player2.units[state.teams.player2.activeIdx].life)), maxLife: state.teams.player2.units[state.teams.player2.activeIdx].maxLife }
+        };
+        REALTIME_BATTLE.pendingFinalGuts = {
+            player1: Math.floor(state.teams.player1.units[state.teams.player1.activeIdx].guts),
+            player2: Math.floor(state.teams.player2.units[state.teams.player2.activeIdx].guts)
+        };
+        disableRealtimeActionButtons();
+        const busyIndicator = document.getElementById('realtime-turn-indicator');
+        if (busyIndicator) {
+            busyIndicator.textContent = '⚔️ 行動を解決中…';
+            busyIndicator.className = 'text-white font-bold text-[9px] px-1.5 py-0.5 rounded bg-amber-800';
+            busyIndicator.classList.remove('hidden');
+        }
+        const busyNotice = document.getElementById('turn-guts-notice');
+        if (busyNotice) busyNotice.textContent = '⚔️ 行動を解決中…（ログを確認してください）';
+        syncRealtimeTurnTimer(state);
+        return;
+    }
+    REALTIME_BATTLE.pendingRenderState = null;
+
     document.getElementById('battle-turn-counter').textContent = state.turnNumber || 1;
 
     // みがわり設置中（team.substituteHits > 0）は、場に出ているモンスターが誰であっても
@@ -465,21 +516,18 @@ function renderRealtimeBattleUI(state) {
     document.getElementById('battle-player-name').textContent = me.name;
     renderAuraBadge('player-aura-badge', me.aura, me.monsterBaseName);
     renderStatusAilmentBadge('player-status-badge', me);
-    // HPバー・HPテキストは「ログ表示の進行に合わせて追従」させたいため、ログの順次表示
-    // （processRealtimeLogQueue）が進行中／未消化の間はここで即座に最終値へジャンプさせない。
-    // 各ログ行のHPスナップショット（revealNext内のapplyRealtimeHpBars呼び出し）が反映していく。
-    // ログが何も残っていない場合（画面遷移直後・再接続直後など）はここで即時反映する。
+    // ここに到達するのは logAnimationPending が false（＝直前ターンのログを全て見せ終えている）
+    // 場合のみなので、HP・ガッツともに最終値をそのまま反映してよい。
     REALTIME_BATTLE.pendingFinalHp = {
         player1: { life: Math.max(0, Math.round(state.teams.player1.units[state.teams.player1.activeIdx].life)), maxLife: state.teams.player1.units[state.teams.player1.activeIdx].maxLife },
         player2: { life: Math.max(0, Math.round(state.teams.player2.units[state.teams.player2.activeIdx].life)), maxLife: state.teams.player2.units[state.teams.player2.activeIdx].maxLife }
     };
-    const logAnimationPending = REALTIME_BATTLE.isRevealingLog ||
-        (REALTIME_BATTLE.logRevealQueue && REALTIME_BATTLE.logRevealQueue.length > 0);
-    if (!logAnimationPending) {
-        applyRealtimeHpBars(REALTIME_BATTLE.pendingFinalHp);
-    }
-    document.getElementById('guts-number').textContent = Math.floor(me.guts);
-    document.getElementById('guts-progress-bar').style.width = `${me.guts}%`;
+    applyRealtimeHpBars(REALTIME_BATTLE.pendingFinalHp);
+    REALTIME_BATTLE.pendingFinalGuts = {
+        player1: Math.floor(state.teams.player1.units[state.teams.player1.activeIdx].guts),
+        player2: Math.floor(state.teams.player2.units[state.teams.player2.activeIdx].guts)
+    };
+    applyRealtimeGutsBars(REALTIME_BATTLE.pendingFinalGuts);
 
     document.getElementById('player-defense-shield').classList.toggle('hidden', !me.isDefending);
 
@@ -860,6 +908,16 @@ function processRealtimeLogQueue() {
             if (REALTIME_BATTLE.active && REALTIME_BATTLE.pendingFinalHp) {
                 applyRealtimeHpBars(REALTIME_BATTLE.pendingFinalHp);
             }
+            if (REALTIME_BATTLE.active && REALTIME_BATTLE.pendingFinalGuts) {
+                applyRealtimeGutsBars(REALTIME_BATTLE.pendingFinalGuts);
+            }
+            // ログを全て見せ終えたので、保留していた「次ターン」の完全な描画
+            // （ターン数・見た目・行動選択UI・交代UI等）をここで初めて反映する
+            if (REALTIME_BATTLE.active && REALTIME_BATTLE.pendingRenderState) {
+                const st = REALTIME_BATTLE.pendingRenderState;
+                REALTIME_BATTLE.pendingRenderState = null;
+                renderRealtimeBattleUI(st);
+            }
             // 保留中の「新ターンに入ったのでログを閉じたい」要求があれば、
             // ここで直前ターンのログを全て見せ終えた後に閉じる
             resolveRealtimeLogAutoHideIfPending();
@@ -867,8 +925,9 @@ function processRealtimeLogQueue() {
         }
         const entry = REALTIME_BATTLE.logRevealQueue.shift();
         addLog(entry.text);
-        // ログ表示の進行に合わせてHPバーを追従させる：このログ行に紐づくHPスナップショットがあれば反映する
+        // ログ表示の進行に合わせてHPバー・ガッツバーを追従させる：このログ行に紐づくスナップショットがあれば反映する
         if (entry.hp) applyRealtimeHpBars(entry.hp);
+        if (entry.guts) applyRealtimeGutsBars(entry.guts);
         // HIT/回避/クリティカルなど、CPU戦と同じ演出をログ内容から再現する
         triggerRealtimeCombatEffects(entry);
         // 根性の発動は状態を持続保存しないため、ログのタイミングで一時演出を出す（CPU戦と同じ表現）
@@ -881,7 +940,10 @@ function processRealtimeLogQueue() {
                 triggerRealtimeTemporaryStatusEffect("根性", 'enemy-status-effect-display');
             }
         }
-        const delay = (typeof BATTLE_STEP_DELAY !== 'undefined') ? BATTLE_STEP_DELAY.perExtraLog : 550;
+        // ★PvPでは高速モードの影響を受けない：BATTLE_STEP_DELAYはCPU戦の高速モード設定(BATTLE_FAST_MODE)を
+        // 参照するProxyのため、直前にガッツファクトリー等で高速モードをONにしたまま来ると、
+        // ボタン自体は非表示でもPvPの間まで意図せず短くなってしまっていた。PvPは常にCPU戦の基準値(550ms)で固定する。
+        const delay = BATTLE_STEP_DELAY_BASE.perExtraLog;
         setTimeout(revealNext, delay);
     }
 
@@ -1507,6 +1569,11 @@ function pushRealtimeLog(resultLogs, actorSlot, text) {
         entry.hp = {
             player1: p1 ? { life: Math.max(0, Math.round(p1.life)), maxLife: p1.maxLife } : null,
             player2: p2 ? { life: Math.max(0, Math.round(p2.life)), maxLife: p2.maxLife } : null
+        };
+        // ガッツバーもHPと同様、ログの進行に合わせて追従させる（「気合を入れる」等の即時反映を防ぐ）
+        entry.guts = {
+            player1: p1 ? Math.floor(p1.guts) : null,
+            player2: p2 ? Math.floor(p2.guts) : null
         };
     }
     resultLogs.push(entry);
@@ -2342,8 +2409,33 @@ async function surrenderRealtimeBattle() {
 // -----------------------------------------------------
 // バトル終了処理
 // -----------------------------------------------------
+// 最後のターンの行動演出・ログをきちんと見せ終えるまで待つ。
+// state（決着）とbattleLog（最後の行動の結果ログ）は別経路で届くため、
+// handleRealtimeBattleEndが呼ばれた時点ではまだ最後の一撃のログが届いていない／
+// 表示し終えていないことがある。ここで待たずに終了処理へ進むと、
+// 「最後の1体を倒す／倒される瞬間だけ演出が飛ばされる」ことになるため、
+// ログの表示が完全に落ち着く（一定時間、キューが空の状態が続く）まで待機する。
+function waitForRealtimeLogRevealToFinish() {
+    return new Promise(resolve => {
+        let stableEmptyChecks = 0;
+        function check() {
+            const pending = REALTIME_BATTLE.isRevealingLog ||
+                (REALTIME_BATTLE.logRevealQueue && REALTIME_BATTLE.logRevealQueue.length > 0);
+            stableEmptyChecks = pending ? 0 : stableEmptyChecks + 1;
+            if (stableEmptyChecks >= 4) { resolve(); return; } // 約600ms、追加のログが来ないと判断できたら終了
+            setTimeout(check, 150);
+        }
+        check();
+    });
+}
+
 async function handleRealtimeBattleEnd(state) {
-    if (!REALTIME_BATTLE.active) return; // 二重処理防止
+    if (!REALTIME_BATTLE.active || REALTIME_BATTLE.endHandling) return; // 二重処理防止
+    REALTIME_BATTLE.endHandling = true;
+
+    await waitForRealtimeLogRevealToFinish();
+    if (!REALTIME_BATTLE.active) return; // 待っている間に何らかの理由で既に後始末されていた場合
+
     REALTIME_BATTLE.active = false;
 
     // ルーム削除（結果表示後）より前に確実にレート反映処理を終わらせるため、
@@ -2368,7 +2460,7 @@ async function handleRealtimeBattleEnd(state) {
         console.error('[PvPレート] 反映処理エラー:', e);
     }
 
-    setTimeout(() => showRealtimeBattleResult(state, isWin, reasonText, isDraw), typeof scaledBattleDelay === 'function' ? scaledBattleDelay(1200) : 1200);
+    setTimeout(() => showRealtimeBattleResult(state, isWin, reasonText, isDraw), 1200);
 }
 
 function showRealtimeBattleResult(state, isWin, reasonText, isDraw) {
@@ -2493,6 +2585,9 @@ function resetRealtimeBattleClientState() {
     REALTIME_BATTLE.isRevealingLog = false;
     REALTIME_BATTLE.pendingLogHide = false;
     REALTIME_BATTLE.pendingFinalHp = null;
+    REALTIME_BATTLE.pendingFinalGuts = null;
+    REALTIME_BATTLE.pendingRenderState = null;
+    REALTIME_BATTLE.endHandling = false;
     REALTIME_BATTLE.txSnapshotState = null;
     if (REALTIME_BATTLE.pendingLogHideTimer) {
         clearTimeout(REALTIME_BATTLE.pendingLogHideTimer);
