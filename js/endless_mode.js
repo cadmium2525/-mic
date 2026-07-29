@@ -590,7 +590,7 @@ function renderEndlessSelectScreen() {
             <div class="flex items-center space-x-2">
                 <div class="flex-1 min-w-0">
                     <div class="text-xs font-bold text-purple-200">${m.name} ${auraBadge} ${isSelected ? '✅' : ''}</div>
-                    <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def}</div>
+                    <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def} / 行動速度${getMoveSpeedRankForMasmon(m)}</div>
                     <div class="text-[9px] text-gray-500 mt-0.5">技: ${skillNames}</div>
                     <div class="text-[9px] text-sky-300 mt-0.5">装備: ${equipText}</div>
                 </div>

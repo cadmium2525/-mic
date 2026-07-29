@@ -950,7 +950,8 @@ function showKinNejikiMonsterDetailModal(monster) {
     }
 
     if (statsEl && monster.stats) {
-        statsEl.innerHTML = `HP ${monster.stats.maxLife} ／ ちから ${monster.stats.pow} ／ かしこさ ${monster.stats.int} ／ 命中 ${monster.stats.hit} ／ 回避 ${monster.stats.spd} ／ 丈夫さ ${monster.stats.def}`;
+        const moveSpeedRank = getMoveSpeedRankForMasmon(monster);
+        statsEl.innerHTML = `HP ${monster.stats.maxLife} ／ ちから ${monster.stats.pow} ／ かしこさ ${monster.stats.int} ／ 命中 ${monster.stats.hit} ／ 回避 ${monster.stats.spd} ／ 丈夫さ ${monster.stats.def} ／ 行動速度 ${moveSpeedRank}`;
     }
 
     if (equipEl) {
@@ -1031,7 +1032,7 @@ function renderKinNejikiSelectScreen() {
             <div class="flex items-center space-x-2">
                 <div class="flex-1 min-w-0">
                     <div class="text-xs font-bold text-amber-200">${m.name} ${auraBadge}${bonusBadge} ${isSelected ? '✅' : ''}</div>
-                    <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def}</div>
+                    <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def} / 行動速度${getMoveSpeedRankForMasmon(m)}</div>
                     <div class="text-[9px] text-gray-500 mt-0.5">技: ${skillNames}</div>
                     <div class="text-[9px] text-purple-300 mt-0.5">装備: ${equipText}</div>
                 </div>
@@ -1383,7 +1384,7 @@ function renderKinNejikiSwapLists() {
                         <div class="text-xs font-bold text-amber-200">${m.name}${bonusBadge}</div>
                         <div class="text-[8px] text-purple-300 font-bold flex-shrink-0 ml-1">${auraText}</div>
                     </div>
-                    <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def}</div>
+                    <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def} / 行動速度${getMoveSpeedRankForMasmon(m)}</div>
                     <div class="text-[9px] text-gray-500 mt-0.5">技: ${skillNames}</div>
                     <div class="text-[9px] text-sky-300 mt-0.5 leading-relaxed">🎽 ${equipText}</div>
                 </div>
@@ -1470,7 +1471,7 @@ function renderKinNejikiOrderStep() {
         const monClassBadge = monClassInfo ? `<span class="px-1 py-0.5 rounded text-[8px] font-bold bg-slate-700 text-slate-200">${monClassInfo.emoji}${monClassInfo.name}</span>` : '';
         const nameLine = showDetails ? nextLead.name : '？？？';
         const statsLine = showDetails
-            ? `<div class="text-[9px] text-gray-400 mt-0.5">HP${nextLead.stats.maxLife} / ちから${nextLead.stats.pow} / かしこさ${nextLead.stats.int} / 命中${nextLead.stats.hit} / 回避${nextLead.stats.spd} / 丈夫さ${nextLead.stats.def}</div>`
+            ? `<div class="text-[9px] text-gray-400 mt-0.5">HP${nextLead.stats.maxLife} / ちから${nextLead.stats.pow} / かしこさ${nextLead.stats.int} / 命中${nextLead.stats.hit} / 回避${nextLead.stats.spd} / 丈夫さ${nextLead.stats.def} / 行動速度${getMoveSpeedRankForMasmon(nextLead)}</div>`
             : `<div class="text-[9px] text-gray-600 mt-0.5">（シルエットのみで詳細不明）</div>`;
 
         const card = document.createElement('div');
@@ -1512,7 +1513,7 @@ function renderKinNejikiOrderStep() {
                     <div class="text-xs font-bold text-amber-200">${isLeader ? '👑 ' : ''}${m.name}</div>
                     <div class="text-[8px] text-purple-300 font-bold flex-shrink-0 ml-1">${auraText}</div>
                 </div>
-                <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def}</div>
+                <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def} / 行動速度${getMoveSpeedRankForMasmon(m)}</div>
                 <div class="text-[9px] ${isLeader ? 'text-sky-300' : 'text-gray-600'} mt-0.5">${isLeader ? '→ このモンスターが先頭に出ます' : 'タップして先頭に出す'}</div>
             </div>
         `;

@@ -460,12 +460,14 @@ function renderPvpPresetMonsterEditorScreen() {
         });
     }
 
+    const basestatsSection = document.getElementById('pvp-preset-monster-basestats-section');
     const statTypeSection = document.getElementById('pvp-preset-monster-stattype-section');
     const skillsSection = document.getElementById('pvp-preset-monster-skills-section');
     const equipSection = document.getElementById('pvp-preset-monster-equip-section');
     const auraSection = document.getElementById('pvp-preset-monster-aura-section');
 
     if (!m.speciesId) {
+        if (basestatsSection) basestatsSection.classList.add('hidden');
         if (statTypeSection) statTypeSection.classList.add('hidden');
         if (skillsSection) skillsSection.classList.add('hidden');
         if (equipSection) equipSection.classList.add('hidden');
@@ -476,6 +478,16 @@ function renderPvpPresetMonsterEditorScreen() {
 
     const tmpl = MONSTER_TEMPLATES[m.speciesId];
     const isDualStatType = !!(tmpl && tmpl.dualStatType);
+
+    // ① 基礎ステータス（種族固有の素の値。編成時点でどんな性能かが一目でわかるようにする）
+    if (basestatsSection) {
+        basestatsSection.classList.remove('hidden');
+        const statsEl = document.getElementById('pvp-preset-monster-basestats');
+        if (statsEl && tmpl && tmpl.stats) {
+            const s = tmpl.stats;
+            statsEl.innerHTML = `HP${s.maxLife} / ちから${s.pow} / かしこさ${s.int} / 命中${s.hit} / 回避${s.spd} / 丈夫さ${s.def} / 行動速度${s.moveSpeedRank || 'D'}`;
+        }
+    }
 
     if (statTypeSection) {
         statTypeSection.classList.toggle('hidden', !isDualStatType);
@@ -506,6 +518,10 @@ function renderPvpPresetMonsterEditorScreen() {
             const sk = SKILLS_DB[skKey];
             if (!sk) return;
             const isSelected = m.skills.includes(skKey);
+            const skAura = sk.aura ? AURA_TYPES[sk.aura] : null;
+            const skAuraBadge = skAura
+                ? `<span class="px-1 py-0.5 rounded text-[8px] font-bold text-slate-900 ${skAura.colorClass}">${skAura.emoji}${skAura.name}</span>`
+                : `<span class="px-1 py-0.5 rounded text-[8px] font-bold bg-gray-700 text-gray-300">▫️無属性</span>`;
             const row = document.createElement('div');
             row.className = `p-2 rounded-lg border cursor-pointer active:scale-[0.98] transition-all ${isSelected ? 'bg-sky-900/60 border-sky-400' : 'bg-[#16202b] border-sky-900/30'}`;
             row.onclick = () => togglePvpPresetMonsterSkill(skKey);
@@ -514,6 +530,7 @@ function renderPvpPresetMonsterEditorScreen() {
                     <span class="text-[11px] font-bold text-sky-200">${isSelected ? '✅ ' : ''}${sk.name}</span>
                     <span class="text-[9px] text-gray-500 whitespace-nowrap">GUTS${sk.cost}</span>
                 </div>
+                <div class="flex items-center gap-1 mt-0.5">${skAuraBadge}</div>
                 <div class="text-[9px] text-gray-500 mt-0.5 leading-relaxed">${sk.desc}</div>
             `;
             skillContainer.appendChild(row);

@@ -358,6 +358,25 @@ function enterRealtimeBattleScreen(state) {
 }
 
 // -----------------------------------------------------
+// HPバー・HPテキストの反映のみを行う（ログ表示の進行に合わせて追従させるため、
+// 通常のUI再描画とは独立して呼び出せるようにしてある）
+// hpMap: { player1: {life, maxLife}, player2: {life, maxLife} }
+// -----------------------------------------------------
+function applyRealtimeHpBars(hpMap) {
+    if (!hpMap || !REALTIME_BATTLE.mySlot || !REALTIME_BATTLE.oppSlot) return;
+    const myHp = hpMap[REALTIME_BATTLE.mySlot];
+    const oppHp = hpMap[REALTIME_BATTLE.oppSlot];
+    if (myHp && myHp.maxLife) {
+        document.getElementById('player-hp-text').textContent = `${Math.max(0, myHp.life)}/${myHp.maxLife}`;
+        document.getElementById('player-hp-bar').style.width = `${Math.max(0, (myHp.life / myHp.maxLife) * 100)}%`;
+    }
+    if (oppHp && oppHp.maxLife) {
+        document.getElementById('enemy-hp-text').textContent = `HP: ${Math.max(0, oppHp.life)}/${oppHp.maxLife}`;
+        document.getElementById('enemy-hp-bar').style.width = `${Math.max(0, (oppHp.life / oppHp.maxLife) * 100)}%`;
+    }
+}
+
+// -----------------------------------------------------
 // 画面描画
 // -----------------------------------------------------
 function renderRealtimeBattleUI(state) {
@@ -429,8 +448,6 @@ function renderRealtimeBattleUI(state) {
     document.getElementById('battle-enemy-type').textContent = opp.name;
     renderAuraBadge('enemy-aura-badge', opp.aura, opp.monsterBaseName);
     renderStatusAilmentBadge('enemy-status-badge', opp);
-    document.getElementById('enemy-hp-text').textContent = `HP: ${opp.life}/${opp.maxLife}`;
-    document.getElementById('enemy-hp-bar').style.width = `${Math.max(0, (opp.life / opp.maxLife) * 100)}%`;
     document.getElementById('enemy-guts-text').textContent = Math.floor(opp.guts);
     document.getElementById('enemy-guts-bar').style.width = `${opp.guts}%`;
 
@@ -442,8 +459,19 @@ function renderRealtimeBattleUI(state) {
     document.getElementById('battle-player-name').textContent = me.name;
     renderAuraBadge('player-aura-badge', me.aura, me.monsterBaseName);
     renderStatusAilmentBadge('player-status-badge', me);
-    document.getElementById('player-hp-text').textContent = `${me.life}/${me.maxLife}`;
-    document.getElementById('player-hp-bar').style.width = `${Math.max(0, (me.life / me.maxLife) * 100)}%`;
+    // HPバー・HPテキストは「ログ表示の進行に合わせて追従」させたいため、ログの順次表示
+    // （processRealtimeLogQueue）が進行中／未消化の間はここで即座に最終値へジャンプさせない。
+    // 各ログ行のHPスナップショット（revealNext内のapplyRealtimeHpBars呼び出し）が反映していく。
+    // ログが何も残っていない場合（画面遷移直後・再接続直後など）はここで即時反映する。
+    REALTIME_BATTLE.pendingFinalHp = {
+        player1: { life: Math.max(0, Math.round(state.teams.player1.units[state.teams.player1.activeIdx].life)), maxLife: state.teams.player1.units[state.teams.player1.activeIdx].maxLife },
+        player2: { life: Math.max(0, Math.round(state.teams.player2.units[state.teams.player2.activeIdx].life)), maxLife: state.teams.player2.units[state.teams.player2.activeIdx].maxLife }
+    };
+    const logAnimationPending = REALTIME_BATTLE.isRevealingLog ||
+        (REALTIME_BATTLE.logRevealQueue && REALTIME_BATTLE.logRevealQueue.length > 0);
+    if (!logAnimationPending) {
+        applyRealtimeHpBars(REALTIME_BATTLE.pendingFinalHp);
+    }
     document.getElementById('guts-number').textContent = Math.floor(me.guts);
     document.getElementById('guts-progress-bar').style.width = `${me.guts}%`;
 
@@ -821,6 +849,11 @@ function processRealtimeLogQueue() {
     function revealNext() {
         if (!REALTIME_BATTLE.active || !REALTIME_BATTLE.logRevealQueue || REALTIME_BATTLE.logRevealQueue.length === 0) {
             REALTIME_BATTLE.isRevealingLog = false;
+            // 全てのログ行を見せ終えた時点で、念のため真の最終HPへ揃える（HPスナップショットを
+            // 持たないログ行が最後だった場合などのズレ防止。既に一致していれば見た目上の変化はない）
+            if (REALTIME_BATTLE.active && REALTIME_BATTLE.pendingFinalHp) {
+                applyRealtimeHpBars(REALTIME_BATTLE.pendingFinalHp);
+            }
             // 保留中の「新ターンに入ったのでログを閉じたい」要求があれば、
             // ここで直前ターンのログを全て見せ終えた後に閉じる
             resolveRealtimeLogAutoHideIfPending();
@@ -828,6 +861,8 @@ function processRealtimeLogQueue() {
         }
         const entry = REALTIME_BATTLE.logRevealQueue.shift();
         addLog(entry.text);
+        // ログ表示の進行に合わせてHPバーを追従させる：このログ行に紐づくHPスナップショットがあれば反映する
+        if (entry.hp) applyRealtimeHpBars(entry.hp);
         // HIT/回避/クリティカルなど、CPU戦と同じ演出をログ内容から再現する
         triggerRealtimeCombatEffects(entry);
         // 根性の発動は状態を持続保存しないため、ログのタイミングで一時演出を出す（CPU戦と同じ表現）
@@ -1413,9 +1448,23 @@ function buildRealtimeTurnActionDescriptor(unit, action) {
 // この関数を使い、resultLogsの各行に「実際にその行動を行った陣営（actorSlot）」を
 // 個別に記録することで、演出側（triggerRealtimeCombatEffects）が両クライアントで
 // 正しい側に効果を表示できるようにする。
+// ログ表示の進行に合わせてHPバーを追従させるため、ログ1行を積む「その瞬間」の
+// 両陣営アクティブモンスターのHPをスナップショットとして一緒に持たせる。
+// REALTIME_BATTLE.txSnapshotState は resolveRealtimeTurn() の先頭で、そのトランザクション中の
+// current（state）を指すように設定される（同一トランザクション内は完全に同期実行のため安全）。
 function pushRealtimeLog(resultLogs, actorSlot, text) {
     if (text === undefined || text === null) return;
-    resultLogs.push({ text, actor: actorSlot });
+    const entry = { text, actor: actorSlot };
+    const cur = REALTIME_BATTLE.txSnapshotState;
+    if (cur && cur.teams && cur.teams.player1 && cur.teams.player2) {
+        const p1 = cur.teams.player1.units[cur.teams.player1.activeIdx];
+        const p2 = cur.teams.player2.units[cur.teams.player2.activeIdx];
+        entry.hp = {
+            player1: p1 ? { life: Math.max(0, Math.round(p1.life)), maxLife: p1.maxLife } : null,
+            player2: p2 ? { life: Math.max(0, Math.round(p2.life)), maxLife: p2.maxLife } : null
+        };
+    }
+    resultLogs.push(entry);
 }
 
 function checkRealtimeFaintAndWin(current, teamSlot, otherSlot, resultLogs) {
@@ -1916,6 +1965,8 @@ function startRealtimeNextTurn(current, aSlot, bSlot, resultLogs) {
 // --- 双方の行動が揃った瞬間に呼ばれる：行動順を決定し、先攻→後攻の順に解決する ---
 // （固定のホストは存在せず、"揃えた"transactionがそのままこの関数を呼び出して解決役になる）
 function resolveRealtimeTurn(current, aSlot, bSlot, resultLogs) {
+    // このトランザクション実行中、pushRealtimeLog()がHPスナップショットを取れるようにする
+    REALTIME_BATTLE.txSnapshotState = current;
     const pending = current.pendingActions;
     const aAction = pending[aSlot];
     const bAction = pending[bSlot];
@@ -2057,7 +2108,8 @@ async function performRealtimeAction(action) {
                 // 「自分の行動」として演出されてしまっていた。
                 const text = (typeof entry === 'string') ? entry : entry.text;
                 const actor = (typeof entry === 'string') ? mySlot : (entry.actor || mySlot);
-                await logRef.push({ turn: committedTurnNumber, actor, text, ts: Date.now() });
+                const hp = (typeof entry === 'object' && entry.hp) ? entry.hp : null;
+                await logRef.push({ turn: committedTurnNumber, actor, text, ts: Date.now(), hp });
             }
         }
     } catch (e) {
@@ -2296,6 +2348,8 @@ function resetRealtimeBattleClientState() {
     REALTIME_BATTLE.logRevealQueue = [];
     REALTIME_BATTLE.isRevealingLog = false;
     REALTIME_BATTLE.pendingLogHide = false;
+    REALTIME_BATTLE.pendingFinalHp = null;
+    REALTIME_BATTLE.txSnapshotState = null;
     if (REALTIME_BATTLE.pendingLogHideTimer) {
         clearTimeout(REALTIME_BATTLE.pendingLogHideTimer);
         REALTIME_BATTLE.pendingLogHideTimer = null;
