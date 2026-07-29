@@ -1606,7 +1606,11 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
         }
         const sk = getRealtimeEffectiveSkill(me, action.key);
         const mods = getGutsModifiers(me.guts);
+        // ドロン等「連続使用」判定を使う技のために、更新前の「直近に使った技」を先に控えておく
+        // （me.lastSkillKeyUsed をこの後すぐ今回の技で上書きするため、判定に使う値は先に退避する）
+        const previousSkillKeyUsed = me.lastSkillKeyUsed;
         me.guts -= sk.cost;
+        me.lastSkillKeyUsed = action.key;
         pushRealtimeLog(resultLogs, actingSlot, `${me.name} の【${sk.name}】！`);
         // 技発動時（命中判定に関わらず）の自己強化効果（アサルトダンス等）
         applySkillOnUseEffect(me, sk).forEach(msg => pushRealtimeLog(resultLogs, actingSlot, msg.detail));
@@ -1835,6 +1839,19 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                 const selfDamage = Math.max(1, Math.floor(me.maxLife * selfDamagePct));
                 me.life = Math.max(0, me.life - selfDamage);
                 pushRealtimeLog(resultLogs, actingSlot, `💥 ${me.name} はぬいぐるみを作り出す反動で、自身のライフが ${selfDamage} 減少した！(現在: ${Math.floor(me.life)})`);
+            }
+        } else if (sk.type === 'evade') {
+            // 回避技（ドロン等）：このターンの相手の攻撃を完全回避する構えを取る。
+            // 直前の自分の行動が「同じ技」だった場合（＝連続使用）、成功率が
+            // sk.consecutiveSuccessRate（既定33%）に低下する。成功時のみ dodgeNextGuaranteed を立てる。
+            const isConsecutive = previousSkillKeyUsed === action.key;
+            const successChance = isConsecutive ? (sk.consecutiveSuccessRate != null ? sk.consecutiveSuccessRate : 0.33) : 1.0;
+            const success = Math.random() < successChance;
+            if (success) {
+                me.dodgeNextGuaranteed = true;
+                pushRealtimeLog(resultLogs, actingSlot, `💨 ${me.name} は素早く姿を消し、このターンの相手の攻撃を完全に回避する構えを取った！`);
+            } else {
+                pushRealtimeLog(resultLogs, actingSlot, `💦 ${me.name} は連続使用の反動で姿を消せなかった！（このターンは回避効果が発動しない）`);
             }
         }
     } else if (action.kind === 'defend') {
