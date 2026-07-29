@@ -1494,6 +1494,64 @@ function checkRealtimeFaintAndWin(current, teamSlot, otherSlot, resultLogs) {
     return 'needSwitch';
 }
 
+// --- 双方の陣営を同時にチェックし、戦闘不能・勝敗・引き分け・強制交代を判定する ---
+// ・みちづれの相打ち等、1回の行動解決／ターン開始処理で両陣営が同時に戦闘不能になる
+//   ケースがあるため、片方だけ見て早期return（checkRealtimeFaintAndWinの呼び出し元で
+//   'ko'/'needSwitch'が出た時点でbreakしていた旧実装）してしまうと、もう片方の
+//   戦闘不能判定が漏れ、「ライフ0のまま場に残り、次のターンでようやく倒された扱いになる」
+//   不具合の原因になっていた。必ず両陣営分をチェックしてから結果を確定する。
+// 戻り値: 'none' / 'ko' / 'needSwitch'
+function checkRealtimeBothSidesFaint(current, slotA, slotB, resultLogs) {
+    const teamA = current.teams[slotA];
+    const teamB = current.teams[slotB];
+    const unitA = teamA.units[teamA.activeIdx];
+    const unitB = teamB.units[teamB.activeIdx];
+
+    const aFainted = !!unitA && unitA.life <= 0;
+    const bFainted = !!unitB && unitB.life <= 0;
+    if (!aFainted && !bFainted) return 'none';
+
+    if (aFainted) pushRealtimeLog(resultLogs, slotA, `💥 ${unitA.name} は戦闘不能になった！`);
+    if (bFainted) pushRealtimeLog(resultLogs, slotB, `💥 ${unitB.name} は戦闘不能になった！`);
+
+    const aOut = aFainted && findFirstAliveIdx(teamA) === -1;
+    const bOut = bFainted && findFirstAliveIdx(teamB) === -1;
+
+    if (aOut && bOut) {
+        // みちづれ等による相打ち：両陣営とも控えがいない場合は引き分けにする
+        current.status = 'finished';
+        current.winner = null;
+        current.winReason = 'draw';
+        pushRealtimeLog(resultLogs, slotA, `💥 両者のマスモンが相打ちで同時に戦闘不能になった！引き分け！`);
+        return 'ko';
+    }
+    if (aOut || bOut) {
+        const winnerSlot = aOut ? slotB : slotA;
+        current.status = 'finished';
+        current.winner = winnerSlot;
+        current.winReason = 'ko';
+        const winnerTeam = current.teams[winnerSlot];
+        const winnerUnit = winnerTeam.units[winnerTeam.activeIdx];
+        pushRealtimeLog(resultLogs, winnerSlot, `${winnerUnit ? winnerUnit.name : (current.ownerNames && current.ownerNames[winnerSlot])} の勝利！`);
+        return 'ko';
+    }
+
+    // どちらか（または両方）が戦闘不能で、かつ控えがいる場合は強制交代待ちにする
+    current.pendingForcedSwitch = current.pendingForcedSwitch || {};
+    current.turnDeadline = Date.now() + REALTIME_TURN_TIME_LIMIT_MS;
+    if (aFainted) {
+        current.pendingForcedSwitch[slotA] = true;
+        const ownerLabelA = current.ownerNames ? current.ownerNames[slotA] : '相手';
+        pushRealtimeLog(resultLogs, slotA, `${ownerLabelA}は次に出すマスモンを選んでいる…`);
+    }
+    if (bFainted) {
+        current.pendingForcedSwitch[slotB] = true;
+        const ownerLabelB = current.ownerNames ? current.ownerNames[slotB] : '相手';
+        pushRealtimeLog(resultLogs, slotB, `${ownerLabelB}は次に出すマスモンを選んでいる…`);
+    }
+    return 'needSwitch';
+}
+
 // --- 1体分の行動を実際に解決する（技効果計算・ガッツ消費・交代・アイテム使用など） ---
 // action は { kind: 'skill'|'defend'|'switch'|'item'|'pass', key?, targetIdx? }
 // ★ ガッツは実行「直前」の値で判定する：
@@ -1944,14 +2002,12 @@ function startRealtimeNextTurn(current, aSlot, bSlot, resultLogs) {
     applyRealtimeTurnStartEffects(aUnit, bUnit, resultLogs, aSlot);
     applyRealtimeTurnStartEffects(bUnit, aUnit, resultLogs, bSlot);
 
-    const aResult = checkRealtimeFaintAndWin(current, aSlot, bSlot, resultLogs);
-    const battleOver = aResult === 'ko';
-    let needSwitch = aResult === 'needSwitch';
-    if (!battleOver) {
-        const bResult = checkRealtimeFaintAndWin(current, bSlot, aSlot, resultLogs);
-        if (bResult === 'ko') return; // current.statusは既にfinished済み
-        if (bResult === 'needSwitch') needSwitch = true;
-    }
+    // 両陣営を同時にチェックする（片方だけ見て確定させると、みちづれの相打ち等で
+    // 同時に戦闘不能になったもう一方の判定が漏れてしまうため）
+    const faintResult = checkRealtimeBothSidesFaint(current, aSlot, bSlot, resultLogs);
+    if (faintResult === 'ko') return; // current.statusは既にfinished済み
+    const battleOver = false;
+    const needSwitch = faintResult === 'needSwitch';
 
     // 戦闘不能で強制交代待ちの陣営がある場合、そちらの選択が揃うまで次のターンには進めない
     // （performRealtimeForcedSwitchが両陣営分解決した時点で改めてpendingActions/turnNumberを進める）
@@ -2004,15 +2060,14 @@ function resolveRealtimeTurn(current, aSlot, bSlot, resultLogs) {
 
         resolveOneRealtimeAction(current, actingSlot, otherSlot, pending[actingSlot], resultLogs);
 
-        // 相手側→自分側の順にチェック（攻撃で相手が倒れていないか／反動等で自滅していないか）
-        // ・'ko' ならバトル終了、'needSwitch' なら「その陣営が交代先を選ぶまで」このターンの
+        // 両陣営を同時にチェック（攻撃で相手が倒れていないか／みちづれの相打ちで自分も
+        // 倒れていないか）。片方だけ見て早期にbreakすると、みちづれの反動で同時に
+        // 戦闘不能になったもう一方の判定が漏れてしまうため、必ず両方まとめて判定する。
+        // ・'ko' ならバトル終了、'needSwitch' なら「該当陣営が交代先を選ぶまで」このターンの
         //   残りの行動（後攻側の行動）は実行せず打ち切る（CPU戦の強制交代と同じ考え方）。
-        const r1 = checkRealtimeFaintAndWin(current, otherSlot, actingSlot, resultLogs);
-        if (r1 === 'ko') { battleOver = true; break; }
-        if (r1 === 'needSwitch') { needSwitch = true; break; }
-        const r2 = checkRealtimeFaintAndWin(current, actingSlot, otherSlot, resultLogs);
-        if (r2 === 'ko') { battleOver = true; break; }
-        if (r2 === 'needSwitch') { needSwitch = true; break; }
+        const faintResult = checkRealtimeBothSidesFaint(current, otherSlot, actingSlot, resultLogs);
+        if (faintResult === 'ko') { battleOver = true; break; }
+        if (faintResult === 'needSwitch') { needSwitch = true; break; }
     }
 
     if (!battleOver && !needSwitch) {
@@ -2217,12 +2272,13 @@ async function handleRealtimeBattleEnd(state) {
     detachRealtimeBattleListeners();
 
     const mySlot = REALTIME_BATTLE.mySlot;
-    const isWin = state.winner === mySlot;
+    const isDraw = state.winReason === 'draw' || state.winner == null;
+    const isWin = !isDraw && state.winner === mySlot;
     const reasonText = state.winReason === 'disconnect' ? '（相手の通信切断による不戦勝）'
         : state.winReason === 'surrender' ? (isWin ? '（相手の投了）' : '（投了）')
         : '';
 
-    showEffect(isWin ? '🏆 WIN!! 🏆' : '💀 LOSE... 💀');
+    showEffect(isDraw ? '🤝 DRAW... 🤝' : (isWin ? '🏆 WIN!! 🏆' : '💀 LOSE... 💀'));
 
     // PvPレーティング反映：両クライアントが呼び出すが、先着1回のみ実際に反映される
     try {
@@ -2231,10 +2287,10 @@ async function handleRealtimeBattleEnd(state) {
         console.error('[PvPレート] 反映処理エラー:', e);
     }
 
-    setTimeout(() => showRealtimeBattleResult(state, isWin, reasonText), typeof scaledBattleDelay === 'function' ? scaledBattleDelay(1200) : 1200);
+    setTimeout(() => showRealtimeBattleResult(state, isWin, reasonText, isDraw), typeof scaledBattleDelay === 'function' ? scaledBattleDelay(1200) : 1200);
 }
 
-function showRealtimeBattleResult(state, isWin, reasonText) {
+function showRealtimeBattleResult(state, isWin, reasonText, isDraw) {
     ACTIVE_BATTLE_MODE = 'adventure';
 
     const mySlot = REALTIME_BATTLE.mySlot;
@@ -2254,7 +2310,14 @@ function showRealtimeBattleResult(state, isWin, reasonText) {
     const subtitle = document.getElementById('masmon-result-subtitle');
     const detail = document.getElementById('masmon-result-detail');
 
-    if (isWin) {
+    if (isDraw) {
+        badge.textContent = '🤝';
+        title.textContent = 'DRAW...';
+        title.className = 'text-2xl font-black text-gray-300 pixel-font';
+        subtitle.textContent = isTeam
+            ? `【${myNames}】のチームと【${oppOwnerName}】のチームは相打ちで引き分けた！${reasonText}`
+            : `【${me.name}】と【${oppOwnerName}】の【${opp.name}】は相打ちで引き分けた！${reasonText}`;
+    } else if (isWin) {
         badge.textContent = '🏆';
         title.textContent = 'VICTORY!';
         title.className = 'text-2xl font-black text-amber-500 pixel-font';
