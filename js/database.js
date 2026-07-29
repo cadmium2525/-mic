@@ -43,6 +43,48 @@ function getRandomAuraKey() {
 }
 
 // =====================================================
+// バトルステージ（背景）データベース
+// ガッツファクトリー／エンドレスモード／PvPで共通利用するバトル背景。
+// 各背景は特定のオーラ色を持つモンスターにステータスボーナスを与える
+// （闘技場のみボーナス無しの通常ステージ）。
+// どの画面から使うかは未定のため、まずはいつでも呼び出せる形で用意しておく。
+// 既定値は 'arena'（従来通りボーナス無し）なので、setBattleStage()を
+// 呼ばない限りこれまでの挙動は一切変わらない。
+// =====================================================
+const BATTLE_STAGES = {
+    arena:   { key: 'arena',   name: '闘技場', image: 'images/battle/arena.png',   auraBonus: null },
+    volcano: { key: 'volcano', name: '火山',   image: 'images/battle/volcano.png', auraBonus: 'red' },
+    forest:  { key: 'forest',  name: '森林',   image: 'images/battle/forest.png',  auraBonus: 'green' },
+    coast:   { key: 'coast',   name: '海岸',   image: 'images/battle/coast.png',   auraBonus: 'blue' },
+    desert:  { key: 'desert',  name: '砂漠',   image: 'images/battle/desert.png',  auraBonus: 'yellow' }
+};
+const BATTLE_STAGE_AURA_BONUS_MULTIPLIER = 1.2;
+
+// 現在選択中のバトルステージ（未設定時は闘技場＝ボーナス無し）
+let CURRENT_BATTLE_STAGE_KEY = 'arena';
+
+// --- 指定したオーラ色のモンスターが、現在のステージのボーナス対象かどうかに応じた倍率を返す ---
+function getBattleStageStatMultiplier(auraKey) {
+    const stage = BATTLE_STAGES[CURRENT_BATTLE_STAGE_KEY];
+    if (!stage || !stage.auraBonus || !auraKey) return 1;
+    return stage.auraBonus === auraKey ? BATTLE_STAGE_AURA_BONUS_MULTIPLIER : 1;
+}
+
+// --- バトル背景（ステージ）を切り替える ---
+// 以後に生成されるバトルユニットのステータス計算（getBattleStageStatMultiplier）と、
+// 画面上の .battle-field-bg の背景画像の両方に反映される。
+// バトル開始前（ユニット変換より前）に呼び出すこと。
+function setBattleStage(stageKey) {
+    CURRENT_BATTLE_STAGE_KEY = BATTLE_STAGES[stageKey] ? stageKey : 'arena';
+    const stage = BATTLE_STAGES[CURRENT_BATTLE_STAGE_KEY];
+    const bgEl = document.querySelector('.battle-field-bg');
+    if (bgEl && stage) {
+        bgEl.style.backgroundImage =
+            `linear-gradient(180deg, rgba(24, 17, 13, 0.55) 0%, rgba(24, 17, 13, 0.15) 30%, rgba(24, 17, 13, 0.15) 65%, rgba(24, 17, 13, 0.75) 100%), url('${stage.image}')`;
+    }
+}
+
+// =====================================================
 // モン類データベース（新要素）
 // モンスターの種族ごとに固定で割り振られる分類。オーラとは異なり、
 // 育成中の付与や抽選ではなく、種族固有の性質として常に決まっている。
@@ -1484,6 +1526,32 @@ function applyDotDamageAndBuildLogs(name, result, getLife, setLife) {
 // opponent: そのダメージ・状態異常の原因となった相手
 // getOpponentLife/setOpponentLife: opponent側のライフ読み書き（stats.lifeかlifeかの構造差を吸収）
 // 戻り値: 発動時はログ文字列、発動しなければnull
+// --- 指定した技の「1バトルあたりの最大使用回数」を取得する（未設定なら null＝無制限） ---
+// CPU戦・PvP双方で共通利用する（unit.skillUseCounts を持つユニットであれば形式を問わない）。
+function getSkillMaxUses(skKey) {
+    const sk = SKILLS_DB[skKey];
+    return (sk && sk.maxUses) || null;
+}
+
+// --- 指定ユニットが指定の技をこれまで何回使用したかを取得する ---
+function getSkillUseCount(unit, skKey) {
+    return (unit && unit.skillUseCounts && unit.skillUseCounts[skKey]) || 0;
+}
+
+// --- 指定ユニットが指定の技をもう使用できない（上限に達している）かどうかを判定する ---
+function isSkillUseLimitReached(unit, skKey) {
+    const maxUses = getSkillMaxUses(skKey);
+    if (!maxUses) return false;
+    return getSkillUseCount(unit, skKey) >= maxUses;
+}
+
+// --- 技の使用回数を1回分カウントアップする（実際に技を繰り出した時点で呼ぶ） ---
+function incrementSkillUseCount(unit, skKey) {
+    if (!unit) return;
+    if (!unit.skillUseCounts) unit.skillUseCounts = {};
+    unit.skillUseCounts[skKey] = (unit.skillUseCounts[skKey] || 0) + 1;
+}
+
 function checkMichizureTrigger(unit, opponent, getUnitLife, getOpponentLife, setOpponentLife) {
     if (!unit || !opponent) return null;
     if (!unit.michizureActive) return null;

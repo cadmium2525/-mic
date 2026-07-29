@@ -155,19 +155,22 @@ async function initializeRealtimeBattleState() {
 function convertRoomMasmonToRealtimeUnit(masmon) {
     const s = masmon.stats;
     const equipBonus = getEquipmentStatBonuses(masmon.equip);
+    // バトルステージ（背景）によるオーラ属性ボーナス（例：火山×赤オーラで1.2倍）。
+    // setBattleStage()が呼ばれていなければ常に1倍＝従来通り。
+    const stageMult = getBattleStageStatMultiplier(masmon.aura || null);
     return {
         name: masmon.name,
         emoji: masmon.emoji,
         monsterBaseName: masmon.monsterBaseName || masmon.name,
         aura: masmon.aura || null,
         isAwakened: !!masmon.isAwakened,
-        life: s.maxLife + equipBonus.maxLife,
-        maxLife: s.maxLife + equipBonus.maxLife,
-        pow: s.pow + equipBonus.pow,
-        int: s.int + equipBonus.int,
-        hit: s.hit + equipBonus.hit,
-        spd: s.spd + equipBonus.spd,
-        def: s.def + equipBonus.def,
+        life: Math.round((s.maxLife + equipBonus.maxLife) * stageMult),
+        maxLife: Math.round((s.maxLife + equipBonus.maxLife) * stageMult),
+        pow: Math.round((s.pow + equipBonus.pow) * stageMult),
+        int: Math.round((s.int + equipBonus.int) * stageMult),
+        hit: Math.round((s.hit + equipBonus.hit) * stageMult),
+        spd: Math.round((s.spd + equipBonus.spd) * stageMult),
+        def: Math.round((s.def + equipBonus.def) * stageMult),
         gutsSpeed: s.gutsSpeed || 14,
         // 移動速度（行動順決定用。旧セーブデータには存在しない場合があるため種族名から補完する）
         moveSpeed: getMoveSpeedForMasmon(masmon),
@@ -202,7 +205,10 @@ function convertRoomMasmonToRealtimeUnit(masmon) {
         equipLifesaverUsed: false,           // 装備の特殊効果を使用済みか
         equipEnduranceUsed: false,           // 装備の特殊効果（ライフ0撃破を1度だけライフ1で耐える）を使用済みか
         skills: [...(masmon.skills || [])],
-        skillEnhancements: JSON.parse(JSON.stringify(masmon.skillEnhancements || {}))
+        skillEnhancements: JSON.parse(JSON.stringify(masmon.skillEnhancements || {})),
+        // 技ごとの使用回数（バトル中通算。交代しても引き継がれる＝ユニット単位）。
+        // SKILLS_DB側で maxUses が定義されている技（例：八重ざくら）のみ、この回数と比較して使用制限をかける。
+        skillUseCounts: {}
     };
 }
 
@@ -1007,7 +1013,10 @@ function renderRealtimeBattleSkills(state) {
         else if (rank === 'E') rankColor = 'text-blue-500';
         else if (rank === 'F') rankColor = 'text-purple-500';
 
-        const canUse = isMyTurn && me.guts >= sk.cost;
+        const useCount = getSkillUseCount(me, skKey);
+        const maxUses = getSkillMaxUses(skKey);
+        const useLimitReached = isSkillUseLimitReached(me, skKey);
+        const canUse = isMyTurn && me.guts >= sk.cost && !useLimitReached;
 
         // 技強化状態の判定（マスモン登録時に保存された強化データを反映。育成中のバトルと同じ表記にする）
         const enh = me.skillEnhancements && me.skillEnhancements[skKey];
@@ -1055,6 +1064,9 @@ function renderRealtimeBattleSkills(state) {
         const enhBadge = isEnhanced
             ? `<span class="text-[8px] bg-purple-900 text-purple-200 px-1 py-0.5 rounded font-bold ml-1">⚔️Lv.${enh.level}</span>`
             : '';
+        const useCountBadge = maxUses
+            ? `<span class="text-[8px] ${useLimitReached ? 'bg-red-900 text-red-200' : 'bg-stone-800 text-stone-300'} px-1 py-0.5 rounded font-bold ml-1">残り:${maxUses - useCount}/${maxUses}</span>`
+            : '';
         // 技オーラ（技自体が持つ属性）を絵文字バッジで表示する
         const auraBadge = sk.aura && AURA_TYPES[sk.aura]
             ? `<span class="text-[10px] ml-0.5" title="技オーラ: ${AURA_TYPES[sk.aura].name}">${AURA_TYPES[sk.aura].emoji}</span>`
@@ -1076,7 +1088,7 @@ function renderRealtimeBattleSkills(state) {
 
         btn.innerHTML = `
             <div class="flex justify-between items-center w-full">
-                <span class="font-bold text-xs">${sk.name} ${typeIcon}${auraBadge}${enhBadge} <span class="ml-1 text-[10px] ${rankColor} bg-[#1a120b]/10 px-1 py-0.2 rounded">ランク:${rank}</span></span>
+                <span class="font-bold text-xs">${sk.name} ${typeIcon}${auraBadge}${enhBadge}${useCountBadge} <span class="ml-1 text-[10px] ${rankColor} bg-[#1a120b]/10 px-1 py-0.2 rounded">ランク:${rank}</span></span>
                 <span class="text-[9px] font-bold">G:${sk.cost}</span>
             </div>
             <div class="flex justify-between items-center mt-0.5 w-full">
@@ -1351,6 +1363,28 @@ async function performRealtimeForcedSwitch(targetIdx) {
             resultLogs.push(`${ownerLabel}は【${target.name}】を繰り出した！`);
             delete current.pendingForcedSwitch[mySlot];
 
+            // ステルスロック等：交代直後にダメージで倒れてしまった場合は再度交代先を選ばせる（控えがいれば）
+            const hazardLog = applyRealtimeStealthRockDamage(myTeam, target);
+            if (hazardLog) resultLogs.push(hazardLog);
+            if (target.life <= 0) {
+                const nextIdx = findFirstAliveIdx(myTeam);
+                if (nextIdx === -1) {
+                    current.status = 'finished';
+                    current.winner = oppSlot;
+                    current.winReason = 'ko';
+                    const oppTeam = current.teams[oppSlot];
+                    const oppUnit = oppTeam.units[oppTeam.activeIdx];
+                    resultLogs.push({ text: `${oppUnit ? oppUnit.name : (current.ownerNames && current.ownerNames[oppSlot])} の勝利！`, actor: oppSlot });
+                    current.lastActionAt = Date.now();
+                    return current;
+                }
+                current.pendingForcedSwitch[mySlot] = true;
+                current.turnDeadline = Date.now() + REALTIME_TURN_TIME_LIMIT_MS;
+                resultLogs.push(`${ownerLabel}は次に出すマスモンを選んでいる…`);
+                current.lastActionAt = Date.now();
+                return current;
+            }
+
             const stillWaitingOpponent = !!(current.pendingForcedSwitch && current.pendingForcedSwitch[oppSlot]);
             if (!stillWaitingOpponent) {
                 // 双方の強制交代が解決した（相手側は元々不要だった場合も含む）＝次のターンへ進める
@@ -1390,6 +1424,17 @@ function findFirstAliveIdx(teamObj) {
         if (teamObj.units[i].life > 0) return i;
     }
     return -1;
+}
+
+// --- ステルスロック・まきびし等：モンスターが場に出た瞬間のダメージを適用する ---
+// team: そのユニットが所属する陣営（team.fieldStealthRockに設置済みの技名を保持）
+// 戻り値: ダメージを与えた場合はログ文字列、効果が無ければ null（unit.lifeは直接更新する）
+function applyRealtimeStealthRockDamage(team, unit) {
+    if (!unit || unit.life <= 0 || !team.fieldStealthRock) return null;
+    const hazardName = (typeof team.fieldStealthRock === 'string') ? team.fieldStealthRock : 'ステルスロック';
+    const dmg = Math.max(1, Math.floor(unit.maxLife / 8));
+    unit.life = Math.max(0, unit.life - dmg);
+    return `🪨 ${unit.name} は${hazardName}でダメージを受けた！（${dmg}ダメージ、現在: ${Math.floor(unit.life)}）`;
 }
 
 // --- 行動送信中、技・防御・アイテム・交代ボタンをまとめて無効化する（リアルタイム対戦専用） ---
@@ -1599,9 +1644,14 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
 
     if (action.kind === 'skill') {
         const rawSk = SKILLS_DB[action.key];
-        // ★ 実行直前の再チェック（提出時点では合法でも、先攻の行動でガッツを削られている場合がある）
+        // ★ 実行直前の再チェック（提出時点では合法でも、先攻の行動でガッツを削られている・
+        //   使用回数の上限に達している場合がある）
         if (!rawSk || !me.skills.includes(action.key) || me.guts < rawSk.cost) {
             pushRealtimeLog(resultLogs, actingSlot, `💦 ${me.name} はガッツが足りず、技を繰り出せなかった！`);
+            return;
+        }
+        if (isSkillUseLimitReached(me, action.key)) {
+            pushRealtimeLog(resultLogs, actingSlot, `💦 ${me.name} は【${rawSk.name}】をこれ以上使えない！（使用回数の上限に達している）`);
             return;
         }
         const sk = getRealtimeEffectiveSkill(me, action.key);
@@ -1611,6 +1661,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
         const previousSkillKeyUsed = me.lastSkillKeyUsed;
         me.guts -= sk.cost;
         me.lastSkillKeyUsed = action.key;
+        incrementSkillUseCount(me, action.key);
         pushRealtimeLog(resultLogs, actingSlot, `${me.name} の【${sk.name}】！`);
         // 技発動時（命中判定に関わらず）の自己強化効果（アサルトダンス等）
         applySkillOnUseEffect(me, sk).forEach(msg => pushRealtimeLog(resultLogs, actingSlot, msg.detail));
@@ -1853,6 +1904,17 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             } else {
                 pushRealtimeLog(resultLogs, actingSlot, `💦 ${me.name} は連続使用の反動で姿を消せなかった！（このターンは回避効果が発動しない）`);
             }
+        } else if (sk.type === 'hazard') {
+            // 設置技（ステルスロック・まきびし等）：相手フィールドに罠を設置する。
+            // 一度設置すると、相手はこれ以降モンスターを交代して繰り出すたびに最大ライフの1/8のダメージを受ける（永続）。
+            const already = !!otherTeam.fieldStealthRock;
+            otherTeam.fieldStealthRock = sk.name;
+            const verb = sk.logVerb || `${sk.name}を設置した`;
+            if (already) {
+                pushRealtimeLog(resultLogs, actingSlot, `🪨 相手の場にはすでに効果がある！`);
+            } else {
+                pushRealtimeLog(resultLogs, actingSlot, `🪨 ${me.name} は相手のフィールド上に${verb}！（相手はこれ以降、モンスターを交代して繰り出すたびにダメージを受ける）`);
+            }
         }
     } else if (action.kind === 'defend') {
         me.isDefending = true;
@@ -1876,6 +1938,8 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
         clearBattleStatModifiersOnSwitch(me);
         actingTeam.activeIdx = targetIdx;
         pushRealtimeLog(resultLogs, actingSlot, `${prevName} を引っ込め、【${target.name}】を繰り出した！`);
+        const hazardLog = applyRealtimeStealthRockDamage(actingTeam, target);
+        if (hazardLog) pushRealtimeLog(resultLogs, actingSlot, hazardLog);
     } else if (action.kind === 'item') {
         const key = action.key;
         if (!myItems || !myItems[key] || myItems[key] <= 0) {

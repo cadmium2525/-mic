@@ -159,6 +159,10 @@ function chooseAutoBattleAction() {
 function toggleBattleFastMode() {
     BATTLE_FAST_MODE = !BATTLE_FAST_MODE;
     try { localStorage.setItem('mfload_battle_fast_mode', BATTLE_FAST_MODE ? '1' : '0'); } catch (e) { /* ignore */ }
+    // モンスターの攻撃モーション（skill_effects.js側）の再生速度も高速モードに追従させる。
+    // これをしないと、演出の「間」だけ半分になってモーション本体の再生が追いつかず、
+    // 次のモーションと重なって表示が崩れてしまう。
+    if (typeof updateEffectSpeedMultiplier === 'function') updateEffectSpeedMultiplier();
     updateBattleFastModeButtonUI();
 }
 
@@ -254,19 +258,24 @@ function convertMasmonToBattleUnit(masmonData, equippedItem) {
         equippedItem: equippedItem || null,      // 装備している装備アイテムインスタンス（PvP専用）
         equipLifesaverUsed: false,               // 装備の特殊効果（残りライフ3割で1度だけ回復等）を使用済みか
         equipEnduranceUsed: false,               // 装備の特殊効果（ライフ0撃破を1度だけライフ1で耐える）を使用済みか
-        stats: {
-            maxLife: masmonData.stats.maxLife + equipBonus.maxLife,
-            life: masmonData.stats.maxLife + equipBonus.maxLife,
-            pow: masmonData.stats.pow + equipBonus.pow,
-            int: masmonData.stats.int + equipBonus.int,
-            hit: masmonData.stats.hit + equipBonus.hit,
-            spd: masmonData.stats.spd + equipBonus.spd,
-            def: masmonData.stats.def + equipBonus.def,
-            gutsSpeed: masmonData.stats.gutsSpeed || 14,
-            // 移動速度（行動順決定用。旧セーブデータには存在しない場合があるため種族名から補完する）
-            moveSpeed: getMoveSpeedForMasmon(masmonData),
-            moveSpeedRank: getMoveSpeedRankForMasmon(masmonData)
-        },
+        stats: (() => {
+            // バトルステージ（背景）によるオーラ属性ボーナス（例：火山×赤オーラで1.2倍）。
+            // setBattleStage()が呼ばれていなければ常に1倍＝従来通り。
+            const stageMult = getBattleStageStatMultiplier(masmonData.aura || null);
+            return {
+                maxLife: Math.round((masmonData.stats.maxLife + equipBonus.maxLife) * stageMult),
+                life: Math.round((masmonData.stats.maxLife + equipBonus.maxLife) * stageMult),
+                pow: Math.round((masmonData.stats.pow + equipBonus.pow) * stageMult),
+                int: Math.round((masmonData.stats.int + equipBonus.int) * stageMult),
+                hit: Math.round((masmonData.stats.hit + equipBonus.hit) * stageMult),
+                spd: Math.round((masmonData.stats.spd + equipBonus.spd) * stageMult),
+                def: Math.round((masmonData.stats.def + equipBonus.def) * stageMult),
+                gutsSpeed: masmonData.stats.gutsSpeed || 14,
+                // 移動速度（行動順決定用。旧セーブデータには存在しない場合があるため種族名から補完する）
+                moveSpeed: getMoveSpeedForMasmon(masmonData),
+                moveSpeedRank: getMoveSpeedRankForMasmon(masmonData)
+            };
+        })(),
         skills: [...(masmonData.skills || [])],
         skillEnhancements: JSON.parse(JSON.stringify(masmonData.skillEnhancements || {})), // 技の強化データ { skKey: { forceBonus, hitBonus, level } }
         // 技ごとの使用回数（バトル中通算。交代しても引き継がれる＝ユニット単位）。
@@ -275,30 +284,9 @@ function convertMasmonToBattleUnit(masmonData, equippedItem) {
     };
 }
 
-// --- 指定した技の「1バトルあたりの最大使用回数」を取得する（未設定なら null＝無制限） ---
-function getSkillMaxUses(skKey) {
-    const sk = SKILLS_DB[skKey];
-    return (sk && sk.maxUses) || null;
-}
+// --- 指定した技の「1バトルあたりの最大使用回数」判定・使用回数カウント関連の関数群は、
+//     CPU戦・PvP双方で共通利用するため database.js 側（getSkillMaxUses等）に移設した ---
 
-// --- 指定ユニットが指定の技をこれまで何回使用したかを取得する ---
-function getSkillUseCount(unit, skKey) {
-    return (unit && unit.skillUseCounts && unit.skillUseCounts[skKey]) || 0;
-}
-
-// --- 指定ユニットが指定の技をもう使用できない（上限に達している）かどうかを判定する ---
-function isSkillUseLimitReached(unit, skKey) {
-    const maxUses = getSkillMaxUses(skKey);
-    if (!maxUses) return false;
-    return getSkillUseCount(unit, skKey) >= maxUses;
-}
-
-// --- 技の使用回数を1回分カウントアップする（実際に技を繰り出した時点で呼ぶ） ---
-function incrementSkillUseCount(unit, skKey) {
-    if (!unit) return;
-    if (!unit.skillUseCounts) unit.skillUseCounts = {};
-    unit.skillUseCounts[skKey] = (unit.skillUseCounts[skKey] || 0) + 1;
-}
 
 // --- 技の強化データを反映した実効ステータス（force/hitRate）を取得 ---
 function getMasmonEffectiveSkill(unit, skKey) {

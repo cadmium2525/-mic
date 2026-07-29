@@ -10,7 +10,7 @@
 // =====================================================
 
 // --- バージョン・最終更新日（タイトル画面左下に小さく表示。更新のたびにここを書き換える） ---
-const GAME_VERSION_INFO = { version: 'ver1.0.2', updatedAt: '2026-07-27' };
+const GAME_VERSION_INFO = { version: 'ver1.0.3', updatedAt: '2026-07-29' };
 
 // --- ブリーダー名の永続化（LocalStorage） ---
 function loadStoredPlayerName() {
@@ -285,6 +285,7 @@ function playTitleBootIntro() {
     const logoEl = document.querySelector('.title-logo-img');
     const buttonsContainer = document.getElementById('title-menu-buttons');
     const nameInputBox = document.getElementById('title-name-input-box');
+    const pressStartEl = document.getElementById('title-press-start');
 
     if (logoEl) {
         logoEl.style.transition = 'none';
@@ -303,18 +304,49 @@ function playTitleBootIntro() {
                 el.style.transform = `translateY(${baseTop - el.offsetTop}px)`; // 1つ目のボタンの位置に重なるよう引き上げておく
             });
         }
+        buttonsContainer.style.pointerEvents = 'none';
     }
 
     if (nameInputBox) {
         nameInputBox.style.transition = 'none';
         nameInputBox.style.opacity = '0';
+        nameInputBox.style.pointerEvents = 'none';
+    }
+
+    if (pressStartEl) {
+        pressStartEl.style.transition = 'none';
+        pressStartEl.style.opacity = '0';
+        pressStartEl.classList.remove('press-start-blink');
+    }
+
+    // メニュー展開（②③）を実行する処理。「PRESS START」タップ/キー入力後に呼ばれる
+    function revealHomeMenu() {
+        const MENU_STAGGER_MS = 110;
+        if (buttonsContainer) buttonsContainer.style.pointerEvents = '';
+        if (nameInputBox) nameInputBox.style.pointerEvents = '';
+
+        items.forEach((el, i) => {
+            setTimeout(() => {
+                el.style.transition = 'transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.35s ease-out';
+                el.style.transform = 'translateY(0)';
+                el.style.opacity = '1';
+            }, i * MENU_STAGGER_MS);
+        });
+
+        const menuRevealTotalMs = items.length * MENU_STAGGER_MS + 450;
+        setTimeout(() => {
+            if (nameInputBox) {
+                nameInputBox.style.transition = 'opacity 0.5s ease-out';
+                nameInputBox.style.opacity = '1';
+            }
+        }, menuRevealTotalMs);
     }
 
     // 上記の初期状態を確実に反映させてから、「Now loading」を消して演出を開始する
     requestAnimationFrame(() => {
         hideAppLoadingOverlay();
 
-        // ① タイトルロゴ表示
+        // ① タイトルロゴ表示（背景は「Now loading」が消えた時点で既に見えている）
         setTimeout(() => {
             if (logoEl) {
                 logoEl.style.transition = 'opacity 0.5s ease-out';
@@ -322,26 +354,31 @@ function playTitleBootIntro() {
             }
         }, 150);
 
-        // ② メニューボタンが1つに重なった状態から、1つずつスライドしながら展開していく
-        const MENU_STAGGER_MS = 110;
+        // ② ロゴのフェードインが終わる頃、「PRESS START」をゆっくり点滅表示する
         setTimeout(() => {
-            items.forEach((el, i) => {
-                setTimeout(() => {
-                    el.style.transition = 'transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.35s ease-out';
-                    el.style.transform = 'translateY(0)';
-                    el.style.opacity = '1';
-                }, i * MENU_STAGGER_MS);
-            });
-        }, 650);
-
-        // ③ メニュー展開が落ち着いた頃合いで、ブリーダー名入力欄をフェードイン
-        const menuRevealTotalMs = 650 + items.length * MENU_STAGGER_MS + 450;
-        setTimeout(() => {
-            if (nameInputBox) {
-                nameInputBox.style.transition = 'opacity 0.5s ease-out';
-                nameInputBox.style.opacity = '1';
+            if (pressStartEl) {
+                pressStartEl.style.transition = 'opacity 0.6s ease-out';
+                pressStartEl.style.opacity = '1';
+                pressStartEl.classList.add('press-start-blink');
             }
-        }, menuRevealTotalMs);
+
+            // タップ・クリック・キー入力のいずれかでホームメニュー展開へ進む
+            let started = false;
+            const proceed = () => {
+                if (started) return;
+                started = true;
+                document.removeEventListener('pointerdown', proceed);
+                document.removeEventListener('keydown', proceed);
+                if (pressStartEl) {
+                    pressStartEl.classList.remove('press-start-blink');
+                    pressStartEl.style.transition = 'opacity 0.3s ease-out';
+                    pressStartEl.style.opacity = '0';
+                }
+                revealHomeMenu();
+            };
+            document.addEventListener('pointerdown', proceed);
+            document.addEventListener('keydown', proceed);
+        }, 650);
     });
 }
 
@@ -477,10 +514,13 @@ function showEffect(text) {
     overlay.textContent = text;
     overlay.classList.remove('scale-0');
     overlay.classList.add('scale-100');
+    // 高速モード時はBATTLE_STEP_DELAY側の「間」も全て半分になるため、この演出の表示時間も
+    // 同じ比率で縮めないと、次の演出に上書きされる／表示が追いつかず混乱を招く原因になる。
+    const hideDelay = typeof scaledBattleDelay === 'function' ? scaledBattleDelay(800) : 800;
     setTimeout(() => {
         overlay.classList.remove('scale-100');
         overlay.classList.add('scale-0');
-    }, 800);
+    }, hideDelay);
 }
 
 function showDamagePopup(elId, val, isCrit) {
@@ -491,19 +531,22 @@ function showDamagePopup(elId, val, isCrit) {
     } else {
         el.className = "absolute -top-8 text-base font-bold text-white opacity-100 scale-100 transition-all duration-500 pointer-events-none";
     }
+    // showEffect同様、高速モード時は表示時間も比例して縮める（次のダメージ表示等に埋もれないように）
+    const fadeDelay = typeof scaledBattleDelay === 'function' ? scaledBattleDelay(800) : 800;
     setTimeout(() => {
         el.classList.replace('opacity-100', 'opacity-0');
-    }, 800);
+    }, fadeDelay);
 }
 
 function animateSprite(containerId, animClass) {
     const el = document.getElementById(containerId);
+    const scale = (ms) => typeof scaledBattleDelay === 'function' ? scaledBattleDelay(ms) : ms;
     if (animClass === 'shake') {
         el.classList.add('animate-ping');
-        setTimeout(() => el.classList.remove('animate-ping'), 250);
+        setTimeout(() => el.classList.remove('animate-ping'), scale(250));
     } else {
         el.classList.add(animClass);
-        setTimeout(() => el.classList.remove(animClass), 200);
+        setTimeout(() => el.classList.remove(animClass), scale(200));
     }
 }
 

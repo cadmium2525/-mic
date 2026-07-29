@@ -67,6 +67,14 @@ input, textarea, select {
 .title-logo-img {
     filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.65));
 }
+/* 起動演出：「PRESS START」のゆっくりとした点滅 */
+@keyframes press-start-blink-kf {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.15; }
+}
+.press-start-blink {
+    animation: press-start-blink-kf 1.4s ease-in-out infinite;
+}
 /* ===== バトル画面：闘技場の背景画像（上下を暗めのグラデーションで馴染ませる） ===== */
 .battle-field-bg {
     background-image:

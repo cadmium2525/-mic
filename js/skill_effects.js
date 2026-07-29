@@ -66,7 +66,25 @@ const SKILL_EFFECT_TYPE = {
 // count    : 粒の数 / size: フォントサイズ(px) / duration: 1粒あたりの再生時間(ms)
 // 攻撃エフェクト（パーティクル）の再生速度係数。1.0が元の速さ、大きいほどゆっくり再生される。
 // 「もう少しゆっくり」の要望に合わせて少し引き伸ばしている。
-const EFFECT_SPEED_MULTIPLIER = 1.8;
+//
+// ・BATTLE_FAST_MODE（高速モード）がONの間は、演出の「間」（BATTLE_STEP_DELAY）を
+//   全て半分にしているが、この係数を据え置くとモーション本体の再生時間だけ追いつかず、
+//   次のモーションと重なって表示が崩れる・混乱する原因になっていた
+//   （ガッツファクトリー／エンドレスモードの倍速モードで発生していた不具合）。
+//   そのため高速モード時はこの係数も半分程度に縮め、演出全体のテンポを揃える。
+const EFFECT_SPEED_MULTIPLIER_NORMAL = 1.8;
+const EFFECT_SPEED_MULTIPLIER_FAST = 0.9;
+let EFFECT_SPEED_MULTIPLIER = (typeof BATTLE_FAST_MODE !== 'undefined' && BATTLE_FAST_MODE)
+    ? EFFECT_SPEED_MULTIPLIER_FAST
+    : EFFECT_SPEED_MULTIPLIER_NORMAL;
+
+// --- BATTLE_FAST_MODEの切り替え時に呼ぶ：EFFECT_SPEED_MULTIPLIERを追従して更新する ---
+// （toggleBattleFastMode 内から呼び出す。スクリプト読み込み順の都合でこの関数はskill_effects.js側に置く）
+function updateEffectSpeedMultiplier() {
+    EFFECT_SPEED_MULTIPLIER = (typeof BATTLE_FAST_MODE !== 'undefined' && BATTLE_FAST_MODE)
+        ? EFFECT_SPEED_MULTIPLIER_FAST
+        : EFFECT_SPEED_MULTIPLIER_NORMAL;
+}
 
 const SKILL_EFFECT_CONFIGS = {
     fire_small:    { particles: ['🔥'],          motion: 'projectile',     count: 1, size: 22, duration: 500 },
