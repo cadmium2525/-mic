@@ -117,7 +117,10 @@ function updateAutoBattleButtonUI() {
     const btn = document.getElementById('auto-battle-mode-btn');
     if (!btn) return;
     // PvP対戦中はオートバトルを使わせない（相手がいる対戦で技を勝手に選ぶのは不適切なため）
-    const isPvp = (typeof ACTIVE_BATTLE_MODE !== 'undefined' && ACTIVE_BATTLE_MODE === 'realtime');
+    // ※以前はここが 'realtime' と比較していたが、実際にPvP突入時にセットされる値は
+    //   'masmon_realtime'（masmon_realtime_battle.jsのenterRealtimeBattleScreen参照）だったため、
+    //   常にfalse判定になりPvP中でもオートバトルボタンが表示され続けてしまっていた。
+    const isPvp = (typeof ACTIVE_BATTLE_MODE !== 'undefined' && ACTIVE_BATTLE_MODE === 'masmon_realtime');
     btn.classList.toggle('hidden', isPvp);
     btn.textContent = `🤖 オートバトル: ${AUTO_BATTLE_MODE ? 'ON' : 'OFF'}`;
     btn.classList.toggle('bg-sky-700', AUTO_BATTLE_MODE);
@@ -162,6 +165,10 @@ function toggleBattleFastMode() {
 function updateBattleFastModeButtonUI() {
     const btn = document.getElementById('battle-fast-mode-btn');
     if (!btn) return;
+    // PvP対戦中は高速モードを使わせない（演出を省略すると、何が起きたか相手と自分で
+    // 見え方が揃わなくなる／先攻後攻の流れが分かりにくくなるため）
+    const isPvp = (typeof ACTIVE_BATTLE_MODE !== 'undefined' && ACTIVE_BATTLE_MODE === 'masmon_realtime');
+    btn.classList.toggle('hidden', isPvp);
     btn.textContent = `⚡ 高速モード: ${BATTLE_FAST_MODE ? 'ON' : 'OFF'}`;
     btn.classList.toggle('bg-amber-700', BATTLE_FAST_MODE);
     btn.classList.toggle('text-white', BATTLE_FAST_MODE);

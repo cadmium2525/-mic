@@ -52,6 +52,7 @@ const REALTIME_BATTLE = {
     actionInProgress: false,
     seenLogKeys: {},          // 二重描画防止
     lastCanActTurnNumber: null, // 直前に「行動できる状態」として描画したturnNumber（技表示に戻す判定用）
+    lastForcedSwitchRevealed: false, // 交代待ち画面を既に表示済みか（ログに隠れて出ない不具合の対策用）
     pendingLogHide: false,    // 新ターン突入でログを閉じたいが、直前ターンのログ表示がまだ終わっていないため保留中か
     pendingLogHideTimer: null, // pendingLogHideが立ったまま一定時間ログが届かなかった場合の保険タイマー
     battleStartedAt: 0        // 今回の対戦の開始時刻。これより古いログは前回対戦の残りとして無視する
@@ -399,6 +400,19 @@ function renderRealtimeBattleUI(state) {
         REALTIME_BATTLE.lastCanActTurnNumber = state.turnNumber;
     }
 
+    // ★交代待ち画面が出ない不具合の修正：
+    // モンスターが戦闘不能になると pendingForcedSwitch が立つが、canAct はこの間ずっと false
+    // （awaitingAnyForcedSwitch を含むため）になるため、上のブロックだけではログが自動的に閉じず、
+    // 「行動選択→ログ表示→モンスターが倒れる→ログ表示のまま」で止まってしまっていた。
+    // 交代が必要になった／解消された瞬間を検知して、そのタイミングでも明示的にログを閉じ、
+    // 技選択エリア（renderRealtimeBattleSkillsが交代ピッカーに差し替える場所）を見せるようにする。
+    if (awaitingAnyForcedSwitch && !REALTIME_BATTLE.lastForcedSwitchRevealed) {
+        requestRealtimeLogAutoHide();
+        REALTIME_BATTLE.lastForcedSwitchRevealed = true;
+    } else if (!awaitingAnyForcedSwitch) {
+        REALTIME_BATTLE.lastForcedSwitchRevealed = false;
+    }
+
     document.getElementById('battle-turn-counter').textContent = state.turnNumber || 1;
 
     // みがわり設置中（team.substituteHits > 0）は、場に出ているモンスターが誰であっても
@@ -640,6 +654,13 @@ function triggerRealtimeCombatEffects(entry) {
     // ログの技キーは同期されないため、「◯◯の【技名】！」の技名部分から引く。
     // 技名は種族をまたいで重複することがある（例：「かみつき」）ため、
     // 前半の「◯◯」＝使用したモンスター名も一緒に渡して、種族専用モーションを取り違えないようにする。
+    // 「先攻の行動！→後攻の行動！」の区切りを明示するターン開始バナー（CPU戦のENEMY TURN演出に相当）
+    const actionBannerMatch = text.match(/^⚔️ (.+) の行動！$/);
+    if (actionBannerMatch) {
+        showEffect(isMyAction ? '🟢 YOUR TURN 🟢' : '⚠️ ENEMY TURN ⚠️');
+        return;
+    }
+
     const skillNameMatch = text.match(/^(.*)の【(.+?)】！$/);
     if (skillNameMatch && typeof playSkillVisualEffectByName === 'function') {
         const casterName = (skillNameMatch[1] || '').trim();
@@ -1311,8 +1332,10 @@ async function performRealtimeForcedSwitch(targetIdx) {
             showToast('その交代は選択できませんでした（タイミングがずれた可能性があります）。');
         } else {
             committedTurnNumber = txResult.snapshot.val().turnNumber || committedTurnNumber;
-            for (const text of resultLogs) {
-                await logRef.push({ turn: committedTurnNumber, actor: mySlot, text, ts: Date.now() });
+            for (const entry of resultLogs) {
+                const text = (typeof entry === 'string') ? entry : entry.text;
+                const actor = (typeof entry === 'string') ? mySlot : (entry.actor || mySlot);
+                await logRef.push({ turn: committedTurnNumber, actor, text, ts: Date.now() });
             }
         }
     } catch (e) {
@@ -1383,12 +1406,24 @@ function buildRealtimeTurnActionDescriptor(unit, action) {
 //   （以前は自動的に先頭の生存ユニットに交代していたが、団体戦のプレイヤーが次に出す
 //    マスモンを選べない＝「気づいたら次のモンスターが出されている」不具合の原因だった）
 // 戻り値: 'none'（戦闘不能なし） / 'ko'（バトル終了） / 'needSwitch'（強制交代待ち）
+// --- resultLogs への共通pushヘルパー ---
+// 修正前は、1ターン分のログが「トランザクションを確定させた側のクライアント」の
+// mySlotで一括してactorタグ付けされてFirebaseへ送信されていたため、相手の行動ログにまで
+// 誤ったactorが付き、演出（HIT/ダメージ等）が逆側のモンスターに出てしまう不具合があった。
+// この関数を使い、resultLogsの各行に「実際にその行動を行った陣営（actorSlot）」を
+// 個別に記録することで、演出側（triggerRealtimeCombatEffects）が両クライアントで
+// 正しい側に効果を表示できるようにする。
+function pushRealtimeLog(resultLogs, actorSlot, text) {
+    if (text === undefined || text === null) return;
+    resultLogs.push({ text, actor: actorSlot });
+}
+
 function checkRealtimeFaintAndWin(current, teamSlot, otherSlot, resultLogs) {
     const team = current.teams[teamSlot];
     const unit = team.units[team.activeIdx];
     if (!unit || unit.life > 0) return 'none';
 
-    resultLogs.push(`💥 ${unit.name} は戦闘不能になった！`);
+    pushRealtimeLog(resultLogs, teamSlot, `💥 ${unit.name} は戦闘不能になった！`);
     const nextIdx = findFirstAliveIdx(team);
     if (nextIdx === -1) {
         current.status = 'finished';
@@ -1396,7 +1431,7 @@ function checkRealtimeFaintAndWin(current, teamSlot, otherSlot, resultLogs) {
         current.winReason = 'ko';
         const winnerTeam = current.teams[otherSlot];
         const winnerUnit = winnerTeam.units[winnerTeam.activeIdx];
-        resultLogs.push(`${winnerUnit ? winnerUnit.name : (current.ownerNames && current.ownerNames[otherSlot])} の勝利！`);
+        pushRealtimeLog(resultLogs, otherSlot, `${winnerUnit ? winnerUnit.name : (current.ownerNames && current.ownerNames[otherSlot])} の勝利！`);
         return 'ko';
     }
 
@@ -1406,7 +1441,7 @@ function checkRealtimeFaintAndWin(current, teamSlot, otherSlot, resultLogs) {
     // triggerRealtimeForcedSwitchTimeout側でこのdeadlineを見て自動選択する。
     current.turnDeadline = Date.now() + REALTIME_TURN_TIME_LIMIT_MS;
     const ownerLabel = current.ownerNames ? current.ownerNames[teamSlot] : '相手';
-    resultLogs.push(`${ownerLabel}は次に出すマスモンを選んでいる…`);
+    pushRealtimeLog(resultLogs, teamSlot, `${ownerLabel}は次に出すマスモンを選んでいる…`);
     return 'needSwitch';
 }
 
@@ -1429,28 +1464,28 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
     // 怯み状態（黒ひざコンボ等で受けた場合）：このターンは何を選んでも行動に失敗する
     if (me.isSleptThisTurn) {
         me.isSleptThisTurn = false;
-        resultLogs.push(`💤 ${me.name} は眠っていて、行動できなかった！`);
+        pushRealtimeLog(resultLogs, actingSlot, `💤 ${me.name} は眠っていて、行動できなかった！`);
         return;
     }
     if (me.isParalyzedThisTurn) {
         me.isParalyzedThisTurn = false;
-        resultLogs.push(`⚡ ${me.name} はマヒして、行動できなかった！`);
+        pushRealtimeLog(resultLogs, actingSlot, `⚡ ${me.name} はマヒして、行動できなかった！`);
         return;
     }
     if (me.isFlinchedThisTurn) {
         me.isFlinchedThisTurn = false;
-        resultLogs.push(`😨 ${me.name} は怯んでしまい、行動できなかった！`);
+        pushRealtimeLog(resultLogs, actingSlot, `😨 ${me.name} は怯んでしまい、行動できなかった！`);
         return;
     }
     if (me.isConfusedThisTurn) {
         me.isConfusedThisTurn = false;
-        resultLogs.push(`❔ ${me.name} は意味不明で、行動できなかった！`);
+        pushRealtimeLog(resultLogs, actingSlot, `❔ ${me.name} は意味不明で、行動できなかった！`);
         return;
     }
 
     if (!action || action.kind === 'pass' || action.kind === 'none') {
         if (action && action.reason === 'noguts') {
-            resultLogs.push(`💦 ${me.name} はガッツが足りず、何も行動できなかった！`);
+            pushRealtimeLog(resultLogs, actingSlot, `💦 ${me.name} はガッツが足りず、何も行動できなかった！`);
         }
         return;
     }
@@ -1459,15 +1494,15 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
         const rawSk = SKILLS_DB[action.key];
         // ★ 実行直前の再チェック（提出時点では合法でも、先攻の行動でガッツを削られている場合がある）
         if (!rawSk || !me.skills.includes(action.key) || me.guts < rawSk.cost) {
-            resultLogs.push(`💦 ${me.name} はガッツが足りず、技を繰り出せなかった！`);
+            pushRealtimeLog(resultLogs, actingSlot, `💦 ${me.name} はガッツが足りず、技を繰り出せなかった！`);
             return;
         }
         const sk = getRealtimeEffectiveSkill(me, action.key);
         const mods = getGutsModifiers(me.guts);
         me.guts -= sk.cost;
-        resultLogs.push(`${me.name} の【${sk.name}】！`);
+        pushRealtimeLog(resultLogs, actingSlot, `${me.name} の【${sk.name}】！`);
         // 技発動時（命中判定に関わらず）の自己強化効果（アサルトダンス等）
-        applySkillOnUseEffect(me, sk).forEach(msg => resultLogs.push(msg.detail));
+        applySkillOnUseEffect(me, sk).forEach(msg => pushRealtimeLog(resultLogs, actingSlot, msg.detail));
 
         if (sk.type === 'pow' || sk.type === 'int') {
             // 装備の「攻撃するたびにライフ消費・技威力アップ」効果：技を繰り出した時点（命中判定に関わらず）で1回だけ適用する
@@ -1476,7 +1511,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             if (recoilCost > 0) {
                 me.life = Math.max(0, me.life - recoilCost);
                 const equipName = (EQUIPMENT_DB[me.equippedItem.equipId] || {}).name || '装備';
-                resultLogs.push(`💢 ${me.name} は【${equipName}】の反動でライフが ${recoilCost} 減少した！(現在: ${Math.floor(me.life)})`);
+                pushRealtimeLog(resultLogs, actingSlot, `💢 ${me.name} は【${equipName}】の反動でライフが ${recoilCost} 減少した！(現在: ${Math.floor(me.life)})`);
             }
 
             const isCertain = sk.hitRate === 100;
@@ -1511,7 +1546,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                 // （プラズマでみがわりを1つ削ってから攻撃技を打つことで、みがわりを削りきり相手を攻撃するための仕様）。
                 const consumedSub = Math.min(otherTeam.substituteHits, hitCount);
                 otherTeam.substituteHits -= consumedSub;
-                resultLogs.push(`🧸 身代わり人形が${opp.name}の代わりに攻撃を${consumedSub > 1 ? consumedSub + '回分' : ''}受けた！（身代わりの残り回数: ${otherTeam.substituteHits}）`);
+                pushRealtimeLog(resultLogs, actingSlot, `🧸 身代わり人形が${opp.name}の代わりに攻撃を${consumedSub > 1 ? consumedSub + '回分' : ''}受けた！（身代わりの残り回数: ${otherTeam.substituteHits}）`);
                 hitCount -= consumedSub;
             }
 
@@ -1519,7 +1554,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                 // ダメージ無し・状態異常付与のみを狙う技（どくのこな等）
                 for (let hitNo = 0; hitNo < hitCount; hitNo++) {
                     const hitTag = hitCount > 1 ? `（${hitNo + 1}撃目）` : '';
-                    resultLogs.push(`${opp.name} に技が命中した！${hitTag}`);
+                    pushRealtimeLog(resultLogs, actingSlot, `${opp.name} に技が命中した！${hitTag}`);
 
                     let finalGutsDown = sk.gutsDown || 0;
                     if (me.isGyakujoActive && finalGutsDown > 0) {
@@ -1530,11 +1565,11 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                         const actualGutsDown = Math.min(opp.guts, mitigatedGutsDown);
                         opp.guts = Math.max(0, opp.guts - actualGutsDown);
                         if (actualGutsDown > 0) {
-                            resultLogs.push(`相手のガッツを ${actualGutsDown} 奪った！(現在: ${Math.floor(opp.guts)})`);
+                            pushRealtimeLog(resultLogs, actingSlot, `相手のガッツを ${actualGutsDown} 奪った！(現在: ${Math.floor(opp.guts)})`);
                         }
                     }
 
-                    applySkillOnHitEffect(me, opp, sk).forEach(msg => resultLogs.push(msg.detail));
+                    applySkillOnHitEffect(me, opp, sk).forEach(msg => pushRealtimeLog(resultLogs, actingSlot, msg.detail));
                 }
 
                 me.isSokojikaraActive = false;
@@ -1588,7 +1623,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
 
                 if (opp.isDefending) {
                     damage = Math.floor(damage / 2);
-                    resultLogs.push(`${opp.name} は防御の構えでダメージを半減した！`);
+                    pushRealtimeLog(resultLogs, actingSlot, `${opp.name} は防御の構えでダメージを半減した！`);
                 }
 
                 damage = Math.max(1, Math.floor(damage * MASMON_BATTLE_DAMAGE_MULTIPLIER));
@@ -1598,33 +1633,33 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                 damage = shieldResult.finalDamage;
 
                 opp.life = Math.max(0, opp.life - damage);
-                resultLogs.push(isCrit ? `★クリティカル！ ${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}${hitTag}` : `${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}${hitTag}`);
+                pushRealtimeLog(resultLogs, actingSlot, isCrit ? `★クリティカル！ ${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}${hitTag}` : `${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}${hitTag}`);
                 if (shieldResult.absorbed > 0) {
-                    resultLogs.push(`🛡️ ${opp.name} のシールドが ${shieldResult.absorbed} のダメージを吸収した！(シールド残量: ${opp.shieldValue})`);
+                    pushRealtimeLog(resultLogs, actingSlot, `🛡️ ${opp.name} のシールドが ${shieldResult.absorbed} のダメージを吸収した！(シールド残量: ${opp.shieldValue})`);
                 }
                 {
                     const michizureLog = checkMichizureTrigger(opp, me, () => opp.life, () => me.life, (v) => { me.life = v; });
-                    if (michizureLog) resultLogs.push(michizureLog);
+                    if (michizureLog) pushRealtimeLog(resultLogs, actingSlot, michizureLog);
                 }
 
                 // 根性・底力の発動判定（ダメージを受けた側）
                 if (opp.life === 0 && opp.statusEffect === "根性") {
                     if (Math.random() < 0.50) {
                         opp.life = 1;
-                        resultLogs.push(`✨ 根性が発動！ ${opp.name} は力尽きず、ライフ 1 で耐え抜いた！`);
+                        pushRealtimeLog(resultLogs, actingSlot, `✨ 根性が発動！ ${opp.name} は力尽きず、ライフ 1 で耐え抜いた！`);
                     }
                 }
                 if (opp.statusEffect === "底力" && !opp.isSokojikaraFired) {
                     if (opp.life > 0 && opp.life < opp.maxLife * 0.3) {
                         opp.isSokojikaraFired = true;
                         opp.isSokojikaraActive = true;
-                        resultLogs.push(`💪 底力が発動！ ${opp.name} は窮地に陥り、次の技のダメージが 1.5 倍に上昇！`);
+                        pushRealtimeLog(resultLogs, actingSlot, `💪 底力が発動！ ${opp.name} は窮地に陥り、次の技のダメージが 1.5 倍に上昇！`);
                     }
                 }
                 const oppEnduranceLog = checkAndApplyEquipmentEnduranceEffect(opp);
-                if (oppEnduranceLog) resultLogs.push(oppEnduranceLog);
+                if (oppEnduranceLog) pushRealtimeLog(resultLogs, actingSlot, oppEnduranceLog);
                 const oppLifesaverLog = checkAndApplyEquipmentLifesaverEffect(opp);
-                if (oppLifesaverLog) resultLogs.push(oppLifesaverLog);
+                if (oppLifesaverLog) pushRealtimeLog(resultLogs, actingSlot, oppLifesaverLog);
 
                 let finalGutsDown = sk.gutsDown || 0;
                 if (me.isGyakujoActive && finalGutsDown > 0) {
@@ -1637,29 +1672,29 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                     const actualGutsDown = Math.min(opp.guts, mitigatedGutsDown);
                     opp.guts = Math.max(0, opp.guts - actualGutsDown);
                     if (actualGutsDown > 0) {
-                        resultLogs.push(`相手のガッツを ${actualGutsDown} 奪った！(現在: ${Math.floor(opp.guts)})`);
+                        pushRealtimeLog(resultLogs, actingSlot, `相手のガッツを ${actualGutsDown} 奪った！(現在: ${Math.floor(opp.guts)})`);
                         // 逆上の発動判定（ガッツを奪われた側）
                         if (opp.statusEffect === "逆上" && !opp.isGyakujoActive && Math.random() < 0.65) {
                             opp.isGyakujoActive = true;
-                            resultLogs.push(`💢 逆上が発動！ ${opp.name} のガッツ回復速度と与えるガッツダウン量が 1.2 倍に上昇！`);
+                            pushRealtimeLog(resultLogs, actingSlot, `💢 逆上が発動！ ${opp.name} のガッツ回復速度と与えるガッツダウン量が 1.2 倍に上昇！`);
                         }
                         // ゲルの「マナドレイン」等：奪ったガッツ分だけ自身のガッツを回復する
                         const gutsDrain = getGutsDrainAmount(sk, actualGutsDown);
                         if (gutsDrain > 0) {
                             me.guts = Math.min(100, me.guts + gutsDrain);
-                            resultLogs.push(`🔮 ${me.name} は奪ったガッツを吸収し、自身のガッツが ${gutsDrain} 回復した！(現在: ${Math.floor(me.guts)})`);
+                            pushRealtimeLog(resultLogs, actingSlot, `🔮 ${me.name} は奪ったガッツを吸収し、自身のガッツが ${gutsDrain} 回復した！(現在: ${Math.floor(me.guts)})`);
                         }
                     }
                 }
 
                 // モノリスの技等が持つ追加効果（衰弱／混乱付与／次技威力アップ）
-                applySkillOnHitEffect(me, opp, sk).forEach(msg => resultLogs.push(msg.detail));
+                applySkillOnHitEffect(me, opp, sk).forEach(msg => pushRealtimeLog(resultLogs, actingSlot, msg.detail));
 
                 // プラントの「ドレイン」等：与えたダメージの一部を自身のライフに変換
                 const drainHeal = getDrainHealAmount(sk, damage);
                 if (drainHeal > 0) {
                     me.life = Math.min(me.maxLife, me.life + drainHeal);
-                    resultLogs.push(`🌿 ${me.name} は相手の生命力を吸収し、ライフが ${drainHeal} 回復した！`);
+                    pushRealtimeLog(resultLogs, actingSlot, `🌿 ${me.name} は相手の生命力を吸収し、ライフが ${drainHeal} 回復した！`);
                 }
                 } // end hitCount loop
 
@@ -1667,24 +1702,24 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                 me.isShuchuActive = false;
             } else if (!isHit) {
                 if (isGuaranteedDodge) {
-                    resultLogs.push(`🌫️ ${opp.name} は陽炎の効果で攻撃を確実に回避した！`);
+                    pushRealtimeLog(resultLogs, actingSlot, `🌫️ ${opp.name} は陽炎の効果で攻撃を確実に回避した！`);
                 } else {
-                    resultLogs.push(`しかし攻撃はかわされた！`);
+                    pushRealtimeLog(resultLogs, actingSlot, `しかし攻撃はかわされた！`);
                 }
             }
         } else if (sk.type === 'buff_pow') {
             if (!sk.useEffect) {
                 me.pow += 15;
-                resultLogs.push(`${me.name} の闘志がみなぎる！ちからが15アップした！`);
+                pushRealtimeLog(resultLogs, actingSlot, `${me.name} の闘志がみなぎる！ちからが15アップした！`);
             }
         } else if (sk.type === 'heal') {
             const healAmount = Math.floor(me.maxLife * 0.35);
             me.life = Math.min(me.maxLife, me.life + healAmount);
-            resultLogs.push(`${me.name} は癒された！ライフが ${healAmount} 回復！`);
+            pushRealtimeLog(resultLogs, actingSlot, `${me.name} は癒された！ライフが ${healAmount} 回復！`);
         } else if (sk.type === 'substitute') {
             const already = actingTeam.substituteHits > 0;
             actingTeam.substituteHits = 2;
-            resultLogs.push(already
+            pushRealtimeLog(resultLogs, actingSlot, already
                 ? `🧸 ${me.name} は新しい身代わり人形を設置し直した！（身代わりの残り回数が2回に更新された）`
                 : `🧸 ${me.name} は自身を模したぬいぐるみを設置した！（次の攻撃を2回まで防ぐ。モンスターを交換しても場に残り続ける）`);
 
@@ -1692,35 +1727,35 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             if (selfDamagePct > 0) {
                 const selfDamage = Math.max(1, Math.floor(me.maxLife * selfDamagePct));
                 me.life = Math.max(0, me.life - selfDamage);
-                resultLogs.push(`💥 ${me.name} はぬいぐるみを作り出す反動で、自身のライフが ${selfDamage} 減少した！(現在: ${Math.floor(me.life)})`);
+                pushRealtimeLog(resultLogs, actingSlot, `💥 ${me.name} はぬいぐるみを作り出す反動で、自身のライフが ${selfDamage} 減少した！(現在: ${Math.floor(me.life)})`);
             }
         }
     } else if (action.kind === 'defend') {
         me.isDefending = true;
-        resultLogs.push(`${me.name} は身を守るため防御の構えを取った！（被ダメ半減／ガッツ回復ペナルティ無し）`);
+        pushRealtimeLog(resultLogs, actingSlot, `${me.name} は身を守るため防御の構えを取った！（被ダメ半減／ガッツ回復ペナルティ無し）`);
     } else if (action.kind === 'charge') {
         // ガッツを溜める：防御とは逆に、被ダメ軽減は無い代わりに大きくガッツを得る。
         // 必ず技より後攻する（turn_order.jsのACTION_TIER_PRIORITY.charge=-1）。
         const CHARGE_GUTS_AMOUNT = 25;
         if (me.life > 0) {
             me.guts = Math.min(100, me.guts + CHARGE_GUTS_AMOUNT);
-            resultLogs.push(`${me.name} は気合を込めてガッツを溜めた！（ガッツ+${CHARGE_GUTS_AMOUNT}・被ダメ軽減は無し・現在: ${Math.floor(me.guts)}）`);
+            pushRealtimeLog(resultLogs, actingSlot, `${me.name} は気合を込めてガッツを溜めた！（ガッツ+${CHARGE_GUTS_AMOUNT}・被ダメ軽減は無し・現在: ${Math.floor(me.guts)}）`);
         }
     } else if (action.kind === 'switch') {
         const targetIdx = action.targetIdx;
         const target = actingTeam.units[targetIdx];
         if (!target || targetIdx === actingTeam.activeIdx || target.life <= 0) {
-            resultLogs.push(`${me.name} は交代できなかった！`);
+            pushRealtimeLog(resultLogs, actingSlot, `${me.name} は交代できなかった！`);
             return;
         }
         const prevName = me.name;
         clearBattleStatModifiersOnSwitch(me);
         actingTeam.activeIdx = targetIdx;
-        resultLogs.push(`${prevName} を引っ込め、【${target.name}】を繰り出した！`);
+        pushRealtimeLog(resultLogs, actingSlot, `${prevName} を引っ込め、【${target.name}】を繰り出した！`);
     } else if (action.kind === 'item') {
         const key = action.key;
         if (!myItems || !myItems[key] || myItems[key] <= 0) {
-            resultLogs.push(`${me.name} はアイテムを使えなかった！`);
+            pushRealtimeLog(resultLogs, actingSlot, `${me.name} はアイテムを使えなかった！`);
             return;
         }
         myItems[key]--;
@@ -1728,26 +1763,26 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
         if (key === 'mango') {
             const heal = Math.floor(me.maxLife * 0.25);
             me.life = Math.min(me.maxLife, me.life + heal);
-            resultLogs.push(`🥭 ${me.name} は【${item.name}】を使った！ライフが ${heal} 回復した！`);
+            pushRealtimeLog(resultLogs, actingSlot, `🥭 ${me.name} は【${item.name}】を使った！ライフが ${heal} 回復した！`);
         } else if (key === 'kuri') {
             me.critBonusTurns = 3;
-            resultLogs.push(`🌰 ${me.name} は【${item.name}】を使った！3ターンの間クリティカル率が上昇する！`);
+            pushRealtimeLog(resultLogs, actingSlot, `🌰 ${me.name} は【${item.name}】を使った！3ターンの間クリティカル率が上昇する！`);
         } else if (key === 'toro') {
             me.pow += 20;
             me.int += 20;
             const selfDmg = Math.floor(me.maxLife * 0.3);
             me.life = Math.max(0, me.life - selfDmg);
-            resultLogs.push(`🧪 ${me.name} は【${item.name}】を使った！ちから・かしこさが上昇したが、反動で ${selfDmg} のダメージを受けた！`);
+            pushRealtimeLog(resultLogs, actingSlot, `🧪 ${me.name} は【${item.name}】を使った！ちから・かしこさが上昇したが、反動で ${selfDmg} のダメージを受けた！`);
             const meEnduranceLog = checkAndApplyEquipmentEnduranceEffect(me);
-            if (meEnduranceLog) resultLogs.push(meEnduranceLog);
+            if (meEnduranceLog) pushRealtimeLog(resultLogs, actingSlot, meEnduranceLog);
             const meLifesaverLog = checkAndApplyEquipmentLifesaverEffect(me);
-            if (meLifesaverLog) resultLogs.push(meLifesaverLog);
+            if (meLifesaverLog) pushRealtimeLog(resultLogs, actingSlot, meLifesaverLog);
         }
     }
 }
 
 // --- ターン開始処理（ガッツ回復・状態異常ティック等）を1体分だけ適用する ---
-function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs) {
+function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs, ownerSlot) {
     if (!unit || unit.life <= 0) return;
 
     // みちづれ：効果は発動したそのターン限りのため、次のターンが始まる時点で待機状態を解除する
@@ -1784,10 +1819,10 @@ function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs) {
     const dotResult = { bleedDamage, burnDamage, poisonDamage };
     if (bleedDamage > 0 || burnDamage > 0 || poisonDamage > 0) {
         const dotLogs = applyDotDamageAndBuildLogs(unit.name, dotResult, () => unit.life, (v) => { unit.life = v; });
-        dotLogs.forEach(line => resultLogs.push(line.detail));
+        dotLogs.forEach(line => pushRealtimeLog(resultLogs, ownerSlot, line.detail));
         if (opponentUnit) {
             const michizureLog = checkMichizureTrigger(unit, opponentUnit, () => unit.life, () => opponentUnit.life, (v) => { opponentUnit.life = v; });
-            if (michizureLog) resultLogs.push(michizureLog);
+            if (michizureLog) pushRealtimeLog(resultLogs, ownerSlot, michizureLog);
         }
     }
 
@@ -1844,11 +1879,11 @@ function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs) {
     unit.guts = Math.min(100, unit.guts + recovery);
     if (unit.statusEffect === "集中" && unit.guts > 90 && !unit.isShuchuActive) {
         unit.isShuchuActive = true;
-        resultLogs.push(`🎯 ${unit.name} に集中が発動！次の技の命中率・ダメージが上昇！`);
+        pushRealtimeLog(resultLogs, ownerSlot, `🎯 ${unit.name} に集中が発動！次の技の命中率・ダメージが上昇！`);
     }
 
     const regenLog = applyEquipmentTurnRegen(unit);
-    if (regenLog) resultLogs.push(regenLog);
+    if (regenLog) pushRealtimeLog(resultLogs, ownerSlot, regenLog);
 }
 
 // --- 双方の行動が終わった後、次のターンの準備をする（両者同時にガッツ回復・状態ティック） ---
@@ -1857,8 +1892,8 @@ function startRealtimeNextTurn(current, aSlot, bSlot, resultLogs) {
     const bUnit = current.teams[bSlot].units[current.teams[bSlot].activeIdx];
 
     // 継続ダメージ等でどちらかが力尽きる可能性もあるため、両方に適用してからまとめて判定する
-    applyRealtimeTurnStartEffects(aUnit, bUnit, resultLogs);
-    applyRealtimeTurnStartEffects(bUnit, aUnit, resultLogs);
+    applyRealtimeTurnStartEffects(aUnit, bUnit, resultLogs, aSlot);
+    applyRealtimeTurnStartEffects(bUnit, aUnit, resultLogs, bSlot);
 
     const aResult = checkRealtimeFaintAndWin(current, aSlot, bSlot, resultLogs);
     const battleOver = aResult === 'ko';
@@ -1895,6 +1930,14 @@ function resolveRealtimeTurn(current, aSlot, bSlot, resultLogs) {
     const result = TurnOrderResolver.resolve(aDesc, bDesc);
     const order = result.order.map(tag => (tag === 'A') ? aSlot : bSlot);
 
+    // 交代／アイテムのように既に処理済みの行動は自明に先攻となるため、案内ログは出さない（CPU戦と同じ仕様）
+    const isTrivialFirst = (aDesc.actionType === 'switchOut' || aDesc.actionType === 'item');
+    if (aDesc.actionType !== 'none' && bDesc.actionType !== 'none' && !isTrivialFirst) {
+        const firstSlot = order[0];
+        const firstUnit = (firstSlot === aSlot) ? aUnit : bUnit;
+        pushRealtimeLog(resultLogs, firstSlot, `⚡ ${firstUnit.name} が先に行動する！`);
+    }
+
     let battleOver = false;
     let needSwitch = false;
     for (let i = 0; i < order.length && !battleOver && !needSwitch; i++) {
@@ -1903,6 +1946,10 @@ function resolveRealtimeTurn(current, aSlot, bSlot, resultLogs) {
         const actingTeam = current.teams[actingSlot];
         const actingUnit = actingTeam.units[actingTeam.activeIdx];
         if (!actingUnit || actingUnit.life <= 0) continue; // 既に戦闘不能なら行動しない
+
+        // CPU戦の「--- ◯◯ のターン ---」「⚠️ ENEMY TURN ⚠️」と同様に、
+        // 「先攻の行動！→後攻の行動！」の区切りが分かるよう、行動の主体を明示するログを必ず1件出す。
+        pushRealtimeLog(resultLogs, actingSlot, `⚔️ ${actingUnit.name} の行動！`);
 
         resolveOneRealtimeAction(current, actingSlot, otherSlot, pending[actingSlot], resultLogs);
 
@@ -2003,8 +2050,14 @@ async function performRealtimeAction(action) {
             showToast('その行動は選択できませんでした（タイミングがずれた可能性があります）。');
         } else {
             committedTurnNumber = txResult.snapshot.val().turnNumber || committedTurnNumber;
-            for (const text of resultLogs) {
-                await logRef.push({ turn: committedTurnNumber, actor: mySlot, text, ts: Date.now() });
+            for (const entry of resultLogs) {
+                // resultLogsの各行は { text, actor } 形式（pushRealtimeLog経由）で、
+                // 実際にその行動をした陣営がactorに入っている。以前はここを一律mySlotにしていたため、
+                // トランザクションを確定させた側の視点にログ全体が偏り、相手の行動まで
+                // 「自分の行動」として演出されてしまっていた。
+                const text = (typeof entry === 'string') ? entry : entry.text;
+                const actor = (typeof entry === 'string') ? mySlot : (entry.actor || mySlot);
+                await logRef.push({ turn: committedTurnNumber, actor, text, ts: Date.now() });
             }
         }
     } catch (e) {
@@ -2237,6 +2290,7 @@ function resetRealtimeBattleClientState() {
     REALTIME_BATTLE.seenLogKeys = {};
     REALTIME_BATTLE.battleStartedAt = 0;
     REALTIME_BATTLE.lastCanActTurnNumber = null;
+    REALTIME_BATTLE.lastForcedSwitchRevealed = false;
     REALTIME_BATTLE.autoTimeoutTurnNumber = null;
     REALTIME_BATTLE.autoTimeoutForcedSwitchTurnNumber = null;
     REALTIME_BATTLE.logRevealQueue = [];
