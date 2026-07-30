@@ -102,14 +102,60 @@ const AudioManager = (() => {
 
     function resume() {
         const c = ensureContext();
-        if (c && c.state === 'suspended') {
-            c.resume().catch(() => {});
+        if (!c) return;
+        if (c.state === 'suspended') {
+            c.resume().then(() => {
+                startBgmPlaybackIfReady();
+            }).catch(() => {});
+        } else if (c.state === 'running') {
+            startBgmPlaybackIfReady();
         }
+    }
+
+    // AudioContextが実際に「running」状態になった時にだけ呼ばれる、BGMスケジューリングの唯一の開始口。
+    // ------------------------------------------------------------------
+    // 背景：ブラウザの自動再生制限により、ユーザー操作前はAudioContextが
+    // 'suspended'のままで、その間はcurrentTime（音声用の時計）が進まない。
+    // 以前はplayBGM()等が呼ばれた時点で（suspended中であっても）即座に
+    // scheduleBgmLoop()でBGMをスケジュールしてしまっていたため、
+    // 「Now loading→PRESS START」のようにユーザーが長く操作しない画面が
+    // 続くと、setTimeoutによる自己ループ（wall-clock基準・suspendedでも
+    // 止まらない）が実際の発音とは無関係に何度も発火し、同じ曲がcurrentTime
+    // ≒0付近に何重にも重ねてスケジュールされてしまっていた。
+    // その状態でようやくタップ等によりresume()が成功すると、積み重なった
+    // 分がすべて一斉に鳴り始めて音が壊れて聞こえたり、逆に事実上何も
+    // 聞き取れない状態になったりする不具合の原因になっていた。
+    // 対策：scheduleBgmLoop()は「AudioContextが実際にrunningになった瞬間」
+    // にのみ呼び出すようにし、suspended中は一切スケジューリングしない
+    // （currentTrackNameを覚えておくだけ）ようにする。
+    function startBgmPlaybackIfReady() {
+        if (!ctx || ctx.state !== 'running') return;
+        if (!currentTrackName || settings.bgm === 0) return;
+        if (bgmTimerId) return; // 既にスケジューリング中
+        scheduleBgmLoop(currentTrackName, bgmToken);
+    }
+
+    // iOS Safari（特にホーム画面追加＝PWAスタンドアロン起動時）は、resume()の
+    // Promiseだけでは解除が間に合わないことがある。ユーザー操作の呼び出しスタックの
+    // 中で実際に音声バッファの再生を1回開始しておくと、より確実にロック解除できる
+    // ため、無音の極短バッファをタップ／キー入力の中で直接start()しておく。
+    function unlockWithSilentBuffer() {
+        const c = ctx;
+        if (!c) return;
+        try {
+            const buf = c.createBuffer(1, 1, c.sampleRate);
+            const src = c.createBufferSource();
+            src.buffer = buf;
+            src.connect(c.destination);
+            src.start(0);
+        } catch (e) { /* 無視：本命はresume()側 */ }
     }
 
     // 初回のユーザー操作でAudioContextのロックを解除する（ブラウザの自動再生制限対策）
     function installUnlockListener() {
         const unlock = () => {
+            ensureContext();
+            unlockWithSilentBuffer();
             resume();
             document.removeEventListener('pointerdown', unlock, true);
             document.removeEventListener('keydown', unlock, true);
@@ -712,8 +758,13 @@ const AudioManager = (() => {
         if (settings.bgm === 0) return;
         const c = ensureContext();
         if (!c) return;
+        // runningであれば即座に鳴らす。suspended（自動再生制限でブロック中）の場合は
+        // ここではスケジューリングせず、resume()が成功した瞬間にstartBgmPlaybackIfReadyが
+        // 拾って開始する（frozenなcurrentTimeに対して先走ってスケジュールしない）。
         resume();
-        scheduleBgmLoop(trackName, bgmToken);
+        if (c.state === 'running') {
+            scheduleBgmLoop(trackName, bgmToken);
+        }
     }
 
     // ---------------------------------------------------
@@ -816,7 +867,10 @@ const AudioManager = (() => {
             stopBgmScheduling();
         } else if (currentTrackName && (wasOff || !bgmTimerId)) {
             stopBgmScheduling();
-            scheduleBgmLoop(currentTrackName, bgmToken);
+            if (ctx && ctx.state === 'running') {
+                scheduleBgmLoop(currentTrackName, bgmToken);
+            }
+            // suspended中はresume()の成功コールバック（startBgmPlaybackIfReady）が拾って開始する
         }
     }
 
@@ -857,9 +911,10 @@ const AudioManager = (() => {
             stopBgmScheduling(); // currentTrackNameは保持したまま、鳴っている分だけ止める
         } else {
             resume();
-            if (currentTrackName && settings.bgm > 0) {
+            if (currentTrackName && settings.bgm > 0 && ctx && ctx.state === 'running') {
                 scheduleBgmLoop(currentTrackName, bgmToken);
             }
+            // suspended中はresume()の成功コールバック（startBgmPlaybackIfReady）が拾って開始する
         }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange);
