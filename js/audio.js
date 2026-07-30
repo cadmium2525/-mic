@@ -764,6 +764,18 @@ const AudioManager = (() => {
         const loopMs = totalBeats(track.lead) * beatSec * 1000;
         bgmTimerId = setTimeout(() => {
             if (token !== bgmToken) return; // 途中で停止・曲変更されていたら止める
+            // ここが今回の核心的な修正点：
+            // このsetTimeoutは壁時計（実時間）基準で動くため、タブ/アプリが
+            // バックグラウンドになっていても関係なく発火し続けてしまう。
+            // visibilitychange等のイベントで止め損ねた場合でも、ここで
+            // 「AudioContextが実際にrunningかどうか」を直接確認することで、
+            // suspended/interrupted中に何重にもスケジュールが積み重なって
+            // 復帰時に音が重複したり消えたりする不具合を根本から防ぐ。
+            if (!ctx || ctx.state !== 'running') {
+                bgmTimerId = null; // ここでは何もしない。復帰時はresume()成功時の
+                                   // startBgmPlaybackIfReadyが改めて仕切り直す
+                return;
+            }
             scheduleBgmLoop(trackName, token);
         }, Math.max(200, loopMs - 80));
     }
@@ -980,6 +992,9 @@ const AudioManager = (() => {
     // iOS Safari等でbfcacheから復元された場合もvisibilitychangeが発火しないことがあるため保険で対応
     window.addEventListener('pageshow', () => { if (!document.hidden) handleVisibilityChange(); });
     window.addEventListener('focus', () => { if (!document.hidden) handleVisibilityChange(); });
+    // 非表示になる側も同様に、visibilitychangeが取りこぼす端末があるための保険
+    window.addEventListener('pagehide', () => { stopBgmScheduling(); });
+    window.addEventListener('blur', () => { if (document.hidden) stopBgmScheduling(); });
 
     function stopBgm() {
         currentTrackName = null;

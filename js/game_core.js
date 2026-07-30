@@ -397,6 +397,7 @@ function playTitleBootIntro() {
                     pressStartEl.style.transition = 'opacity 0.3s ease-out';
                     pressStartEl.style.opacity = '0';
                 }
+                if (window.AudioManager) AudioManager.playSE('decide');
                 revealHomeMenu();
             };
             document.addEventListener('pointerdown', proceed);
