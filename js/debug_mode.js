@@ -38,16 +38,17 @@ const DEBUG_STATE = {
     // aiPersonality: 'random'（バトル開始時にランダムで1つ性格を割り当てる、既定の本編動作）
     // または 'speedy' / 'control' / 'sustain' / 'balanced' のいずれかを固定指定。
     ai: { level: 2, personality: 'random' },
-    // デバッグバトルの地形（TERRAIN_TYPESのキー、または'none'＝地形なし）。
-    // 通常のプレイ導線には一切影響しない、デバッグ模擬戦専用の設定。
-    terrain: 'none'
+    // デバッグバトルのステージ（地形）。BATTLE_STAGES（database.js）のキー。
+    // 'arena'＝闘技場（従来通りボーナス無し）が既定値。
+    terrain: 'arena'
 };
 
-// 地形セレクトの選択肢（'none'＝地形なし＋TERRAIN_TYPESの4色）
-const DEBUG_TERRAIN_OPTIONS = [
-    { value: 'none', label: '（地形なし）' },
-    ...Object.values(TERRAIN_TYPES).map(t => ({ value: t.key, label: `${t.emoji} ${t.name}` }))
-];
+// 地形セレクトの選択肢（BATTLE_STAGESをそのまま利用。imagesフォルダに登録済みの背景画像・
+// オーラボーナスがそのまま反映される）
+const DEBUG_TERRAIN_OPTIONS = Object.values(BATTLE_STAGES).map(stage => ({
+    value: stage.key,
+    label: stage.auraBonus ? `${AURA_TYPES[stage.auraBonus].emoji} ${stage.name}` : stage.name
+}));
 
 // AIレベルの選択肢（数値と説明のペア）
 const DEBUG_AI_LEVEL_OPTIONS = [
@@ -192,7 +193,7 @@ function renderDebugTerrainOptions() {
 
 // 地形セレクトが変更された時の反映
 function onDebugTerrainChange(value) {
-    DEBUG_STATE.terrain = value || 'none';
+    DEBUG_STATE.terrain = (value && BATTLE_STAGES[value]) ? value : 'arena';
 }
 
 // 現在のDEBUG_STATE.aiの内容から、実際にバトルへ渡すaiPersonalityの値を解決する
@@ -715,7 +716,7 @@ function launchDebugBattle() {
 
     MASMON_BATTLE_STATE.mode = 'cpu_team';
     MASMON_BATTLE_STATE.isDebugBattle = true;
-    MASMON_BATTLE_STATE.debugTerrain = (DEBUG_STATE.terrain && DEBUG_STATE.terrain !== 'none') ? DEBUG_STATE.terrain : null;
+    MASMON_BATTLE_STATE.debugStage = DEBUG_STATE.terrain || 'arena';
     MASMON_BATTLE_STATE.playerTeam = DEBUG_STATE.playerTeam.map(m => convertMasmonToBattleUnit(m, m.equip || null));
     MASMON_BATTLE_STATE.enemyTeam = DEBUG_STATE.opponentTeam.map(m => convertMasmonToBattleUnit(m, m.equip || null));
     MASMON_BATTLE_STATE.playerMeta = [...DEBUG_STATE.playerTeam];

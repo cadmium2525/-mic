@@ -328,16 +328,17 @@ function startMasmonBattleCommon(floorText) {
     // 「攻撃終了」「防御して終了」ボタンは非表示にする（防御は技一覧に統合）
     document.getElementById('battle-endturn-controls').classList.add('hidden');
 
-    // 地形（デバッグモードでのみ指定可能。通常バトルでは必ず「地形なし」にリセットする）
-    setBattleTerrain(MASMON_BATTLE_STATE.isDebugBattle ? MASMON_BATTLE_STATE.debugTerrain : null);
-    const terrainBadge = document.getElementById('battle-terrain-badge');
-    if (terrainBadge) {
-        const terrainKey = getBattleTerrain();
-        if (terrainKey && TERRAIN_TYPES[terrainKey]) {
-            terrainBadge.textContent = `${TERRAIN_TYPES[terrainKey].emoji} ${TERRAIN_TYPES[terrainKey].name}`;
-            terrainBadge.classList.remove('hidden');
+    // バトルステージ（背景・オーラボーナス）。デバッグバトルではDEBUG_STATEで指定した
+    // ステージを、通常バトルでは必ず「闘技場」（ボーナス無し）を設定する。
+    setBattleStage(MASMON_BATTLE_STATE.isDebugBattle ? MASMON_BATTLE_STATE.debugStage : 'arena');
+    const stageBadge = document.getElementById('battle-terrain-badge');
+    if (stageBadge) {
+        const stage = BATTLE_STAGES[CURRENT_BATTLE_STAGE_KEY];
+        if (stage && stage.key !== 'arena') {
+            stageBadge.textContent = `🗺️ ${stage.name}`;
+            stageBadge.classList.remove('hidden');
         } else {
-            terrainBadge.classList.add('hidden');
+            stageBadge.classList.add('hidden');
         }
     }
 

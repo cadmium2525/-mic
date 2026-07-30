@@ -153,69 +153,27 @@ const SKILL_AURA_ADVANTAGE_DAMAGE_MULTIPLIER = 2.0;
 // ⑤技オーラが相手のオーラに対して不利な場合の与ダメージ倍率
 const SKILL_AURA_DISADVANTAGE_DAMAGE_MULTIPLIER = 0.5;
 
-// ⑥地形と一致するオーラの技を使った場合の与ダメージ倍率
-const TERRAIN_SKILL_AURA_MATCH_DAMAGE_MULTIPLIER = 1.2;
-// ⑦地形と一致するオーラを持つモンスター自身の全ステータスに掛かる倍率
-const TERRAIN_UNIT_AURA_STAT_MULTIPLIER = 1.1;
-
-// =====================================================
-// 地形（バトルフィールド）データベース
-// バトル開始時に設定できる「地形」。オーラ相性システムに、地形に一致する
-// オーラへのバフをもう一段追加する（⑥自身のオーラと一致する技の与ダメージ増、
-// ⑦自身のオーラが地形と一致する場合の全ステータス増）。
-// 通常のプレイ導線（育成中バトル・ガッツファクトリー・エンドレス・PvP等）では
-// 常に地形なし(null)。デバッグモードの模擬戦でのみ地形を指定してテストできる
-// （setBattleTerrain()参照）。
-// =====================================================
-const TERRAIN_TYPES = {
-    red:    { key: 'red',    name: '灼熱の地形', emoji: '🔥', auraKey: 'red' },
-    green:  { key: 'green',  name: '深緑の地形', emoji: '🌿', auraKey: 'green' },
-    yellow: { key: 'yellow', name: '雷光の地形', emoji: '⚡', auraKey: 'yellow' },
-    blue:   { key: 'blue',   name: '水流の地形', emoji: '💧', auraKey: 'blue' }
-};
-
-// 現在のバトルに設定されている地形（TERRAIN_TYPESのキー、またはnull＝地形なし）。
-// masmon_battle.js の startMasmonBattleCommon が、通常バトルでは必ずnullに、
-// デバッグバトルではDEBUG_STATEで指定された地形にリセットする。
-let CURRENT_BATTLE_TERRAIN = null;
-
-// --- 現在のバトルの地形を設定する（不正な値やnullは「地形なし」として扱う） ---
-function setBattleTerrain(terrainKey) {
-    CURRENT_BATTLE_TERRAIN = (terrainKey && TERRAIN_TYPES[terrainKey]) ? terrainKey : null;
-}
-
-// --- 現在のバトルの地形を取得する ---
-function getBattleTerrain() {
-    return CURRENT_BATTLE_TERRAIN;
-}
-
 // --- ①②：自身(self)から見て相手(opponent)に対するオーラ／モン類の有利判定を元に、
 //     「自身の全ステータス」に掛ける倍率をまとめて返す（該当なしなら1、両方該当なら乗算で重複適用）。
 //     getBuffedAttackStat/getBuffedDefenseStat/getBuffedHitStat/getEvasionStat が
 //     第3引数(または第4引数)に opponent を受け取った時、内部でこの関数を呼んで自動的に反映する。
-//     ⑦地形が自身のオーラと一致する場合の全ステータス増は、opponentの有無に関わらず反映する。
 function getAuraMonClassStatMultiplier(self, opponent) {
-    if (!self) return 1;
+    if (!self || !opponent) return 1;
     let mult = 1;
-    if (opponent) {
-        if (isAuraAdvantageous(self.aura, opponent.aura)) {
-            mult *= AURA_ADVANTAGE_STAT_MULTIPLIER;
-        }
-        if (isMonClassAdvantageous(self.monsterBaseName, opponent.monsterBaseName)) {
-            mult *= MONCLASS_ADVANTAGE_STAT_MULTIPLIER;
-        }
+    if (isAuraAdvantageous(self.aura, opponent.aura)) {
+        mult *= AURA_ADVANTAGE_STAT_MULTIPLIER;
     }
-    if (CURRENT_BATTLE_TERRAIN && self.aura === CURRENT_BATTLE_TERRAIN) {
-        mult *= TERRAIN_UNIT_AURA_STAT_MULTIPLIER;
+    if (isMonClassAdvantageous(self.monsterBaseName, opponent.monsterBaseName)) {
+        mult *= MONCLASS_ADVANTAGE_STAT_MULTIPLIER;
     }
     return mult;
 }
 
-// --- ③④⑤⑥：技オーラに基づく与ダメージ倍率とログ用メッセージ断片をまとめて返す。
+// --- ③④⑤：技オーラに基づく与ダメージ倍率とログ用メッセージ断片をまとめて返す。
 //     attacker: 技を使うユニット / defender: 受けるユニット / sk: SKILLS_DB のエフェクティブ技オブジェクト（auraフィールドを参照）
 //     戻り値: { multiplier: 倍率(該当なしなら1), messages: ['(...)' 形式のログ断片の配列] }
 function getSkillAuraDamageBonus(attacker, defender, sk) {
-    const result = { multiplier: 1, messages: [], selfMatch: false, advantage: false, disadvantage: false, terrainMatch: false };
+    const result = { multiplier: 1, messages: [], selfMatch: false, advantage: false, disadvantage: false };
     const skillAura = sk && sk.aura;
     if (!skillAura) return result; // 技が無属性（aura未設定）の場合は補正なし
 
@@ -237,13 +195,6 @@ function getSkillAuraDamageBonus(attacker, defender, sk) {
             result.messages.push(` (技オーラ相性${AURA_TYPES[defender.aura].emoji}→${AURA_TYPES[skillAura].emoji}被ダメージ${SKILL_AURA_DISADVANTAGE_DAMAGE_MULTIPLIER}倍)`);
             result.disadvantage = true;
         }
-    }
-
-    // ⑥地形と技オーラが一致する場合、追加でダメージ増（デバッグモードで地形を指定した場合のみ発生）
-    if (CURRENT_BATTLE_TERRAIN && skillAura === CURRENT_BATTLE_TERRAIN) {
-        result.multiplier *= TERRAIN_SKILL_AURA_MATCH_DAMAGE_MULTIPLIER;
-        result.messages.push(` (地形${TERRAIN_TYPES[CURRENT_BATTLE_TERRAIN].emoji}効果×${TERRAIN_SKILL_AURA_MATCH_DAMAGE_MULTIPLIER})`);
-        result.terrainMatch = true;
     }
 
     return result;
