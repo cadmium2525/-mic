@@ -40,6 +40,19 @@ const AudioManager = (() => {
     let bgmToken = 0;
     let activeBgmNodes = []; // 現在スケジュール済みのBGM用osc/gainノード（曲切り替え時に即座に停止するため）
 
+    // iOS Safari（特にホーム画面追加＝PWAスタンドアロン起動）では、実際のユーザー操作
+    // （タップ／キー入力）より前にAudioContextを生成してしまうと、その後どれだけ
+    // resume()やバッファ再生を試みてもそのContextインスタンス自体が二度と鳴らせない
+    // ままになる、という既知の挙動がある。
+    // 「Now loading→PRESS START」の起動演出では、画面表示だけでBGM再生ロジックが
+    // 自動的に走ってしまい（onScreenChange経由）、ユーザーがまだ一度もタップして
+    // いない段階でensureContext()が呼ばれてAudioContextが生成されてしまっていた。
+    // これがPRESS STARTをタップしても音が鳴らない不具合の原因。
+    // 対策：最初の実ジェスチャー（pointerdown/keydown）を受け取るまではensureContext()
+    // がAudioContextを生成しないようにガードする（曲名の記憶自体は行い、鳴らすのは
+    // ジェスチャー後に回す）。
+    let audioGestureReceived = false;
+
     function clampVolume(v) {
         const n = Number(v);
         if (!Number.isFinite(n)) return 0;
@@ -82,6 +95,7 @@ const AudioManager = (() => {
     // ---------------------------------------------------
     function ensureContext() {
         if (ctx) return ctx;
+        if (!audioGestureReceived) return null; // 実ジェスチャー前は生成しない（iOS対策）
         try {
             const Ctor = window.AudioContext || window.webkitAudioContext;
             if (!Ctor) return null;
@@ -151,9 +165,51 @@ const AudioManager = (() => {
         } catch (e) { /* 無視：本命はresume()側 */ }
     }
 
-    // 初回のユーザー操作でAudioContextのロックを解除する（ブラウザの自動再生制限対策）
+    // iOS Safari（特にホーム画面追加＝PWAスタンドアロン起動）は、しばらく他画面に
+    // 切り替えて（＝タスクキルはせず）長時間バックグラウンドに置かれると、既存の
+    // AudioContextがresume()だけでは正常に戻らなくなることがある
+    // （'interrupted'状態のまま固まる等）。その場合はContextを閉じて完全に
+    // 作り直す必要がある。
+    function recreateAudioContext() {
+        try {
+            if (ctx && typeof ctx.close === 'function' && ctx.state !== 'closed') {
+                ctx.close().catch(() => {});
+            }
+        } catch (e) { /* 無視 */ }
+        ctx = null;
+        masterBgmGain = null;
+        masterSeGain = null;
+        activeBgmNodes = [];
+        bgmTimerId = null;
+        return ensureContext(); // audioGestureReceivedは既にtrueなので生成される
+    }
+
+    // ---------------------------------------------------
+    // バックグラウンド復帰後の保険：フォアグラウンドに戻った直後の自動resume()だけでは
+    // 復帰しきらない端末向けに、復帰後の「次の実タップ」で確実に立て直す。
+    // （visibilitychangeイベント自体はブラウザによってはユーザージェスチャーとして
+    // 扱われないため、実際のタップの中でAudioContextの作り直しまで行う方が確実）
+    // ---------------------------------------------------
+    let foregroundRecoveryArmed = false;
+    function armForegroundRecovery() {
+        if (foregroundRecoveryArmed) return;
+        foregroundRecoveryArmed = true;
+        const recover = () => {
+            foregroundRecoveryArmed = false;
+            document.removeEventListener('pointerdown', recover, true);
+            document.removeEventListener('keydown', recover, true);
+            if (!ctx || ctx.state !== 'running') {
+                recreateAudioContext();
+            }
+            unlockWithSilentBuffer();
+            resume();
+        };
+        document.addEventListener('pointerdown', recover, true);
+        document.addEventListener('keydown', recover, true);
+    }
     function installUnlockListener() {
         const unlock = () => {
+            audioGestureReceived = true; // これでensureContext()が実際に生成を行えるようになる
             ensureContext();
             unlockWithSilentBuffer();
             resume();
@@ -914,7 +970,10 @@ const AudioManager = (() => {
             if (currentTrackName && settings.bgm > 0 && ctx && ctx.state === 'running') {
                 scheduleBgmLoop(currentTrackName, bgmToken);
             }
-            // suspended中はresume()の成功コールバック（startBgmPlaybackIfReady）が拾って開始する
+            // suspended中はresume()の成功コールバック（startBgmPlaybackIfReady）が拾って開始する。
+            // 長時間バックグラウンドの後は上記のresume()だけでは復帰しない端末があるため、
+            // 保険として「復帰後の次の実タップ」でAudioContextを作り直す仕組みも有効化しておく。
+            armForegroundRecovery();
         }
     }
     document.addEventListener('visibilitychange', handleVisibilityChange);
