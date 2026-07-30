@@ -37,8 +37,17 @@ const DEBUG_STATE = {
     // CPU（対戦相手）のAI設定。aiLevel: 1〜4（数値が高いほど強いロジック）、
     // aiPersonality: 'random'（バトル開始時にランダムで1つ性格を割り当てる、既定の本編動作）
     // または 'speedy' / 'control' / 'sustain' / 'balanced' のいずれかを固定指定。
-    ai: { level: 2, personality: 'random' }
+    ai: { level: 2, personality: 'random' },
+    // デバッグバトルの地形（TERRAIN_TYPESのキー、または'none'＝地形なし）。
+    // 通常のプレイ導線には一切影響しない、デバッグ模擬戦専用の設定。
+    terrain: 'none'
 };
+
+// 地形セレクトの選択肢（'none'＝地形なし＋TERRAIN_TYPESの4色）
+const DEBUG_TERRAIN_OPTIONS = [
+    { value: 'none', label: '（地形なし）' },
+    ...Object.values(TERRAIN_TYPES).map(t => ({ value: t.key, label: `${t.emoji} ${t.name}` }))
+];
 
 // AIレベルの選択肢（数値と説明のペア）
 const DEBUG_AI_LEVEL_OPTIONS = [
@@ -116,6 +125,7 @@ function openDebugScreen() {
     renderDebugEquipStatus('player');
     renderDebugEquipStatus('opponent');
     renderDebugAiOptions();
+    renderDebugTerrainOptions();
     renderDebugTeamLists();
     renderDebugBreederPreviewList();
     updateDebugKinNejikiRunBadge();
@@ -162,6 +172,27 @@ function onDebugAiLevelChange(value) {
 // AIタイプ（性格）のセレクトが変更された時の反映
 function onDebugAiPersonalityChange(value) {
     DEBUG_STATE.ai.personality = value || 'random';
+}
+
+// -----------------------------------------------------
+// 地形（デバッグ専用）設定セレクトボックスの選択肢を描画する
+// -----------------------------------------------------
+function renderDebugTerrainOptions() {
+    const terrainEl = document.getElementById('debug-terrain');
+    if (!terrainEl) return;
+    terrainEl.innerHTML = '';
+    DEBUG_TERRAIN_OPTIONS.forEach(({ value, label }) => {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = label;
+        terrainEl.appendChild(opt);
+    });
+    terrainEl.value = DEBUG_STATE.terrain;
+}
+
+// 地形セレクトが変更された時の反映
+function onDebugTerrainChange(value) {
+    DEBUG_STATE.terrain = value || 'none';
 }
 
 // 現在のDEBUG_STATE.aiの内容から、実際にバトルへ渡すaiPersonalityの値を解決する
@@ -684,6 +715,7 @@ function launchDebugBattle() {
 
     MASMON_BATTLE_STATE.mode = 'cpu_team';
     MASMON_BATTLE_STATE.isDebugBattle = true;
+    MASMON_BATTLE_STATE.debugTerrain = (DEBUG_STATE.terrain && DEBUG_STATE.terrain !== 'none') ? DEBUG_STATE.terrain : null;
     MASMON_BATTLE_STATE.playerTeam = DEBUG_STATE.playerTeam.map(m => convertMasmonToBattleUnit(m, m.equip || null));
     MASMON_BATTLE_STATE.enemyTeam = DEBUG_STATE.opponentTeam.map(m => convertMasmonToBattleUnit(m, m.equip || null));
     MASMON_BATTLE_STATE.playerMeta = [...DEBUG_STATE.playerTeam];

@@ -328,6 +328,19 @@ function startMasmonBattleCommon(floorText) {
     // 「攻撃終了」「防御して終了」ボタンは非表示にする（防御は技一覧に統合）
     document.getElementById('battle-endturn-controls').classList.add('hidden');
 
+    // 地形（デバッグモードでのみ指定可能。通常バトルでは必ず「地形なし」にリセットする）
+    setBattleTerrain(MASMON_BATTLE_STATE.isDebugBattle ? MASMON_BATTLE_STATE.debugTerrain : null);
+    const terrainBadge = document.getElementById('battle-terrain-badge');
+    if (terrainBadge) {
+        const terrainKey = getBattleTerrain();
+        if (terrainKey && TERRAIN_TYPES[terrainKey]) {
+            terrainBadge.textContent = `${TERRAIN_TYPES[terrainKey].emoji} ${TERRAIN_TYPES[terrainKey].name}`;
+            terrainBadge.classList.remove('hidden');
+        } else {
+            terrainBadge.classList.add('hidden');
+        }
+    }
+
     document.getElementById('battle-floor-indicator').textContent = floorText;
     document.getElementById('battle-turn-counter').textContent = MASMON_BATTLE_STATE.turn;
     updateBattleFastModeButtonUI();

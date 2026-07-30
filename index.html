@@ -144,6 +144,7 @@
                     <div class="flex flex-wrap justify-between items-center gap-y-1 text-[11px]">
                         <span class="text-amber-400 font-bold pixel-font truncate max-w-[65%]" id="battle-floor-indicator">FLOOR 10 - BOSS BATTLE</span>
                         <div class="flex items-center flex-wrap gap-1.5">
+                            <span id="battle-terrain-badge" class="hidden bg-slate-700 text-white font-bold text-[9px] px-1.5 py-0.5 rounded"></span>
                             <span id="player-defense-shield" class="hidden bg-blue-600 text-white font-bold text-[9px] px-1.5 py-0.5 rounded">🛡️ 防御中</span>
                             <span id="enemy-defense-shield" class="hidden bg-red-700 text-white font-bold text-[9px] px-1.5 py-0.5 rounded">🛡️ 相手が防御中</span>
                             <span id="realtime-turn-indicator" class="hidden text-white font-bold text-[9px] px-1.5 py-0.5 rounded"></span>
@@ -989,6 +990,14 @@
                         </div>
                         <button onclick="startDebugKinNejikiRunFromBattle()"
                             class="w-full py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-xs font-bold rounded-lg active:scale-95 transition-all">🏁 この戦目から開始</button>
+                    </div>
+
+                    <!-- 地形設定（デバッグ専用：各オーラへのバフが反映される） -->
+                    <div class="bg-[#2a1b15] border border-amber-900/50 rounded-xl p-3 space-y-2">
+                        <div class="text-xs font-bold text-amber-300">🗺️ 地形設定（デバッグ専用）</div>
+                        <select id="debug-terrain" onchange="onDebugTerrainChange(this.value)"
+                            class="w-full bg-[#1a120b] border border-amber-800 text-white text-xs rounded-lg px-2 py-1.5"></select>
+                        <div class="text-[8px] text-gray-500 leading-tight">地形に一致するオーラの技は与ダメージ増、地形に一致するオーラを持つモンスターは全ステータス増（通常のバトルには影響しません）。</div>
                     </div>
 
                     <!-- ② 対戦相手編成 -->

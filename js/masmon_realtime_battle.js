@@ -336,6 +336,12 @@ function attachRealtimeBattleListeners() {
 function enterRealtimeBattleScreen(state) {
     ACTIVE_BATTLE_MODE = 'masmon_realtime';
 
+    // PvPには地形は存在しない（デバッグモードの模擬戦専用機能）。前回デバッグバトルの
+    // 設定が残っていた場合に備えて、念のためここで明示的にリセットしておく。
+    if (typeof setBattleTerrain === 'function') setBattleTerrain(null);
+    const terrainBadge = document.getElementById('battle-terrain-badge');
+    if (terrainBadge) terrainBadge.classList.add('hidden');
+
     document.getElementById('battle-endturn-controls').classList.add('hidden');
     document.getElementById('realtime-surrender-btn').classList.remove('hidden');
     document.getElementById('realtime-turn-indicator').classList.remove('hidden');
