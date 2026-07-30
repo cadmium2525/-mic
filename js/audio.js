@@ -195,26 +195,43 @@ const AudioManager = (() => {
         if (foregroundRecoveryArmed) return;
         foregroundRecoveryArmed = true;
         const recover = () => {
-            foregroundRecoveryArmed = false;
-            document.removeEventListener('pointerdown', recover, true);
-            document.removeEventListener('keydown', recover, true);
             if (!ctx || ctx.state !== 'running') {
                 recreateAudioContext();
             }
             unlockWithSilentBuffer();
             resume();
+            if (ctx && ctx.state === 'running') {
+                foregroundRecoveryArmed = false;
+                document.removeEventListener('pointerdown', recover, true);
+                document.removeEventListener('keydown', recover, true);
+            }
+            // まだ 'running' になっていない場合はリスナーを残し、次のタップで再試行する
         };
         document.addEventListener('pointerdown', recover, true);
         document.addEventListener('keydown', recover, true);
     }
+    // 初回のユーザー操作でAudioContextのロックを解除する（ブラウザの自動再生制限対策）。
+    // ------------------------------------------------------------------
+    // Safari（PWA/通常ブラウザどちらも）では、1回目のタップ・ジェスチャーだけでは
+    // AudioContextの解除（'running'への遷移）が間に合わない／成立しないことがある
+    // （resume()のPromiseが遅れる、あるいは初回は反映されない等）既知のクセがある。
+    // 以前は「1回でも解除を試みたら完了とみなして以後は何もしない」実装だったため、
+    // PRESS STARTの1回目のタップで解除しきれなかった場合、そのまま二度と自動では
+    // 試みられず、実際に音が鳴るのは「たまたま次にタップした別のボタン」まで
+    // ずれ込んでしまっていた。
+    // 対策：実際に ctx.state === 'running' になったことを確認できるまでは
+    // リスナーを解除せず、以後のタップ・キー入力のたびに何度でも解除を再試行する。
     function installUnlockListener() {
         const unlock = () => {
             audioGestureReceived = true; // これでensureContext()が実際に生成を行えるようになる
             ensureContext();
             unlockWithSilentBuffer();
             resume();
-            document.removeEventListener('pointerdown', unlock, true);
-            document.removeEventListener('keydown', unlock, true);
+            if (ctx && ctx.state === 'running') {
+                document.removeEventListener('pointerdown', unlock, true);
+                document.removeEventListener('keydown', unlock, true);
+            }
+            // まだ 'running' になっていない場合はリスナーを残し、次のタップで再試行する
         };
         document.addEventListener('pointerdown', unlock, true);
         document.addEventListener('keydown', unlock, true);
