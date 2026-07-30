@@ -686,7 +686,7 @@ const SKILLS_DB = {
     // --- ネンドロ系統 ---
     zoom_punch_nendoro: { name: 'ズームパンチ', aura: 'green', cost: 18, type: 'pow', hitRate: 100, force: 1.0, gutsDown: 10, effect: null, desc: '踏み込んで放つ正確な一撃。相手GUTS-10。必中' },
     mach_punch: { name: 'マッハパンチ', aura: 'green', cost: 30, type: 'pow', hitRate: 85, force: 1.8, gutsDown: 15, priority: 1, effect: null, desc: '目にも留まらぬ速さの高速連打。相手GUTS-15。素早さに関わらず、必ず先制して行動できる（先制攻撃）' },
-    michizure: { name: 'みちづれ', aura: null, cost: 30, type: 'buff_pow', hitRate: 100, force: 0, gutsDown: 0, priority: 1, useEffect: 'michizure_wait', desc: '相手を道連れにする覚悟を決める特殊技。ダメージ・ガッツダウンともに無し。素早さに関わらず必ず先制して行動できる（先制技）。みちづれ待機状態になり、このターン中に相手の攻撃や状態異常で自分のライフが0になった場合、相手のモンスターのライフも0にする。' },
+    michizure: { name: 'みちづれ', aura: null, cost: 30, type: 'buff_pow', hitRate: 100, force: 0, gutsDown: 0, useEffect: 'michizure_wait', desc: '相手を道連れにする覚悟を決める特殊技。ダメージ・ガッツダウンともに無し。みちづれ待機状態になり、このターン中に相手の攻撃や状態異常で自分のライフが0になった場合、相手のモンスターのライフも0にする。連続で使用すると構えに失敗し、効果が発動しない。' },
     meido_no_miyage: { name: 'めいどのみやげ', aura: 'red', cost: 50, type: 'pow', hitRate: 72, force: 2.9, gutsDown: 25, effect: 'dot_mine', desc: '渾身の力を込めた極悪の一撃。相手GUTS-25。さらに命中した場合、強烈な後遺症で3ターンの間継続ダメージを与える' },
     ganduke: { name: 'がん飛ばし', aura: 'green', cost: 14, type: 'pow', hitRate: 92, force: 0.6, gutsDown: 6, effect: 'evasion_def_down_20', desc: '威圧するような軽い張り手の基本技。相手GUTS-6。さらに命中した場合、相手の回避と丈夫さを20%下げる（3回まで重複可・交代するまで持続）' },
     body_press_nendoro: { name: 'ボディプレス', aura: 'red', cost: 33, type: 'pow', hitRate: 81, force: 1.9, gutsDown: 18, useDefAsAtk: true, effect: null, desc: '全体重を乗せた押しつぶし。相手GUTS-18。自身の丈夫さの値が高いほど大ダメージを与える（ダメージ計算時、丈夫さの数値を攻撃の値として扱う）' },
@@ -1320,7 +1320,7 @@ function applySkillOnHitEffect(caster, target, sk) {
 // caster: 技を撃った側のユニット, sk: 実効技データ
 // 現状は「アサルトダンス」（自身の攻撃ステータスが10%上昇、3回まで重複可）のみ対応
 // 戻り値: 追加効果のログメッセージ配列
-function applySkillOnUseEffect(caster, sk) {
+function applySkillOnUseEffect(caster, sk, previousSkillKeyUsed, skKey) {
     const logs = [];
     if (!sk || !sk.useEffect || !caster) return logs;
 
@@ -1369,9 +1369,15 @@ function applySkillOnUseEffect(caster, sk) {
         caster.spdUpStacks = Math.min(3, (caster.spdUpStacks || 0) + 1);
         logs.push({ short: `💫 ${caster.name} の回避ステータスが上昇した！`, detail: `💫 ${caster.name} の回避ステータスが上昇した！（累積 ${caster.spdUpStacks}/3 ・ 1回につき10%アップ）` });
     } else if (sk.useEffect === 'michizure_wait') {
-        // みちづれ：このターンに相手の攻撃や状態異常で自身のライフが0になった場合、相手のライフも0にする
-        caster.michizureActive = true;
-        logs.push({ short: `💀 ${caster.name} はみちづれの構えを取った！`, detail: `💀 ${caster.name} はみちづれの構えを取った！（このターン、相手の攻撃や状態異常でライフが0になった場合、相手のライフも0になる）` });
+        // みちづれ：このターンに相手の攻撃や状態異常で自身のライフが0になった場合、相手のライフも0にする。
+        // 連続で使用した場合（直前の自分の行動が同じ技だった場合）は構えに失敗し、効果が発動しない。
+        const isConsecutive = !!skKey && previousSkillKeyUsed === skKey;
+        if (isConsecutive) {
+            logs.push({ short: `💦 ${caster.name} はみちづれの構えに失敗した！`, detail: `💦 ${caster.name} は連続で使用したため、みちづれの構えに失敗した！（このターンはみちづれの効果が発動しない）` });
+        } else {
+            caster.michizureActive = true;
+            logs.push({ short: `💀 ${caster.name} はみちづれの構えを取った！`, detail: `💀 ${caster.name} はみちづれの構えを取った！（このターン、相手の攻撃や状態異常でライフが0になった場合、相手のライフも0になる）` });
+        }
     } else if (sk.useEffect === 'self_pow_int_up15_once') {
         // 最終奥義：ちから・かしこさを15%上昇させる（重複せず1回のみ有効。2回目以降使用しても追加効果は発生しない）
         if ((caster.durahanBuffStacks || 0) >= 1) {

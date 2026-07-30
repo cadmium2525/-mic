@@ -1968,7 +1968,7 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
         updateMasmonBattleStatsUI();
 
         const steps = [];
-        buildSkillNameStep(steps, side, unit, sk, action.skKey);
+        buildSkillNameStep(steps, side, unit, sk, action.skKey, previousSkillKeyUsed);
 
         if (sk.type === 'pow' || sk.type === 'int') {
             buildAttackSkillSteps(steps, side, unit, opponent, sk);
@@ -2002,7 +2002,7 @@ function executeMasmonSideAction(side, unit, opponent, action, onComplete) {
 }
 
 // --- 技名表示ステップ（技発動時の自己強化効果もここで解決する） ---
-function buildSkillNameStep(steps, side, unit, sk, skKey) {
+function buildSkillNameStep(steps, side, unit, sk, skKey, previousSkillKeyUsed) {
     const cfg = SIDE_UI[side];
     steps.push({
         run: () => {
@@ -2016,7 +2016,7 @@ function buildSkillNameStep(steps, side, unit, sk, skKey) {
             }
             animateSprite(cfg.spriteContainer, cfg.spriteAnim);
             if (skKey && typeof playSkillVisualEffect === 'function') playSkillVisualEffect(skKey, side);
-            applySkillOnUseEffect(unit, sk).forEach(m => addLog(m.short, m.detail));
+            applySkillOnUseEffect(unit, sk, previousSkillKeyUsed, skKey).forEach(m => addLog(m.short, m.detail));
         },
         wait: BATTLE_STEP_DELAY.afterSkillName
     });

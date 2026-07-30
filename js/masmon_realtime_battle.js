@@ -749,6 +749,13 @@ function triggerRealtimeCombatEffects(entry) {
         return;
     }
 
+    // ③ ターン終了処理（継続ダメージ・装備アイテムの毎ターン回復）フェーズの区切りバナー。
+    // 先攻・後攻どちらの行動フェーズとも異なる、独立した「ターン終了処理」であることを明示する。
+    if (text === '🌀 ターン終了処理（継続ダメージ・回復）') {
+        showEffect('🌀 ターン終了処理 🌀');
+        return;
+    }
+
     const skillNameMatch = text.match(/^(.*)の【(.+?)】！$/);
     if (skillNameMatch && typeof playSkillVisualEffectByName === 'function') {
         const casterName = (skillNameMatch[1] || '').trim();
@@ -1737,7 +1744,7 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
         incrementSkillUseCount(me, action.key);
         pushRealtimeLog(resultLogs, actingSlot, `${me.name} の【${sk.name}】！`);
         // 技発動時（命中判定に関わらず）の自己強化効果（アサルトダンス等）
-        applySkillOnUseEffect(me, sk).forEach(msg => pushRealtimeLog(resultLogs, actingSlot, msg.detail));
+        applySkillOnUseEffect(me, sk, previousSkillKeyUsed, action.key).forEach(msg => pushRealtimeLog(resultLogs, actingSlot, msg.detail));
 
         if (sk.type === 'pow' || sk.type === 'int') {
             // 装備の「攻撃するたびにライフ消費・技威力アップ」効果：技を繰り出した時点（命中判定に関わらず）で1回だけ適用する
@@ -2056,29 +2063,11 @@ function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs, ownerSlot
     if (unit.blindTurns > 0) unit.blindTurns--;
     if (unit.hitDownTempTurns > 0) unit.hitDownTempTurns--;
 
-    // 出血（レッグアーク・ダークホウスト等）の残ターン消化
-    let bleedDamage = 0;
-    if (unit.dotTurns > 0) {
-        bleedDamage = Math.max(1, Math.floor((unit.maxLife || 0) * (unit.dotPct || 0.08)));
-        unit.dotTurns--;
-    }
-
-    // やけど：治るまでターン数の制限なく、毎ターン終了時に最大ライフの1/16のダメージを受け続ける
-    let burnDamage = 0;
-    if (unit.isBurned) {
-        burnDamage = Math.max(1, Math.floor((unit.maxLife || 0) / 16));
-    }
-
-    // 猛毒：ターンが経過するごとに最大ライフの1/16, 2/16…と受けるダメージが増えていく（最大15/16）。
-    // 交代するとダメージ量は1/16からやり直しになる。
-    let poisonDamage = 0;
-    if (unit.isPoisoned) {
-        unit.poisonCounter = Math.min(15, (unit.poisonCounter || 0) + 1);
-        poisonDamage = Math.max(1, Math.floor((unit.maxLife || 0) * unit.poisonCounter / 16));
-    }
-
-    const dotResult = { bleedDamage, burnDamage, poisonDamage };
-    if (bleedDamage > 0 || burnDamage > 0 || poisonDamage > 0) {
+    // 出血／やけど／猛毒／のろいの継続ダメージは共通関数（database.js）で一括計算する
+    // （以前はここで手動計算しており、のろい(curseDamage)の反映漏れが起きていたため修正）
+    const dotResult = computeStatusDotDamage(unit);
+    const { bleedDamage, burnDamage, poisonDamage, curseDamage } = dotResult;
+    if (bleedDamage > 0 || burnDamage > 0 || poisonDamage > 0 || curseDamage > 0) {
         const dotLogs = applyDotDamageAndBuildLogs(unit.name, dotResult, () => unit.life, (v) => { unit.life = v; });
         dotLogs.forEach(line => pushRealtimeLog(resultLogs, ownerSlot, line.detail));
         if (opponentUnit) {
@@ -2151,6 +2140,14 @@ function applyRealtimeTurnStartEffects(unit, opponentUnit, resultLogs, ownerSlot
 function startRealtimeNextTurn(current, aSlot, bSlot, resultLogs) {
     const aUnit = current.teams[aSlot].units[current.teams[aSlot].activeIdx];
     const bUnit = current.teams[bSlot].units[current.teams[bSlot].activeIdx];
+
+    // ③ 継続ダメージ（出血・やけど・猛毒・のろい）や装備アイテムの毎ターン回復は、
+    // 先攻・後攻どちらの行動もすべて完全に終わった後にまとめて処理する専用フェーズ。
+    // 「行動フェーズ」と混同されないよう、専用の区切りバナーを1件だけ先に出しておく
+    // （このバナーの表示・効果演出が終わってから、実際の継続ダメージ等のログが続けて表示される）。
+    if ((aUnit && aUnit.life > 0) || (bUnit && bUnit.life > 0)) {
+        pushRealtimeLog(resultLogs, aSlot, `🌀 ターン終了処理（継続ダメージ・回復）`);
+    }
 
     // 継続ダメージ等でどちらかが力尽きる可能性もあるため、両方に適用してからまとめて判定する
     applyRealtimeTurnStartEffects(aUnit, bUnit, resultLogs, aSlot);
