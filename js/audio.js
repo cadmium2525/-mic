@@ -836,6 +836,37 @@ const AudioManager = (() => {
     loadSettings();
     installUnlockListener();
 
+    // ---------------------------------------------------
+    // タスク切り替え（タブ/アプリの表示・非表示）対策
+    // ---------------------------------------------------
+    // このBGMは setTimeout で次ループ分を自前スケジューリングしているため、
+    // バックグラウンドに回るとブラウザがタイマーを間引く／遅延させ、
+    //   ・復帰までの間、次ループの予約が来ず「音が途切れる（消える）」
+    //   ・復帰した瞬間、遅延していた予約とAudioContextの状態がズレたまま
+    //     新しい音符群を重ねてスケジュールしてしまい「音が二重に鳴る」
+    // という不具合が起きていた。さらにAudioContextの自動再開は「初回の
+    // クリック/キー入力」1回限りのリスナーしかなく、バックグラウンドで
+    // ブラウザ側からcontextがsuspendされても復帰時に再開する手段が無かった。
+    //
+    // 対策：非表示になった瞬間にBGMのスケジューリング（タイマー・発音予定の
+    // ノード）を完全に停止し、前面に戻った瞬間にAudioContextを再開した上で
+    // 同じ曲を最初から鳴らし直す。こうすることで「途切れた続きを無理に
+    // 合わせる」処理を避け、重複・消失のどちらも起こらないようにする。
+    function handleVisibilityChange() {
+        if (document.hidden) {
+            stopBgmScheduling(); // currentTrackNameは保持したまま、鳴っている分だけ止める
+        } else {
+            resume();
+            if (currentTrackName && settings.bgm > 0) {
+                scheduleBgmLoop(currentTrackName, bgmToken);
+            }
+        }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    // iOS Safari等でbfcacheから復元された場合もvisibilitychangeが発火しないことがあるため保険で対応
+    window.addEventListener('pageshow', () => { if (!document.hidden) handleVisibilityChange(); });
+    window.addEventListener('focus', () => { if (!document.hidden) handleVisibilityChange(); });
+
     function stopBgm() {
         currentTrackName = null;
         stopBgmScheduling();
