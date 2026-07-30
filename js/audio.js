@@ -203,11 +203,13 @@ const AudioManager = (() => {
             if (ctx && ctx.state === 'running') {
                 foregroundRecoveryArmed = false;
                 document.removeEventListener('pointerdown', recover, true);
+                document.removeEventListener('click', recover, true);
                 document.removeEventListener('keydown', recover, true);
             }
             // まだ 'running' になっていない場合はリスナーを残し、次のタップで再試行する
         };
         document.addEventListener('pointerdown', recover, true);
+        document.addEventListener('click', recover, true);
         document.addEventListener('keydown', recover, true);
     }
     // 初回のユーザー操作でAudioContextのロックを解除する（ブラウザの自動再生制限対策）。
@@ -221,6 +223,16 @@ const AudioManager = (() => {
     // ずれ込んでしまっていた。
     // 対策：実際に ctx.state === 'running' になったことを確認できるまでは
     // リスナーを解除せず、以後のタップ・キー入力のたびに何度でも解除を再試行する。
+    // 追記：pointerdown（＝タッチ端末ではtouchstart相当）だけでは、WebKit系ブラウザで
+    // AudioContext.resume()が「有効なユーザー操作」として認識されないことがある
+    // （resume()自体は呼べてもPromiseが解決されずrunningに遷移しない）という既知の
+    // クセがある。実際にはネイティブの<button>要素をタップした場合は問題が起きにくいが、
+    // これは「PRESS START」のような通常のテキスト要素（<button>ではない）をタップした
+    // 場合との差として現れていた：<button>タップ時は後続の'click'イベントに対する
+    // 汎用SE再生処理（下方の document.addEventListener('click', ...)）がresume()を
+    // 呼んでおり、それがたまたま'click'起点だったために解除に成功していた。
+    // 対策：pointerdown/keydownに加えて'click'でも同じ解除処理を試みることで、
+    // ボタン以外の要素をタップした場合（PRESS STARTなど）でも確実に解除されるようにする。
     function installUnlockListener() {
         const unlock = () => {
             audioGestureReceived = true; // これでensureContext()が実際に生成を行えるようになる
@@ -229,11 +241,13 @@ const AudioManager = (() => {
             resume();
             if (ctx && ctx.state === 'running') {
                 document.removeEventListener('pointerdown', unlock, true);
+                document.removeEventListener('click', unlock, true);
                 document.removeEventListener('keydown', unlock, true);
             }
             // まだ 'running' になっていない場合はリスナーを残し、次のタップで再試行する
         };
         document.addEventListener('pointerdown', unlock, true);
+        document.addEventListener('click', unlock, true);
         document.addEventListener('keydown', unlock, true);
     }
 
