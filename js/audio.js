@@ -55,88 +55,87 @@ const AudioManager = (() => {
     // ---------------------------------------------------
     // 実音声ファイル(mp3等)によるBGM再生：
     // 基本のBGMはすべてWeb Audio APIでその場合成しているが、ホーム画面（screen-title）だけは
-    // 収録済みの音声ファイル(home.mp3)をループ再生する。合成BGMのスケジューリング
-    // （scheduleBgmLoop等）とは完全に独立した、HTML5 <audio>要素ベースの別経路として扱う。
+    // 収録済みの音声ファイル(home.mp3)をループ再生する。
     //
-    // ★音量調整について：
-    // iOSのSafari/WebKitは、<audio>要素の`.volume`プロパティをスクリプトから変更しても
-    // 無視する（常に1.0のまま）という仕様がある。ボリュームはハードウェアの物理ボタン側で
-    // ユーザーが直接管理すべき、という考え方によるもの。
-    // そのため`el.volume = ...`だけで音量調整しようとすると、PCやAndroidでは効くのに
-    // iPhoneだけ効かない、という不具合になる。
-    // 対策として、`<audio>`要素をcreateMediaElementSource()でWeb Audio APIのグラフに
-    // 取り込み、実際の音量調整はGainNode（fileBgmGainNode）側で行う。GainNodeの値変更は
-    // iOSでも問題なく反映される。
+    // ★実装方針について（重要）：
+    // 当初は<audio>要素で直接再生していたが、
+    //   ・iOSのSafari/WebKitは<audio>要素の`.volume`をスクリプトから変更しても無視する
+    //     （常にハードウェア側の物理ボタン任せになる）ため、ボリュームスライダーがPC/Androidでは
+    //     効くのにiPhoneだけ効かない、という不具合になっていた。
+    //   ・その対策として<audio>要素をcreateMediaElementSource()でWeb Audio APIのグラフに
+    //     取り込む方式を試したが、今度はiOS Safariで音そのものが一切鳴らなくなる
+    //     （createMediaElementSource自体がiOSで不安定という既知の問題）という、
+    //     より重大な不具合を引き起こしてしまった。
+    // そのため、<audio>要素を一切使わず、mp3ファイルをfetch+decodeAudioData()で
+    // AudioBufferとして読み込み、合成BGMと全く同じ経路（AudioBufferSourceNode→GainNode→
+    // destination）で再生する方式に変更した。この方式なら、
+    //   ・音量調整はGainNodeで行うため、iOSでも確実に反映される
+    //   ・マナーモード（ミュートスイッチ）対応も、合成BGMと同じくWeb Audio APIの
+    //     既定の挙動（+ applyAmbientAudioSession()による念押し）にそのまま乗る
+    // ため、両方の問題を同時に解消できる。
     // ---------------------------------------------------
     const FILE_BGM_TRACKS = {
         home: 'audio/home.mp3',
     };
-    let fileBgmAudioEl = null;
-    let fileBgmSourceNode = null;
-    let fileBgmGainNode = null;
+    let fileBgmBuffer = null;        // デコード済みAudioBuffer（一度取得したらキャッシュし、再取得しない）
+    let fileBgmBufferLoading = null; // 読み込み中のPromise（多重fetch防止）
+    let fileBgmSourceNode = null;    // 現在再生中のAudioBufferSourceNode（無ければ非再生中）
+    let fileBgmGainNode = null;      // ファイル再生BGM専用の音量調整用GainNode
     function isFileBgmTrack(trackName) {
         return !!FILE_BGM_TRACKS[trackName];
     }
-    function getFileBgmAudioEl() {
-        if (!fileBgmAudioEl) {
-            fileBgmAudioEl = new Audio();
-            fileBgmAudioEl.loop = true;
-            fileBgmAudioEl.preload = 'auto';
-        }
-        return fileBgmAudioEl;
-    }
-    // ctx（AudioContext）が使える状態になっていれば、<audio>要素をWeb Audioのグラフに
-    // 接続し直す（一度接続したMediaElementSourceは同じ要素に対して二度作れないため、
-    // 既に作成済みなら何もしない）。ctxがまだ無い場合は何もせず、後で
-    // （resume成功時やunlock()等から）改めて呼ばれることを期待する。
-    function ensureFileBgmGraph() {
+    function loadFileBgmBuffer(trackName) {
+        const src = FILE_BGM_TRACKS[trackName];
+        if (!src) return Promise.resolve(null);
+        if (fileBgmBuffer) return Promise.resolve(fileBgmBuffer);
+        if (fileBgmBufferLoading) return fileBgmBufferLoading;
         const c = ensureContext();
-        if (!c) return false;
-        const el = getFileBgmAudioEl();
-        if (!fileBgmGainNode) {
-            fileBgmGainNode = c.createGain();
-            fileBgmGainNode.gain.value = fileBgmVolume();
-            fileBgmGainNode.connect(c.destination);
-        }
-        if (!fileBgmSourceNode) {
-            try {
-                fileBgmSourceNode = c.createMediaElementSource(el);
-                fileBgmSourceNode.connect(fileBgmGainNode);
-            } catch (e) {
-                // 生成に失敗した場合（対応していない環境等）は諦める。
-                // この場合、iOSでは音量調整が効かない可能性があるが、再生自体は
-                // <audio>要素の通常再生としてそのまま続行できる。
-            }
-        }
-        return true;
+        if (!c) return Promise.resolve(null); // 実ジェスチャー前はまだ何もできない
+        fileBgmBufferLoading = fetch(src)
+            .then(res => res.arrayBuffer())
+            .then(data => c.decodeAudioData(data))
+            .then(buf => {
+                fileBgmBuffer = buf;
+                fileBgmBufferLoading = null;
+                return buf;
+            })
+            .catch(err => {
+                fileBgmBufferLoading = null;
+                console.warn('[AudioManager] home.mp3 の読み込みに失敗しました:', err);
+                return null;
+            });
+        return fileBgmBufferLoading;
     }
     function stopFileBgm() {
-        if (!fileBgmAudioEl) return;
-        try {
-            fileBgmAudioEl.pause();
-            fileBgmAudioEl.currentTime = 0;
-        } catch (e) { /* 無視 */ }
+        if (fileBgmSourceNode) {
+            try { fileBgmSourceNode.stop(); } catch (e) { /* 既に停止済み等は無視 */ }
+            try { fileBgmSourceNode.disconnect(); } catch (e) { /* 無視 */ }
+            fileBgmSourceNode = null;
+        }
     }
     function playFileBgm(trackName) {
-        const src = FILE_BGM_TRACKS[trackName];
-        if (!src) return;
-        const el = getFileBgmAudioEl();
-        if (!el.src || !el.src.endsWith(src)) {
-            el.src = src;
-        }
-        ensureFileBgmGraph(); // 実際の音量調整はfileBgmGainNode側で行う（iOS対策）
-        if (fileBgmGainNode) fileBgmGainNode.gain.value = fileBgmVolume();
-        else el.volume = fileBgmVolume(); // フォールバック（Web Audioグラフ生成前/失敗時）
-        if (settings.bgm === 0) return; // 無音設定中は読み込みだけ済ませて再生はしない
-        const playPromise = el.play();
-        if (playPromise && typeof playPromise.catch === 'function') {
-            // 自動再生制限で失敗した場合、実ジェスチャー後のresume()経由で再試行する
-            playPromise.catch(() => {});
-        }
-        // <audio>要素の再生開始はSafariのAudioSession種別を暗黙に変えてしまうことがあるため、
-        // 再生を始めるたびに'ambient'（ミュートスイッチに従う）へ念押しし直す
-        applyAmbientAudioSession();
+        const c = ensureContext();
+        if (!c) return; // ジェスチャー未取得等。後でunlock()等から改めて呼ばれる
+        loadFileBgmBuffer(trackName).then(buffer => {
+            if (!buffer) return;
+            // デコード待ちの間に曲やBGM音量設定が変わっていたら何もしない
+            if (currentTrackName !== trackName) return;
+            stopFileBgm(); // 念のため、既に鳴っている分があれば止めてから鳴らし直す
+            if (!fileBgmGainNode) {
+                fileBgmGainNode = c.createGain();
+                fileBgmGainNode.connect(c.destination);
+            }
+            fileBgmGainNode.gain.value = fileBgmVolume();
+            if (settings.bgm === 0) return; // 無音設定中はデコードだけ済ませて再生はしない
+            const source = c.createBufferSource();
+            source.buffer = buffer;
+            source.loop = true;
+            source.connect(fileBgmGainNode);
+            source.start(0);
+            fileBgmSourceNode = source;
+        });
     }
+
 
     // iOS Safari（特にホーム画面追加＝PWAスタンドアロン起動）では、実際のユーザー操作
     // （タップ／キー入力）より前にAudioContextを生成してしまうと、その後どれだけ
@@ -379,11 +378,9 @@ const AudioManager = (() => {
             ensureContext();
             unlockWithSilentBuffer();
             resume();
-            applyAmbientAudioSession(); // 各種<audio>要素の再生等でセッション種別が変わっていないか、ジェスチャーの度に再度念押しする
-            if (fileBgmAudioEl) ensureFileBgmGraph(); // まだWeb Audioグラフに接続できていなければここで試行する（iOSの.volume無視対策）
-            // 自動再生制限でhome.mp3等のファイルBGM再生がブロックされていた場合、ここで再試行する
-            if (currentTrackName && isFileBgmTrack(currentTrackName) && settings.bgm > 0 &&
-                fileBgmAudioEl && fileBgmAudioEl.paused) {
+            applyAmbientAudioSession(); // 各種音声再生等でセッション種別が変わっていないか、ジェスチャーの度に再度念押しする
+            // 実ジェスチャー前で読み込み・再生ができていなかった場合、ここで改めて試行する
+            if (currentTrackName && isFileBgmTrack(currentTrackName) && settings.bgm > 0 && !fileBgmSourceNode) {
                 playFileBgm(currentTrackName);
             }
             if (ctx && ctx.state === 'running') {
@@ -998,10 +995,10 @@ const AudioManager = (() => {
     // BGM音量が0のときは実際には鳴らさないが、次に音量を上げた時に自動再開できるよう記憶だけしておく。
     function playBGM(trackName) {
         if (isFileBgmTrack(trackName)) {
-            if (currentTrackName === trackName && fileBgmAudioEl && !fileBgmAudioEl.paused) return; // 既に再生中
+            if (currentTrackName === trackName && fileBgmSourceNode) return; // 既に再生中
             currentTrackName = trackName;
             stopBgmScheduling(); // 合成BGM側が鳴っていれば止める
-            resume(); // Web AudioグラフでMediaElementSourceを鳴らすにはctxがrunning状態である必要がある
+            resume(); // AudioBufferSourceNodeを鳴らすにはctxがrunning状態である必要がある
             playFileBgm(trackName);
             return;
         }
@@ -1109,9 +1106,6 @@ const AudioManager = (() => {
         if (masterSeGain && c) masterSeGain.gain.setTargetAtTime(seVolumeToGain(settings.se), c.currentTime, 0.05);
         if (fileBgmGainNode && c) {
             fileBgmGainNode.gain.setTargetAtTime(fileBgmVolume(), c.currentTime, 0.05);
-        } else if (fileBgmAudioEl) {
-            // Web Audioグラフがまだ無い場合のフォールバック（iOSでは効かないことがある）
-            fileBgmAudioEl.volume = fileBgmVolume();
         }
     }
 
@@ -1126,7 +1120,7 @@ const AudioManager = (() => {
         if (currentTrackName && isFileBgmTrack(currentTrackName)) {
             if (v === 0) {
                 stopFileBgm();
-            } else if (wasOff || !fileBgmAudioEl || fileBgmAudioEl.paused) {
+            } else if (wasOff || !fileBgmSourceNode) {
                 playFileBgm(currentTrackName);
             }
             return;
@@ -1177,7 +1171,7 @@ const AudioManager = (() => {
     function handleVisibilityChange() {
         if (document.hidden) {
             stopBgmScheduling(); // currentTrackNameは保持したまま、鳴っている分だけ止める
-            if (fileBgmAudioEl && !fileBgmAudioEl.paused) fileBgmAudioEl.pause();
+            stopFileBgm();
         } else {
             resume();
             if (currentTrackName && isFileBgmTrack(currentTrackName)) {
@@ -1196,8 +1190,8 @@ const AudioManager = (() => {
     window.addEventListener('pageshow', () => { if (!document.hidden) handleVisibilityChange(); });
     window.addEventListener('focus', () => { if (!document.hidden) handleVisibilityChange(); });
     // 非表示になる側も同様に、visibilitychangeが取りこぼす端末があるための保険
-    window.addEventListener('pagehide', () => { stopBgmScheduling(); if (fileBgmAudioEl) fileBgmAudioEl.pause(); });
-    window.addEventListener('blur', () => { if (document.hidden) { stopBgmScheduling(); if (fileBgmAudioEl) fileBgmAudioEl.pause(); } });
+    window.addEventListener('pagehide', () => { stopBgmScheduling(); stopFileBgm(); });
+    window.addEventListener('blur', () => { if (document.hidden) { stopBgmScheduling(); stopFileBgm(); } });
 
     function stopBgm() {
         currentTrackName = null;
