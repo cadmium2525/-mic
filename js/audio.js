@@ -34,14 +34,18 @@ const AudioManager = (() => {
 
     let settings = { bgm: 0, se: 0 };
 
+    // ユーザー操作やAudioContext生成を待たず、スクリプト読込み直後の可能な限り早い
+    // タイミングでAudioSession種別を'ambient'にしておく（対応ブラウザのみ・安全に無視される）
+    try {
+        if (typeof navigator !== 'undefined' && 'audioSession' in navigator) {
+            navigator.audioSession.type = 'ambient';
+        }
+    } catch (e) { /* 無視 */ }
+
     let ctx = null;
     let masterBgmGain = null;
     let masterSeGain = null;
     let noiseBuffer = null;
-    // 合成BGM（Web Audio）をマナーモード（サイレントスイッチ）に従わせるためのブリッジ。
-    // 詳細はensureContext()内のコメント参照。
-    let bgmMediaStreamDest = null;
-    let bgmBridgeAudioEl = null;
 
     let currentTrackName = null;
     let bgmTimerId = null;
@@ -90,6 +94,9 @@ const AudioManager = (() => {
             // 自動再生制限で失敗した場合、実ジェスチャー後のresume()経由で再試行する
             playPromise.catch(() => {});
         }
+        // <audio>要素の再生開始はSafariのAudioSession種別を暗黙に変えてしまうことがあるため、
+        // 再生を始めるたびに'ambient'（ミュートスイッチに従う）へ念押しし直す
+        applyAmbientAudioSession();
     }
 
     // iOS Safari（特にホーム画面追加＝PWAスタンドアロン起動）では、実際のユーザー操作
@@ -111,8 +118,27 @@ const AudioManager = (() => {
         return Math.max(VOLUME_MIN, Math.min(VOLUME_MAX, Math.round(n)));
     }
 
+    // BGMスライダー(0〜100)を、人の耳の感じ方（対数的）に合わせた指数カーブで実際の音量値へ
+    // 変換する共通ヘルパー。
+    // ------------------------------------------------------------------
+    // 単純な線形（v/100 * max）だと、人の耳はおおよそ対数的に音の大きさを感じるため、
+    // スライダーの下〜中間あたりの変化がほとんど聞き取れず、「0にすると無音になるが、
+    // 1〜100はどれもほぼ同じ小さい音にしか聞こえない」という不具合になっていた
+    // （特にBGMの上限ゲインを控えめな値にしたことで、線形だとなおさら差が潰れやすかった）。
+    // 指数カーブにすることで、スライダーを1段階動かすごとに「聞こえ方がはっきり変わる」
+    // ようにする。v=0は必ず完全な無音(0)を返す。
+    // minRatio：v→0（1に限りなく近づく手前）で、maxValueに対してどこまで絞るかの比率。
+    //   小さいほど「静かな側」のレンジが広がる（例：0.05 ≒ 最大からおよそ26dB分のレンジ）。
+    function perceptualBgmValue(v, maxValue) {
+        const cv = clampVolume(v);
+        if (cv <= 0) return 0;
+        const minRatio = 0.05;
+        const t = cv / VOLUME_MAX; // 0（を超えたところ）〜1
+        return maxValue * minRatio * Math.pow(1 / minRatio, t);
+    }
+
     function bgmVolumeToGain(v) {
-        return (clampVolume(v) / VOLUME_MAX) * BGM_MAX_GAIN;
+        return perceptualBgmValue(v, BGM_MAX_GAIN);
     }
 
     function seVolumeToGain(v) {
@@ -120,9 +146,9 @@ const AudioManager = (() => {
     }
 
     // 実音声ファイル(home.mp3等)による<audio>要素再生用の音量（0〜1）。
-    // settings.bgm（0〜100）をFILE_BGM_MAX_VOLUMEを上限として線形マッピングする。
+    // 合成BGMと同じ指数カーブ・同じ基準(FILE_BGM_MAX_VOLUME)でマッピングする。
     function fileBgmVolume() {
-        return (clampVolume(settings.bgm) / VOLUME_MAX) * FILE_BGM_MAX_VOLUME;
+        return perceptualBgmValue(settings.bgm, FILE_BGM_MAX_VOLUME);
     }
 
     // ---------------------------------------------------
@@ -151,6 +177,21 @@ const AudioManager = (() => {
     // ---------------------------------------------------
     // AudioContext 初期化・再開
     // ---------------------------------------------------
+    // ★マナーモード（iOSのミュートスイッチ）対応：
+    // SafariのAudioSession API (Editor's Draft) では、audioSession.typeの既定値は
+    // 'ambient'（＝ミュートスイッチに従って無音になる）だが、実際には音声を再生する
+    // <audio>要素等が動くと、ブラウザ側の判断でセッション種別が'playback'相当（＝
+    // ミュートスイッチを無視して常に鳴る）へ暗黙に変わってしまうことがある。
+    // これを明示的に'ambient'へ固定し直すことで、BGMがミュートスイッチ（マナーモード）
+    // に従って鳴らなくなるようにする。非対応ブラウザでは何もしない（安全に無視される）。
+    function applyAmbientAudioSession() {
+        try {
+            if (navigator && 'audioSession' in navigator) {
+                navigator.audioSession.type = 'ambient';
+            }
+        } catch (e) { /* 非対応/失敗時は無視（この端末では従来通りの挙動になる） */ }
+    }
+
     function ensureContext() {
         if (ctx) return ctx;
         if (!audioGestureReceived) return null; // 実ジェスチャー前は生成しない（iOS対策）
@@ -158,37 +199,10 @@ const AudioManager = (() => {
             const Ctor = window.AudioContext || window.webkitAudioContext;
             if (!Ctor) return null;
             ctx = new Ctor();
+            applyAmbientAudioSession();
             masterBgmGain = ctx.createGain();
             masterBgmGain.gain.value = bgmVolumeToGain(settings.bgm);
-
-            // ★マナーモード対応：
-            // masterBgmGainをAudioContext.destinationへ直結すると、iOSのサイレント
-            // スイッチ（マナーモード）を無視して合成BGMが鳴ってしまう（Web Audio APIの
-            // 既知の挙動）。<audio>/<video>要素での再生はサイレントスイッチに従うため、
-            // 合成BGMの出力を一旦MediaStreamAudioDestinationNodeへ流し込み、実際の発音は
-            // 非表示の<audio>要素（＝サイレントスイッチに従う経路）側で行うようにする。
-            // 効果音(SE)は既存仕様のまま直結（変更なし）。
-            let bridged = false;
-            if (typeof ctx.createMediaStreamDestination === 'function') {
-                try {
-                    bgmMediaStreamDest = ctx.createMediaStreamDestination();
-                    masterBgmGain.connect(bgmMediaStreamDest);
-                    bgmBridgeAudioEl = new Audio();
-                    bgmBridgeAudioEl.srcObject = bgmMediaStreamDest.stream;
-                    bgmBridgeAudioEl.muted = false;
-                    bgmBridgeAudioEl.volume = 1;
-                    const p = bgmBridgeAudioEl.play();
-                    if (p && typeof p.catch === 'function') p.catch(() => {});
-                    bridged = true;
-                } catch (e) {
-                    bgmMediaStreamDest = null;
-                    bgmBridgeAudioEl = null;
-                }
-            }
-            if (!bridged) {
-                // MediaStreamDestination未対応/失敗時のフォールバック（従来通りの直結）
-                masterBgmGain.connect(ctx.destination);
-            }
+            masterBgmGain.connect(ctx.destination);
 
             masterSeGain = ctx.createGain();
             masterSeGain.gain.value = seVolumeToGain(settings.se);
@@ -326,11 +340,7 @@ const AudioManager = (() => {
             ensureContext();
             unlockWithSilentBuffer();
             resume();
-            // 合成BGM用ブリッジ<audio>要素の再生が自動再生制限でブロックされていた場合、再試行する
-            if (bgmBridgeAudioEl && bgmBridgeAudioEl.paused) {
-                const bp = bgmBridgeAudioEl.play();
-                if (bp && typeof bp.catch === 'function') bp.catch(() => {});
-            }
+            applyAmbientAudioSession(); // 各種<audio>要素の再生等でセッション種別が変わっていないか、ジェスチャーの度に再度念押しする
             // 自動再生制限でhome.mp3等のファイルBGM再生がブロックされていた場合、ここで再試行する
             if (currentTrackName && isFileBgmTrack(currentTrackName) && settings.bgm > 0 &&
                 fileBgmAudioEl && fileBgmAudioEl.paused) {
