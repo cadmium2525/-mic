@@ -516,22 +516,40 @@ function handleFaintAndSwitch(side, onResolved) {
             });
         });
     } else {
-        // 相手側は自動で次のマスモンを繰り出す（既存仕様通り）
-        applyEnemySwitch(candidates[0].idx, (chainResult) => {
-            if (chainResult && (chainResult.battleEnded || chainResult.turnShouldEnd)) {
-                onResolved(chainResult);
-                return;
-            }
+        // ② 相手が次に出すマスモンを「決める」だけ行い、まだ場には出さない。
+        //    プレイヤーには相手の次のマスモン名を予告した上で交代確認を行い、
+        //    決定後に敵・味方を同時に場へ出す（以前は敵を先に繰り出してからプレイヤーに
+        //    確認していたため、敵の交代を見てから対応を考える形になってしまっていた）。
+        const nextEnemy = candidates[0];
+        const playerSwitchCandidates = getMasmonSwitchCandidates();
 
-            // ② こちらも交代するか確認する。ターンは必ず仕切り直しになる。
-            const playerSwitchCandidates = getMasmonSwitchCandidates();
-            if (playerSwitchCandidates.length === 0) {
-                onResolved({ battleEnded: false, turnShouldEnd: true });
-                return;
-            }
-            openPostVictorySwitchModal(playerSwitchCandidates, () => {
-                onResolved({ battleEnded: false, turnShouldEnd: true });
+        // 敵（決定済みの次の一体）を場に出し、プレイヤーが交代を選んでいれば同時に反映する
+        const bringBothOut = (playerChosenIdx) => {
+            applyEnemySwitch(nextEnemy.idx, (chainResultEnemy) => {
+                if (chainResultEnemy && (chainResultEnemy.battleEnded || chainResultEnemy.turnShouldEnd)) {
+                    onResolved(chainResultEnemy);
+                    return;
+                }
+                if (playerChosenIdx == null) {
+                    onResolved({ battleEnded: false, turnShouldEnd: true });
+                    return;
+                }
+                applyPlayerSwitch(playerChosenIdx, (chainResultPlayer) => {
+                    if (chainResultPlayer && (chainResultPlayer.battleEnded || chainResultPlayer.turnShouldEnd)) {
+                        onResolved(chainResultPlayer);
+                        return;
+                    }
+                    onResolved({ battleEnded: false, turnShouldEnd: true });
+                });
             });
+        };
+
+        if (playerSwitchCandidates.length === 0) {
+            bringBothOut(null);
+            return;
+        }
+        openPostVictorySwitchModal(playerSwitchCandidates, nextEnemy.unit, (chosenIdx) => {
+            bringBothOut(chosenIdx);
         });
     }
 }
@@ -689,18 +707,28 @@ function openForceSwitchModal(candidates, onSelect) {
 }
 
 // --- ② 敵撃破後の交代確認モーダル（はい/いいえ → はいの場合は交代先選択へ） ---
-function openPostVictorySwitchModal(candidates, onDone) {
+// nextEnemyUnit: 相手が次に出してくることが既に決まっている（が、まだ場には出していない）マスモン。
+//   このタイミングで名前を予告し、プレイヤーの判断材料にする。
+// onDone(chosenIdxOrNull): 「交代する」を選んだ場合は選んだ控えのidx、「しない」の場合はnullを渡す。
+//   実際の交代（applyPlayerSwitch）はここでは行わず、呼び出し元（敵の登場と同時に反映させたい側）に委ねる。
+function openPostVictorySwitchModal(candidates, nextEnemyUnit, onDone) {
     const modal = document.getElementById('post-victory-switch-modal');
     const confirmPhase = document.getElementById('post-victory-confirm-phase');
+    const confirmText = document.getElementById('post-victory-confirm-text');
     const selectPhase = document.getElementById('post-victory-select-phase');
     const list = document.getElementById('post-victory-select-list');
 
     confirmPhase.classList.remove('hidden');
     selectPhase.classList.add('hidden');
+    if (confirmText) {
+        confirmText.textContent = nextEnemyUnit
+            ? `相手ブリーダーは【${nextEnemyUnit.name}】を出してくるようだ。こちらも交代する？`
+            : '相手が次のマスモンを繰り出そうとしている。こちらも交代する？';
+    }
 
-    const closeAndFinish = () => {
+    const closeAndFinish = (chosenIdx) => {
         modal.classList.add('hidden');
-        onDone();
+        onDone(chosenIdx != null ? chosenIdx : null);
     };
 
     document.getElementById('post-victory-switch-yes').onclick = () => {
@@ -727,9 +755,7 @@ function openPostVictorySwitchModal(candidates, onDone) {
                     outgoing.guts = Math.min(100, outgoing.guts + 30);
                     addLog(`💪 ${outgoing.name} は勝利の勢いでガッツを取り戻した！（ガッツ+30・${before}→${Math.floor(outgoing.guts)}）`);
                 }
-                applyPlayerSwitch(idx, () => {
-                    closeAndFinish();
-                });
+                closeAndFinish(idx);
             };
             list.appendChild(btn);
         });
@@ -738,7 +764,7 @@ function openPostVictorySwitchModal(candidates, onDone) {
     };
 
     document.getElementById('post-victory-switch-no').onclick = () => {
-        closeAndFinish();
+        closeAndFinish(null);
     };
 
     document.getElementById('post-victory-select-back').onclick = () => {

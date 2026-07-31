@@ -58,7 +58,10 @@ const REALTIME_BATTLE = {
     battleStartedAt: 0,       // 今回の対戦の開始時刻。これより古いログは前回対戦の残りとして無視する
     pendingFinalGuts: null,   // ログ表示の進行に合わせて反映する、直近state時点でのガッツ最終値
     pendingRenderState: null, // ログ表示が終わるまで反映を保留している「次ターン」の完全なstate
-    endHandling: false        // 決着後の終了処理（handleRealtimeBattleEnd）の多重実行防止
+    endHandling: false,       // 決着後の終了処理（handleRealtimeBattleEnd）の多重実行防止
+    lastFullRenderTurnNumber: null, // 最後に「最終描画」まで完了させたturnNumber（新ターン検知用）
+    turnLogGraceTimer: null,  // 新ターンのstateがログより先に届いた場合に、ログ到着を少し待つための猶予タイマー
+    turnLogGraceExpired: false // 猶予時間が満了し、ログが無いまま最終描画してよいと判断済みか
 };
 
 // --- 現在のバトル状態から「場に出ているユニット」を取得するヘルパー ---
@@ -409,7 +412,7 @@ function applyRealtimeGutsBars(gutsMap) {
 // -----------------------------------------------------
 // 画面描画
 // -----------------------------------------------------
-function renderRealtimeBattleUI(state) {
+function renderRealtimeBattleUI(state, forceFinal) {
     if (!REALTIME_BATTLE.active) return;
 
     const mySlot = REALTIME_BATTLE.mySlot;
@@ -465,13 +468,27 @@ function renderRealtimeBattleUI(state) {
     const logAnimationPending = REALTIME_BATTLE.isRevealingLog ||
         (REALTIME_BATTLE.logRevealQueue && REALTIME_BATTLE.logRevealQueue.length > 0);
 
+    // ★新ターン検知：state（最終結果）とbattleLog（各行動の結果ログ）はFirebase上の
+    // 別経路・別タイミングで配信されるため、「stateだけ先に届き、ログはまだ1件も
+    // 届いていない」という瞬間が起こり得る（特に、自分が先に行動を選んで相手の
+    // 行動を待つだけだった側で発生しやすい）。
+    // これを無条件に「ログ表示中ではない」＝最終描画してよい、と扱ってしまうと、
+    // ・みがわり画像やHP/ガッツが実際のログ演出より先に最終状態へ切り替わる
+    // ・後攻の行動が始まる前に技選択画面へ戻ってしまう
+    // といった不具合になる。そのため、turnNumberが直前に完全描画した値から
+    // 変化していて、かつログ表示がまだ始まっていない場合は、一定時間だけ
+    // ログの到着を待ってから最終描画するようにする。
+    const isNewUnseenTurn = state.status === 'active' &&
+        REALTIME_BATTLE.lastFullRenderTurnNumber != null &&
+        state.turnNumber !== REALTIME_BATTLE.lastFullRenderTurnNumber;
+
     // ★テンポ改善：直前ターンの結果ログをまだ全て見せ終えていない間は、次のターンの情報
     // （ターン数・モンスターの見た目・ガッツ・行動選択UI・交代UI等）をここで先出ししない。
     // HP・ガッツはログ1行ごとのスナップショットで追いつかせ、それ以外（ターン数や行動選択の
     // 解禁など）は「行動を解決中…」の中立表示のままにしておく。
     // ログを全て見せ終えたタイミング（processRealtimeLogQueue のキュー空き分岐）で、この関数を
     // 保留していたstateで呼び直し、その時に以下の本描画をまとめて反映する。
-    if (logAnimationPending) {
+    if (logAnimationPending || (isNewUnseenTurn && !REALTIME_BATTLE.turnLogGraceExpired && !forceFinal)) {
         REALTIME_BATTLE.pendingRenderState = state;
         REALTIME_BATTLE.pendingFinalHp = {
             player1: { life: Math.max(0, Math.round(state.teams.player1.units[state.teams.player1.activeIdx].life)), maxLife: state.teams.player1.units[state.teams.player1.activeIdx].maxLife },
@@ -491,9 +508,29 @@ function renderRealtimeBattleUI(state) {
         const busyNotice = document.getElementById('turn-guts-notice');
         if (busyNotice) busyNotice.textContent = '⚔️ 行動を解決中…（ログを確認してください）';
         syncRealtimeTurnTimer(state);
+
+        // ログがまだ1件も届いていない新ターンの場合、一定時間だけ到着を待ってから
+        // 改めてこの関数を呼び直す（その間に実際にログが届けばprocessRealtimeLogQueue側の
+        // 完了処理に自然に引き継がれるため、ここでの再呼び出しは「本当に何も届かなかった場合」
+        // の保険として働く）。
+        if (isNewUnseenTurn && !logAnimationPending && !REALTIME_BATTLE.turnLogGraceTimer) {
+            REALTIME_BATTLE.turnLogGraceTimer = setTimeout(() => {
+                REALTIME_BATTLE.turnLogGraceTimer = null;
+                REALTIME_BATTLE.turnLogGraceExpired = true;
+                if (REALTIME_BATTLE.active && REALTIME_BATTLE.cachedState) {
+                    renderRealtimeBattleUI(REALTIME_BATTLE.cachedState);
+                }
+            }, 900);
+        }
         return;
     }
     REALTIME_BATTLE.pendingRenderState = null;
+    REALTIME_BATTLE.lastFullRenderTurnNumber = state.turnNumber;
+    REALTIME_BATTLE.turnLogGraceExpired = false;
+    if (REALTIME_BATTLE.turnLogGraceTimer) {
+        clearTimeout(REALTIME_BATTLE.turnLogGraceTimer);
+        REALTIME_BATTLE.turnLogGraceTimer = null;
+    }
 
     document.getElementById('battle-turn-counter').textContent = state.turnNumber || 1;
 
@@ -714,6 +751,16 @@ function triggerRealtimeForcedSwitchTimeout(state) {
     const mySlot = REALTIME_BATTLE.mySlot;
     if (!state.pendingForcedSwitch || !state.pendingForcedSwitch[mySlot]) return; // 既に解決済み
 
+    const isOptional = state.pendingForcedSwitch[mySlot] === 'optional';
+    if (isOptional) {
+        // 任意交代（相手を倒した側）は、無操作のまま時間切れになった場合は「交代しない」を選んだものとして扱う
+        REALTIME_BATTLE.autoTimeoutForcedSwitchTurnNumber = state.turnNumber;
+        performRealtimeForcedSwitch(null).catch(() => {
+            REALTIME_BATTLE.autoTimeoutForcedSwitchTurnNumber = null;
+        });
+        return;
+    }
+
     const candidates = getRealtimeSwitchCandidates(state);
     if (candidates.length === 0) return; // 本来ここには来ないはず（全滅ならbattleOver済み）
 
@@ -880,13 +927,26 @@ function requestRealtimeLogAutoHide() {
         // 現時点でキューが空でも、まさにこれからログが届く可能性があるため、
         // 保険タイマーが既に張られていなければ張っておく（多重に張らない）
         if (!REALTIME_BATTLE.pendingLogHideTimer) {
-            REALTIME_BATTLE.pendingLogHideTimer = setTimeout(() => {
+            const checkAndHide = () => {
                 REALTIME_BATTLE.pendingLogHideTimer = null;
+                // タイマー満了時点で、ちょうどログが届いて表示が始まっている／進行中の場合は
+                // ここでは閉じない（無条件に閉じると、表示の途中で打ち切ってしまうバグになる）。
+                // その場合は processRealtimeLogQueue 側の完了処理（resolveRealtimeLogAutoHideIfPending）
+                // に任せつつ、念のため再度一定時間後に確認する。
+                const stillRevealingNow = REALTIME_BATTLE.isRevealingLog ||
+                    (REALTIME_BATTLE.logRevealQueue && REALTIME_BATTLE.logRevealQueue.length > 0);
+                if (stillRevealingNow) {
+                    if (REALTIME_BATTLE.pendingLogHide) {
+                        REALTIME_BATTLE.pendingLogHideTimer = setTimeout(checkAndHide, 1500);
+                    }
+                    return;
+                }
                 if (REALTIME_BATTLE.pendingLogHide && REALTIME_BATTLE.active) {
                     REALTIME_BATTLE.pendingLogHide = false;
                     hideBattleLog();
                 }
-            }, 1500);
+            };
+            REALTIME_BATTLE.pendingLogHideTimer = setTimeout(checkAndHide, 1500);
         }
     }
 }
@@ -929,7 +989,7 @@ function processRealtimeLogQueue() {
             if (REALTIME_BATTLE.active && REALTIME_BATTLE.pendingRenderState) {
                 const st = REALTIME_BATTLE.pendingRenderState;
                 REALTIME_BATTLE.pendingRenderState = null;
-                renderRealtimeBattleUI(st);
+                renderRealtimeBattleUI(st, true);
             }
             // 保留中の「新ターンに入ったのでログを閉じたい」要求があれば、
             // ここで直前ターンのログを全て見せ終えた後に閉じる
@@ -1236,6 +1296,8 @@ function getRealtimeSwitchCandidates(state) {
 // --- 強制交代（自分の場のマスモンが戦闘不能になった直後）専用のピッカーを描画する ---
 // 通常の交代メニュー（openRealtimeSwitchMenu）と違い、キャンセルボタンは出さない（必ず1体選ぶ）。
 function renderRealtimeForcedSwitchPicker(state, container) {
+    const mySlot = REALTIME_BATTLE.mySlot;
+    const isOptional = state.pendingForcedSwitch && state.pendingForcedSwitch[mySlot] === 'optional';
     const candidates = getRealtimeSwitchCandidates(state);
     if (candidates.length === 0) {
         // 本来は全滅判定側でbattleOverになっているはずだが、念のための保険表示
@@ -1245,7 +1307,17 @@ function renderRealtimeForcedSwitchPicker(state, container) {
 
     const title = document.createElement('div');
     title.className = 'col-span-2 text-center text-[10px] font-bold text-rose-300 mb-1';
-    title.textContent = '💥 次に出すマスモンを選んでください';
+    if (isOptional) {
+        const oppSlot = REALTIME_BATTLE.oppSlot;
+        const oppTeam = state.teams[oppSlot];
+        const oppNextUnit = oppTeam ? oppTeam.units[oppTeam.activeIdx] : null;
+        const oppOwnerLabel = state.ownerNames ? state.ownerNames[oppSlot] : '相手';
+        title.textContent = oppNextUnit
+            ? `🔄 ${oppOwnerLabel}は【${oppNextUnit.name}】を出してくるようだ。こちらも交代しますか？`
+            : '🔄 マスモンを交代しますか？';
+    } else {
+        title.textContent = '💥 次に出すマスモンを選んでください';
+    }
     container.appendChild(title);
 
     candidates.forEach(({ idx, unit }) => {
@@ -1266,6 +1338,14 @@ function renderRealtimeForcedSwitchPicker(state, container) {
         `;
         container.appendChild(btn);
     });
+
+    if (isOptional) {
+        const skipBtn = document.createElement('button');
+        skipBtn.className = `col-span-2 text-center p-2 rounded border transition-all active:scale-95 bg-[#1a120b] border-gray-600 text-gray-300 ${REALTIME_BATTLE.actionInProgress ? 'opacity-40 pointer-events-none' : ''}`;
+        skipBtn.onclick = () => performRealtimeForcedSwitch(null);
+        skipBtn.innerHTML = `<span class="font-bold text-xs">交代しない</span>`;
+        container.appendChild(skipBtn);
+    }
 }
 
 // --- 交代先選択メニューを技一覧エリアに一時的に表示する ---
@@ -1414,6 +1494,7 @@ async function performRealtimeForcedSwitch(targetIdx) {
     if (!REALTIME_BATTLE.active || REALTIME_BATTLE.actionInProgress) return;
     const mySlot = REALTIME_BATTLE.mySlot;
     const oppSlot = REALTIME_BATTLE.oppSlot;
+    const isSkip = (targetIdx === null || targetIdx === undefined);
     const stateRef = REALTIME_BATTLE.ref.child('battleState');
     const logRef = REALTIME_BATTLE.ref.child('battleLog');
 
@@ -1427,12 +1508,28 @@ async function performRealtimeForcedSwitch(targetIdx) {
         const txResult = await stateRef.transaction(current => {
             if (!current || current.status !== 'active') return; // abort：既にバトル終了
             if (!current.pendingForcedSwitch || !current.pendingForcedSwitch[mySlot]) return; // abort：対象外（二重送信等）
+            // 辞退（skip）は「任意交代（'optional'）」の場合のみ許可する。必須交代（true）では辞退できない。
+            if (isSkip && current.pendingForcedSwitch[mySlot] !== 'optional') return; // abort：必須交代は辞退不可
+
+            resultLogs = [];
+
+            if (isSkip) {
+                delete current.pendingForcedSwitch[mySlot];
+                const stillWaitingOpponentSkip = !!(current.pendingForcedSwitch && current.pendingForcedSwitch[oppSlot]);
+                if (!stillWaitingOpponentSkip) {
+                    current.pendingForcedSwitch = {};
+                    current.pendingActions = { player1: null, player2: null };
+                    current.turnNumber = (current.turnNumber || 1) + 1;
+                    current.turnDeadline = Date.now() + REALTIME_TURN_TIME_LIMIT_MS;
+                }
+                current.lastActionAt = Date.now();
+                return current;
+            }
 
             const myTeam = current.teams[mySlot];
             const target = myTeam.units[targetIdx];
             if (!target || target.life <= 0) return; // abort：無効な交代先
 
-            resultLogs = [];
             myTeam.activeIdx = targetIdx;
             const ownerLabel = current.ownerNames ? current.ownerNames[mySlot] : 'あなた';
             resultLogs.push(`${ownerLabel}は【${target.name}】を繰り出した！`);
@@ -1611,6 +1708,13 @@ function checkRealtimeFaintAndWin(current, teamSlot, otherSlot, resultLogs) {
 
     current.pendingForcedSwitch = current.pendingForcedSwitch || {};
     current.pendingForcedSwitch[teamSlot] = true;
+    // 相手を倒した側にも「こちらもモンスターを変えるか」の任意交代チャンスを与える
+    // （倒された側は必須交代＝true、勝った側は任意＝'optional'として区別する）。
+    // 控えがいない場合は聞くまでもないので立てない。
+    const winnerCandidates = getRealtimeSwitchCandidatesForSlot(current, otherSlot);
+    if (winnerCandidates.length > 0) {
+        current.pendingForcedSwitch[otherSlot] = 'optional';
+    }
     // 強制交代の選択にも制限時間を設ける（無操作で試合が止まってしまうのを防ぐ）。
     // triggerRealtimeForcedSwitchTimeout側でこのdeadlineを見て自動選択する。
     current.turnDeadline = Date.now() + REALTIME_TURN_TIME_LIMIT_MS;
@@ -1674,7 +1778,28 @@ function checkRealtimeBothSidesFaint(current, slotA, slotB, resultLogs) {
         const ownerLabelB = current.ownerNames ? current.ownerNames[slotB] : '相手';
         pushRealtimeLog(resultLogs, slotB, `${ownerLabelB}は次に出すマスモンを選んでいる…`);
     }
+    // 片方だけが倒された場合、倒した側（生き残っている側）にも任意の交代チャンスを与える
+    // （相打ちで両方戦闘不能の場合は、双方どのみち必須交代になるためoptionalは不要）
+    if (aFainted && !bFainted && !current.pendingForcedSwitch[slotB]) {
+        const winnerCandidatesB = getRealtimeSwitchCandidatesForSlot(current, slotB);
+        if (winnerCandidatesB.length > 0) current.pendingForcedSwitch[slotB] = 'optional';
+    }
+    if (bFainted && !aFainted && !current.pendingForcedSwitch[slotA]) {
+        const winnerCandidatesA = getRealtimeSwitchCandidatesForSlot(current, slotA);
+        if (winnerCandidatesA.length > 0) current.pendingForcedSwitch[slotA] = 'optional';
+    }
     return 'needSwitch';
+}
+
+// --- server-side（transaction内）から任意のslotの交代候補を調べるためのヘルパー ---
+// getRealtimeSwitchCandidates はクライアント側のREALTIME_BATTLE.mySlotを前提にしているため、
+// 相手側（otherSlot）の候補を調べる用途にはこちらを使う。
+function getRealtimeSwitchCandidatesForSlot(current, slot) {
+    const team = current.teams[slot];
+    if (!team || team.units.length <= 1) return [];
+    return team.units
+        .map((unit, idx) => ({ idx, unit }))
+        .filter(({ idx, unit }) => idx !== team.activeIdx && unit.life > 0);
 }
 
 // --- 1体分の行動を実際に解決する（技効果計算・ガッツ消費・交代・アイテム使用など） ---
@@ -1794,6 +1919,15 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
 
             if (isHit && hitCount > 0 && sk.noDamage) {
                 // ダメージ無し・状態異常付与のみを狙う技（どくのこな等）
+                // 自傷技（のろい等）：sk.selfDamagePct が設定されている場合、命中時に1回だけ自身の最大ライフの割合分のダメージを受ける
+                // （CPU戦側(masmon_battle.js)には実装済みだったが、PvP側でこの処理が漏れており、
+                //   のろい使用時に代償のライフ減少が発生しないバグになっていた）
+                const selfDamagePct = (sk && sk.selfDamagePct) || 0;
+                if (selfDamagePct > 0) {
+                    const selfDamage = Math.max(1, Math.floor(me.maxLife * selfDamagePct));
+                    me.life = Math.max(0, me.life - selfDamage);
+                    pushRealtimeLog(resultLogs, actingSlot, `💥 ${me.name} は【${sk.name}】の代償で、自身のライフが ${selfDamage} 減少した！(現在: ${Math.floor(me.life)})`);
+                }
                 for (let hitNo = 0; hitNo < hitCount; hitNo++) {
                     const hitTag = hitCount > 1 ? `（${hitNo + 1}撃目）` : '';
                     pushRealtimeLog(resultLogs, actingSlot, `${opp.name} に技が命中した！${hitTag}`);
@@ -2592,9 +2726,15 @@ function resetRealtimeBattleClientState() {
     REALTIME_BATTLE.pendingRenderState = null;
     REALTIME_BATTLE.endHandling = false;
     REALTIME_BATTLE.txSnapshotState = null;
+    REALTIME_BATTLE.lastFullRenderTurnNumber = null;
+    REALTIME_BATTLE.turnLogGraceExpired = false;
     if (REALTIME_BATTLE.pendingLogHideTimer) {
         clearTimeout(REALTIME_BATTLE.pendingLogHideTimer);
         REALTIME_BATTLE.pendingLogHideTimer = null;
+    }
+    if (REALTIME_BATTLE.turnLogGraceTimer) {
+        clearTimeout(REALTIME_BATTLE.turnLogGraceTimer);
+        REALTIME_BATTLE.turnLogGraceTimer = null;
     }
 
     document.getElementById('battle-endturn-controls').classList.remove('hidden');

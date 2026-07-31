@@ -40,6 +40,50 @@ const AudioManager = (() => {
     let bgmToken = 0;
     let activeBgmNodes = []; // 現在スケジュール済みのBGM用osc/gainノード（曲切り替え時に即座に停止するため）
 
+    // ---------------------------------------------------
+    // 実音声ファイル(mp3等)によるBGM再生：
+    // 基本のBGMはすべてWeb Audio APIでその場合成しているが、ホーム画面（screen-title）だけは
+    // 収録済みの音声ファイル(home.mp3)をループ再生する。合成BGMのスケジューリング
+    // （scheduleBgmLoop等）とは完全に独立した、HTML5 <audio>要素ベースの別経路として扱う。
+    // ---------------------------------------------------
+    const FILE_BGM_TRACKS = {
+        home: 'audio/home.mp3',
+    };
+    let fileBgmAudioEl = null;
+    function isFileBgmTrack(trackName) {
+        return !!FILE_BGM_TRACKS[trackName];
+    }
+    function getFileBgmAudioEl() {
+        if (!fileBgmAudioEl) {
+            fileBgmAudioEl = new Audio();
+            fileBgmAudioEl.loop = true;
+            fileBgmAudioEl.preload = 'auto';
+        }
+        return fileBgmAudioEl;
+    }
+    function stopFileBgm() {
+        if (!fileBgmAudioEl) return;
+        try {
+            fileBgmAudioEl.pause();
+            fileBgmAudioEl.currentTime = 0;
+        } catch (e) { /* 無視 */ }
+    }
+    function playFileBgm(trackName) {
+        const src = FILE_BGM_TRACKS[trackName];
+        if (!src) return;
+        const el = getFileBgmAudioEl();
+        el.volume = bgmVolumeToGain(settings.bgm) / BGM_MAX_GAIN; // 0〜1に正規化した音量
+        if (!el.src || !el.src.endsWith(src)) {
+            el.src = src;
+        }
+        if (settings.bgm === 0) return; // 無音設定中は読み込みだけ済ませて再生はしない
+        const playPromise = el.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            // 自動再生制限で失敗した場合、実ジェスチャー後のresume()経由で再試行する
+            playPromise.catch(() => {});
+        }
+    }
+
     // iOS Safari（特にホーム画面追加＝PWAスタンドアロン起動）では、実際のユーザー操作
     // （タップ／キー入力）より前にAudioContextを生成してしまうと、その後どれだけ
     // resume()やバッファ再生を試みてもそのContextインスタンス自体が二度と鳴らせない
@@ -145,6 +189,7 @@ const AudioManager = (() => {
     function startBgmPlaybackIfReady() {
         if (!ctx || ctx.state !== 'running') return;
         if (!currentTrackName || settings.bgm === 0) return;
+        if (isFileBgmTrack(currentTrackName)) return; // ファイル再生BGMは合成エンジン側でスケジュールしない
         if (bgmTimerId) return; // 既にスケジューリング中
         scheduleBgmLoop(currentTrackName, bgmToken);
     }
@@ -239,6 +284,11 @@ const AudioManager = (() => {
             ensureContext();
             unlockWithSilentBuffer();
             resume();
+            // 自動再生制限でhome.mp3等のファイルBGM再生がブロックされていた場合、ここで再試行する
+            if (currentTrackName && isFileBgmTrack(currentTrackName) && settings.bgm > 0 &&
+                fileBgmAudioEl && fileBgmAudioEl.paused) {
+                playFileBgm(currentTrackName);
+            }
             if (ctx && ctx.state === 'running') {
                 document.removeEventListener('pointerdown', unlock, true);
                 document.removeEventListener('click', unlock, true);
@@ -850,9 +900,17 @@ const AudioManager = (() => {
     // trackName を「現在流すべき曲」として記憶する。
     // BGM音量が0のときは実際には鳴らさないが、次に音量を上げた時に自動再開できるよう記憶だけしておく。
     function playBGM(trackName) {
+        if (isFileBgmTrack(trackName)) {
+            if (currentTrackName === trackName && fileBgmAudioEl && !fileBgmAudioEl.paused) return; // 既に再生中
+            currentTrackName = trackName;
+            stopBgmScheduling(); // 合成BGM側が鳴っていれば止める
+            playFileBgm(trackName);
+            return;
+        }
         if (!BGM_TRACKS[trackName]) return;
         if (currentTrackName === trackName && bgmTimerId) return; // 既に同じ曲を再生中
         currentTrackName = trackName;
+        stopFileBgm(); // ファイル再生側が鳴っていれば止める
         stopBgmScheduling();
         if (settings.bgm === 0) return;
         const c = ensureContext();
@@ -872,7 +930,7 @@ const AudioManager = (() => {
     //   playBGM('victory' / 'defeat') を呼ぶため、ここには含めない）
     // ---------------------------------------------------
     const SCREEN_BGM_MAP = {
-        'screen-title': 'title',
+        'screen-title': 'home',
         'screen-battle': 'battle',
         'screen-masmon-realtime-keyword': 'title',
         'screen-masmon-realtime-waiting': 'title',
@@ -949,9 +1007,9 @@ const AudioManager = (() => {
     // ---------------------------------------------------
     function applyGainImmediately() {
         const c = ensureContext();
-        if (!c) return;
-        if (masterBgmGain) masterBgmGain.gain.setTargetAtTime(bgmVolumeToGain(settings.bgm), c.currentTime, 0.05);
-        if (masterSeGain) masterSeGain.gain.setTargetAtTime(seVolumeToGain(settings.se), c.currentTime, 0.05);
+        if (masterBgmGain && c) masterBgmGain.gain.setTargetAtTime(bgmVolumeToGain(settings.bgm), c.currentTime, 0.05);
+        if (masterSeGain && c) masterSeGain.gain.setTargetAtTime(seVolumeToGain(settings.se), c.currentTime, 0.05);
+        if (fileBgmAudioEl) fileBgmAudioEl.volume = bgmVolumeToGain(settings.bgm) / BGM_MAX_GAIN;
     }
 
     // volume: 0〜100の数値
@@ -962,6 +1020,14 @@ const AudioManager = (() => {
         saveSettings();
         resume();
         applyGainImmediately();
+        if (currentTrackName && isFileBgmTrack(currentTrackName)) {
+            if (v === 0) {
+                stopFileBgm();
+            } else if (wasOff || !fileBgmAudioEl || fileBgmAudioEl.paused) {
+                playFileBgm(currentTrackName);
+            }
+            return;
+        }
         if (v === 0) {
             stopBgmScheduling();
         } else if (currentTrackName && (wasOff || !bgmTimerId)) {
@@ -1008,9 +1074,12 @@ const AudioManager = (() => {
     function handleVisibilityChange() {
         if (document.hidden) {
             stopBgmScheduling(); // currentTrackNameは保持したまま、鳴っている分だけ止める
+            if (fileBgmAudioEl && !fileBgmAudioEl.paused) fileBgmAudioEl.pause();
         } else {
             resume();
-            if (currentTrackName && settings.bgm > 0 && ctx && ctx.state === 'running') {
+            if (currentTrackName && isFileBgmTrack(currentTrackName)) {
+                if (settings.bgm > 0) playFileBgm(currentTrackName);
+            } else if (currentTrackName && settings.bgm > 0 && ctx && ctx.state === 'running') {
                 scheduleBgmLoop(currentTrackName, bgmToken);
             }
             // suspended中はresume()の成功コールバック（startBgmPlaybackIfReady）が拾って開始する。
@@ -1024,12 +1093,13 @@ const AudioManager = (() => {
     window.addEventListener('pageshow', () => { if (!document.hidden) handleVisibilityChange(); });
     window.addEventListener('focus', () => { if (!document.hidden) handleVisibilityChange(); });
     // 非表示になる側も同様に、visibilitychangeが取りこぼす端末があるための保険
-    window.addEventListener('pagehide', () => { stopBgmScheduling(); });
-    window.addEventListener('blur', () => { if (document.hidden) stopBgmScheduling(); });
+    window.addEventListener('pagehide', () => { stopBgmScheduling(); if (fileBgmAudioEl) fileBgmAudioEl.pause(); });
+    window.addEventListener('blur', () => { if (document.hidden) { stopBgmScheduling(); if (fileBgmAudioEl) fileBgmAudioEl.pause(); } });
 
     function stopBgm() {
         currentTrackName = null;
         stopBgmScheduling();
+        stopFileBgm();
     }
 
     function getCurrentTrack() {
