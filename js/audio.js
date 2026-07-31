@@ -22,9 +22,13 @@ const AudioManager = (() => {
     const STORAGE_KEY = 'mfload_audio_settings';
     const VOLUME_MIN = 0;
     const VOLUME_MAX = 100;
-    // 音量100%時の実際のゲイン値（旧「大」相当の値を踏襲）
-    const BGM_MAX_GAIN = 0.28;
+    // 音量100%時の実際のゲイン値（旧「大」相当の値の1/3。BGMが全体的に大きすぎるとの
+    // フィードバックを受けて引き下げ。SEは対象外のため変更しない）
+    const BGM_MAX_GAIN = 0.28 / 3;
     const SE_MAX_GAIN = 0.8;
+    // 実音声ファイル(home.mp3等)によるBGM再生時の、音量100%時の<audio>.volume値（0〜1）。
+    // 合成BGM側のBGM_MAX_GAINと基準を揃え、同じ「1/3に引き下げ」を反映している。
+    const FILE_BGM_MAX_VOLUME = 1 / 3;
     // 旧バージョン（OFF/小/中/大の4段階）からの移行用：相当する0〜100の数値に変換する
     const LEGACY_LEVEL_TO_VOLUME = { off: 0, small: 30, mid: 55, large: 100 };
 
@@ -34,6 +38,10 @@ const AudioManager = (() => {
     let masterBgmGain = null;
     let masterSeGain = null;
     let noiseBuffer = null;
+    // 合成BGM（Web Audio）をマナーモード（サイレントスイッチ）に従わせるためのブリッジ。
+    // 詳細はensureContext()内のコメント参照。
+    let bgmMediaStreamDest = null;
+    let bgmBridgeAudioEl = null;
 
     let currentTrackName = null;
     let bgmTimerId = null;
@@ -72,7 +80,7 @@ const AudioManager = (() => {
         const src = FILE_BGM_TRACKS[trackName];
         if (!src) return;
         const el = getFileBgmAudioEl();
-        el.volume = bgmVolumeToGain(settings.bgm) / BGM_MAX_GAIN; // 0〜1に正規化した音量
+        el.volume = fileBgmVolume(); // 0〜1（FILE_BGM_MAX_VOLUMEを上限とする）
         if (!el.src || !el.src.endsWith(src)) {
             el.src = src;
         }
@@ -111,6 +119,12 @@ const AudioManager = (() => {
         return (clampVolume(v) / VOLUME_MAX) * SE_MAX_GAIN;
     }
 
+    // 実音声ファイル(home.mp3等)による<audio>要素再生用の音量（0〜1）。
+    // settings.bgm（0〜100）をFILE_BGM_MAX_VOLUMEを上限として線形マッピングする。
+    function fileBgmVolume() {
+        return (clampVolume(settings.bgm) / VOLUME_MAX) * FILE_BGM_MAX_VOLUME;
+    }
+
     // ---------------------------------------------------
     // 設定の読み書き（LocalStorage）
     // ---------------------------------------------------
@@ -146,7 +160,35 @@ const AudioManager = (() => {
             ctx = new Ctor();
             masterBgmGain = ctx.createGain();
             masterBgmGain.gain.value = bgmVolumeToGain(settings.bgm);
-            masterBgmGain.connect(ctx.destination);
+
+            // ★マナーモード対応：
+            // masterBgmGainをAudioContext.destinationへ直結すると、iOSのサイレント
+            // スイッチ（マナーモード）を無視して合成BGMが鳴ってしまう（Web Audio APIの
+            // 既知の挙動）。<audio>/<video>要素での再生はサイレントスイッチに従うため、
+            // 合成BGMの出力を一旦MediaStreamAudioDestinationNodeへ流し込み、実際の発音は
+            // 非表示の<audio>要素（＝サイレントスイッチに従う経路）側で行うようにする。
+            // 効果音(SE)は既存仕様のまま直結（変更なし）。
+            let bridged = false;
+            if (typeof ctx.createMediaStreamDestination === 'function') {
+                try {
+                    bgmMediaStreamDest = ctx.createMediaStreamDestination();
+                    masterBgmGain.connect(bgmMediaStreamDest);
+                    bgmBridgeAudioEl = new Audio();
+                    bgmBridgeAudioEl.srcObject = bgmMediaStreamDest.stream;
+                    bgmBridgeAudioEl.muted = false;
+                    bgmBridgeAudioEl.volume = 1;
+                    const p = bgmBridgeAudioEl.play();
+                    if (p && typeof p.catch === 'function') p.catch(() => {});
+                    bridged = true;
+                } catch (e) {
+                    bgmMediaStreamDest = null;
+                    bgmBridgeAudioEl = null;
+                }
+            }
+            if (!bridged) {
+                // MediaStreamDestination未対応/失敗時のフォールバック（従来通りの直結）
+                masterBgmGain.connect(ctx.destination);
+            }
 
             masterSeGain = ctx.createGain();
             masterSeGain.gain.value = seVolumeToGain(settings.se);
@@ -284,6 +326,11 @@ const AudioManager = (() => {
             ensureContext();
             unlockWithSilentBuffer();
             resume();
+            // 合成BGM用ブリッジ<audio>要素の再生が自動再生制限でブロックされていた場合、再試行する
+            if (bgmBridgeAudioEl && bgmBridgeAudioEl.paused) {
+                const bp = bgmBridgeAudioEl.play();
+                if (bp && typeof bp.catch === 'function') bp.catch(() => {});
+            }
             // 自動再生制限でhome.mp3等のファイルBGM再生がブロックされていた場合、ここで再試行する
             if (currentTrackName && isFileBgmTrack(currentTrackName) && settings.bgm > 0 &&
                 fileBgmAudioEl && fileBgmAudioEl.paused) {
@@ -1009,7 +1056,7 @@ const AudioManager = (() => {
         const c = ensureContext();
         if (masterBgmGain && c) masterBgmGain.gain.setTargetAtTime(bgmVolumeToGain(settings.bgm), c.currentTime, 0.05);
         if (masterSeGain && c) masterSeGain.gain.setTargetAtTime(seVolumeToGain(settings.se), c.currentTime, 0.05);
-        if (fileBgmAudioEl) fileBgmAudioEl.volume = bgmVolumeToGain(settings.bgm) / BGM_MAX_GAIN;
+        if (fileBgmAudioEl) fileBgmAudioEl.volume = fileBgmVolume();
     }
 
     // volume: 0〜100の数値
