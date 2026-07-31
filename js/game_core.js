@@ -263,8 +263,15 @@ window.addEventListener('load', () => {
     if (typeof checkAndCelebrateNewAchievements === 'function') checkAndCelebrateNewAchievements();
 
     // 起動演出（①タイトルロゴ→②メニューボタンが重なった状態から1つずつスライド展開→③名前入力欄フェードイン）を
-    // 「Now loading」画面のフェードアウトに合わせて再生する
-    playTitleBootIntro();
+    // 「Now loading」画面のフェードアウトに合わせて再生する。
+    // まずロード画面の進捗ゲージを100%まで埋めて「読み込み完了」を見せてから演出へ進む
+    // （ゲージはあくまで演出用で実際の読み込み量そのものではないが、window.load＝実際に
+    //  全アセットの読み込みが完了したタイミングで100%に到達させることで違和感なく繋げる）。
+    if (typeof window.__completeAppLoadingGauge === 'function') {
+        window.__completeAppLoadingGauge(playTitleBootIntro);
+    } else {
+        playTitleBootIntro();
+    }
 });
 
 // --- 「Now loading」画面をフェードアウトさせて取り除く ---
@@ -367,17 +374,26 @@ function playTitleBootIntro() {
 
     // 上記の初期状態を確実に反映させてから、「Now loading」を消して演出を開始する
     requestAnimationFrame(() => {
+        // ① ロード画面（ゲージ100%を見せ終えた状態）をフェードアウトし、背景を見せる
+        //    （フェードアウトは0.45s＋removeまでの猶予0.5s。ロゴはまだ透明のまま）
         hideAppLoadingOverlay();
 
-        // ① タイトルロゴ表示（背景は「Now loading」が消えた時点で既に見えている）
+        // ② 背景だけが見えている状態で「ちょっと溜めてから」タイトルロゴをフェードインする。
+        //    ロード画面のフェードアウトが完全に終わる(約0.5s)のを待ち、さらに間（タメ）を
+        //    置いてからロゴを出すことで、「背景→（間）→ロゴ」という演出の区切りを作る。
+        const BG_REVEAL_MS = 500;   // ロード画面フェードアウト＋removeまでの時間
+        const LOGO_PAUSE_MS = 450;  // 背景が見えてからロゴが出るまでの「タメ」
+        const LOGO_FADE_MS = 550;   // ロゴのフェードイン自体の時間
+        const PRESS_START_PAUSE_MS = 200; // ロゴが出きってからPRESS STARTが出るまでの間
+
         setTimeout(() => {
             if (logoEl) {
-                logoEl.style.transition = 'opacity 0.5s ease-out';
+                logoEl.style.transition = `opacity ${LOGO_FADE_MS}ms ease-out`;
                 logoEl.style.opacity = '1';
             }
-        }, 150);
+        }, BG_REVEAL_MS + LOGO_PAUSE_MS);
 
-        // ② ロゴのフェードインが終わる頃、「PRESS START」をゆっくり点滅表示する
+        // ③ ロゴのフェードインが終わったら、少し間を置いて「PRESS START」をゆっくり点滅表示する
         setTimeout(() => {
             if (pressStartEl) {
                 pressStartEl.style.transition = 'opacity 0.6s ease-out';
@@ -402,7 +418,7 @@ function playTitleBootIntro() {
             };
             document.addEventListener('pointerdown', proceed);
             document.addEventListener('keydown', proceed);
-        }, 650);
+        }, BG_REVEAL_MS + LOGO_PAUSE_MS + LOGO_FADE_MS + PRESS_START_PAUSE_MS);
     });
 }
 

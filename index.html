@@ -41,8 +41,12 @@
 
         <!-- ゲーム起動中のローディング画面（全アセット読み込み完了＝window.loadで自動的にフェードアウトする） -->
         <div id="app-loading-overlay" class="absolute inset-0 z-[999] flex flex-col items-center justify-center bg-[#120b07]">
-            <img src="images/gacha/円盤石.png" alt="" class="w-16 h-16 mb-4 app-loading-spin">
+            <img src="images/gacha/円盤石.png" alt="" class="w-16 h-16 mb-4 app-loading-disc-appear">
             <p class="text-amber-200 font-bold text-sm tracking-wide pixel-font">Now loading<span id="app-loading-dots">.</span></p>
+            <div id="app-loading-gauge-track" class="mt-3">
+                <div id="app-loading-gauge-fill"></div>
+            </div>
+            <p id="app-loading-percent" class="text-amber-200/60 text-[10px] font-bold pixel-font mt-1">0%</p>
         </div>
         <script>
             // 「Now loading」のドット数（.→..→...→.→..の繰り返し）を、他のスクリプト読み込みを待たずに
@@ -55,6 +59,57 @@
                     n = (n % 3) + 1;
                     dotsEl.textContent = '.'.repeat(n);
                 }, 450);
+            })();
+
+            // 起動ロード画面の進捗ゲージ（実際のアセット読み込み量を厳密に計測しているわけではなく、
+            // 「それっぽく」0%→100%へ貯まっていくように見せるための演出用）。
+            // 序盤は速く、92%あたりからは残りを少しずつ詰めるだけにして頭打ち感を出し、
+            // 実際に読み込みが完了した瞬間（window.__completeAppLoadingGauge呼び出し時）に
+            // 一気に100%まで駆け上がって見えるようにする。
+            (function () {
+                var fillEl = document.getElementById('app-loading-gauge-fill');
+                var pctEl = document.getElementById('app-loading-percent');
+                var progress = 0;
+                var completed = false;
+                var rafId = null;
+
+                function updateUI() {
+                    if (fillEl) fillEl.style.width = progress + '%';
+                    if (pctEl) pctEl.textContent = Math.floor(progress) + '%';
+                }
+
+                function tick() {
+                    if (completed) return;
+                    var remaining = 92 - progress;
+                    progress = Math.min(92, progress + Math.max(0.15, remaining * 0.025));
+                    updateUI();
+                    rafId = requestAnimationFrame(tick);
+                }
+                rafId = requestAnimationFrame(tick);
+
+                // window.load完了後、外側（game_core.js）から呼び出される。
+                // 残りを一気に100%まで埋めてから、少し間を置いてcallbackを実行する。
+                window.__completeAppLoadingGauge = function (callback) {
+                    if (completed) { if (callback) callback(); return; }
+                    completed = true;
+                    if (rafId) cancelAnimationFrame(rafId);
+                    var start = progress;
+                    var startTime = null;
+                    function grow(ts) {
+                        if (!startTime) startTime = ts;
+                        var t = Math.min(1, (ts - startTime) / 350);
+                        progress = start + (100 - start) * t;
+                        updateUI();
+                        if (t < 1) {
+                            requestAnimationFrame(grow);
+                        } else {
+                            progress = 100;
+                            updateUI();
+                            setTimeout(function () { if (callback) callback(); }, 280);
+                        }
+                    }
+                    requestAnimationFrame(grow);
+                };
             })();
         </script>
 

@@ -294,12 +294,43 @@ input, textarea, select {
     opacity: 0;
     pointer-events: none;
 }
+/* 円盤石の「フワッと」出現演出：ふわっと浮き上がりながら少し弾んで現れた後、
+   そのまま回転演出（appLoadingSpin）へ引き継ぐ。
+   アニメーションの遅延(0.6s)は出現演出の再生時間と揃えてあり、
+   出現しきってから初めて回転が始まるようにしている。 */
+.app-loading-disc-appear {
+    opacity: 0;
+    animation:
+        appLoadingDiscAppear 0.65s cubic-bezier(0.34, 1.56, 0.64, 1) both,
+        appLoadingSpin 1.6s linear infinite 0.65s;
+}
+@keyframes appLoadingDiscAppear {
+    0% { opacity: 0; transform: translateY(14px) scale(0.75); }
+    70% { opacity: 1; transform: translateY(-3px) scale(1.04); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+}
 .app-loading-spin {
     animation: appLoadingSpin 1.6s linear infinite;
 }
 @keyframes appLoadingSpin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
+}
+/* ロード進捗ゲージ（実際の読み込み進捗ではなく、あくまで「それっぽく」見せるための演出用） */
+#app-loading-gauge-track {
+    width: 9rem;
+    height: 0.375rem;
+    border-radius: 9999px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(146, 64, 14, 0.6);
+    overflow: hidden;
+}
+#app-loading-gauge-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, #b45309, #fbbf24);
+    transition: width 0.12s linear;
 }
 
 /* ===== マイルーム：時間帯演出 ===== */
