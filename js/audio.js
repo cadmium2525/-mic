@@ -57,11 +57,23 @@ const AudioManager = (() => {
     // 基本のBGMはすべてWeb Audio APIでその場合成しているが、ホーム画面（screen-title）だけは
     // 収録済みの音声ファイル(home.mp3)をループ再生する。合成BGMのスケジューリング
     // （scheduleBgmLoop等）とは完全に独立した、HTML5 <audio>要素ベースの別経路として扱う。
+    //
+    // ★音量調整について：
+    // iOSのSafari/WebKitは、<audio>要素の`.volume`プロパティをスクリプトから変更しても
+    // 無視する（常に1.0のまま）という仕様がある。ボリュームはハードウェアの物理ボタン側で
+    // ユーザーが直接管理すべき、という考え方によるもの。
+    // そのため`el.volume = ...`だけで音量調整しようとすると、PCやAndroidでは効くのに
+    // iPhoneだけ効かない、という不具合になる。
+    // 対策として、`<audio>`要素をcreateMediaElementSource()でWeb Audio APIのグラフに
+    // 取り込み、実際の音量調整はGainNode（fileBgmGainNode）側で行う。GainNodeの値変更は
+    // iOSでも問題なく反映される。
     // ---------------------------------------------------
     const FILE_BGM_TRACKS = {
         home: 'audio/home.mp3',
     };
     let fileBgmAudioEl = null;
+    let fileBgmSourceNode = null;
+    let fileBgmGainNode = null;
     function isFileBgmTrack(trackName) {
         return !!FILE_BGM_TRACKS[trackName];
     }
@@ -72,6 +84,31 @@ const AudioManager = (() => {
             fileBgmAudioEl.preload = 'auto';
         }
         return fileBgmAudioEl;
+    }
+    // ctx（AudioContext）が使える状態になっていれば、<audio>要素をWeb Audioのグラフに
+    // 接続し直す（一度接続したMediaElementSourceは同じ要素に対して二度作れないため、
+    // 既に作成済みなら何もしない）。ctxがまだ無い場合は何もせず、後で
+    // （resume成功時やunlock()等から）改めて呼ばれることを期待する。
+    function ensureFileBgmGraph() {
+        const c = ensureContext();
+        if (!c) return false;
+        const el = getFileBgmAudioEl();
+        if (!fileBgmGainNode) {
+            fileBgmGainNode = c.createGain();
+            fileBgmGainNode.gain.value = fileBgmVolume();
+            fileBgmGainNode.connect(c.destination);
+        }
+        if (!fileBgmSourceNode) {
+            try {
+                fileBgmSourceNode = c.createMediaElementSource(el);
+                fileBgmSourceNode.connect(fileBgmGainNode);
+            } catch (e) {
+                // 生成に失敗した場合（対応していない環境等）は諦める。
+                // この場合、iOSでは音量調整が効かない可能性があるが、再生自体は
+                // <audio>要素の通常再生としてそのまま続行できる。
+            }
+        }
+        return true;
     }
     function stopFileBgm() {
         if (!fileBgmAudioEl) return;
@@ -84,10 +121,12 @@ const AudioManager = (() => {
         const src = FILE_BGM_TRACKS[trackName];
         if (!src) return;
         const el = getFileBgmAudioEl();
-        el.volume = fileBgmVolume(); // 0〜1（FILE_BGM_MAX_VOLUMEを上限とする）
         if (!el.src || !el.src.endsWith(src)) {
             el.src = src;
         }
+        ensureFileBgmGraph(); // 実際の音量調整はfileBgmGainNode側で行う（iOS対策）
+        if (fileBgmGainNode) fileBgmGainNode.gain.value = fileBgmVolume();
+        else el.volume = fileBgmVolume(); // フォールバック（Web Audioグラフ生成前/失敗時）
         if (settings.bgm === 0) return; // 無音設定中は読み込みだけ済ませて再生はしない
         const playPromise = el.play();
         if (playPromise && typeof playPromise.catch === 'function') {
@@ -341,6 +380,7 @@ const AudioManager = (() => {
             unlockWithSilentBuffer();
             resume();
             applyAmbientAudioSession(); // 各種<audio>要素の再生等でセッション種別が変わっていないか、ジェスチャーの度に再度念押しする
+            if (fileBgmAudioEl) ensureFileBgmGraph(); // まだWeb Audioグラフに接続できていなければここで試行する（iOSの.volume無視対策）
             // 自動再生制限でhome.mp3等のファイルBGM再生がブロックされていた場合、ここで再試行する
             if (currentTrackName && isFileBgmTrack(currentTrackName) && settings.bgm > 0 &&
                 fileBgmAudioEl && fileBgmAudioEl.paused) {
@@ -961,6 +1001,7 @@ const AudioManager = (() => {
             if (currentTrackName === trackName && fileBgmAudioEl && !fileBgmAudioEl.paused) return; // 既に再生中
             currentTrackName = trackName;
             stopBgmScheduling(); // 合成BGM側が鳴っていれば止める
+            resume(); // Web AudioグラフでMediaElementSourceを鳴らすにはctxがrunning状態である必要がある
             playFileBgm(trackName);
             return;
         }
@@ -1066,7 +1107,12 @@ const AudioManager = (() => {
         const c = ensureContext();
         if (masterBgmGain && c) masterBgmGain.gain.setTargetAtTime(bgmVolumeToGain(settings.bgm), c.currentTime, 0.05);
         if (masterSeGain && c) masterSeGain.gain.setTargetAtTime(seVolumeToGain(settings.se), c.currentTime, 0.05);
-        if (fileBgmAudioEl) fileBgmAudioEl.volume = fileBgmVolume();
+        if (fileBgmGainNode && c) {
+            fileBgmGainNode.gain.setTargetAtTime(fileBgmVolume(), c.currentTime, 0.05);
+        } else if (fileBgmAudioEl) {
+            // Web Audioグラフがまだ無い場合のフォールバック（iOSでは効かないことがある）
+            fileBgmAudioEl.volume = fileBgmVolume();
+        }
     }
 
     // volume: 0〜100の数値
