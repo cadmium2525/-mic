@@ -36,11 +36,11 @@ const AudioManager = (() => {
     const STORAGE_KEY = 'mfload_audio_settings';
     const VOLUME_MIN = 0;
     const VOLUME_MAX = 100;
-    // 音量100%時の実際のゲイン値（合成BGM用）
-    const BGM_MAX_GAIN = 0.28 / 3;
+    // 音量100%時の実際のゲイン値（合成BGM用）。基準値からさらに1/3に引き下げ済み。
+    const BGM_MAX_GAIN = 0.28 / 3 / 3;
     const SE_MAX_GAIN = 0.8;
     // 音量100%時の実際のゲイン値（実音声ファイルBGM用）。合成BGMと同じ基準で揃えてある。
-    const FILE_BGM_MAX_GAIN = 1 / 3;
+    const FILE_BGM_MAX_GAIN = 1 / 3 / 3;
     // 旧バージョン（OFF/小/中/大の4段階）からの移行用：相当する0〜100の数値に変換する
     const LEGACY_LEVEL_TO_VOLUME = { off: 0, small: 30, mid: 55, large: 100 };
 
@@ -804,6 +804,27 @@ const AudioManager = (() => {
         if (fileBgmFallbackEl) {
             try { fileBgmFallbackEl.pause(); fileBgmFallbackEl.currentTime = 0; } catch (e) { /* 無視 */ }
         }
+        // ★保険：上記の個別ノード停止は「今どのノードが鳴っているか」の自前トラッキングに
+        // 依存しているため、万が一何らかの理由でその追跡漏れ（例：想定外のタイミングで
+        // 生成されたノードが変数に上書きされ、古い方の参照を失う等）が起きていても、
+        // マスターゲインノード自体をここで作り直し、出力経路（destinationへの接続）を
+        // 物理的に断ち切ってしまうことで、追跡漏れのノードも含めて確実に無音化する。
+        // 「画面を移動しても前の場所のBGMが止まらない」不具合を構造的に防ぐための対策。
+        if (ctx) {
+            if (fileMasterGain) {
+                try { fileMasterGain.disconnect(); } catch (e) { /* 無視 */ }
+            }
+            fileMasterGain = ctx.createGain();
+            fileMasterGain.gain.value = fileBgmVolumeToGain(settings.bgm);
+            fileMasterGain.connect(ctx.destination);
+
+            if (masterBgmGain) {
+                try { masterBgmGain.disconnect(); } catch (e) { /* 無視 */ }
+            }
+            masterBgmGain = ctx.createGain();
+            masterBgmGain.gain.value = bgmVolumeToGain(settings.bgm);
+            masterBgmGain.connect(ctx.destination);
+        }
     }
 
     // 現在鳴っている・鳴る予定の合成BGM用ノードを即座に無音化して停止する。
@@ -1297,17 +1318,3 @@ function updateAudioSettingsUI() {
 }
 
 document.addEventListener('DOMContentLoaded', updateAudioSettingsUI);
-
-// =====================================================
-// 起動直後のBGM開始漏れ対策：
-// 起動時点の画面は index.html 側で class="screen active" として
-// 静的に表示されており changeScreen() を経由しないため、
-// 何かしら画面遷移するまで onScreenChange が一度も呼ばれず
-// BGMが鳴り始めないという不具合があった。
-// 起動時に表示されている画面を検出し、明示的に
-// onScreenChange 相当の処理を行うことで解消する。
-// =====================================================
-document.addEventListener('DOMContentLoaded', () => {
-    const activeScreen = document.querySelector('.screen.active');
-    AudioManager.onScreenChange(activeScreen ? activeScreen.id : 'screen-title');
-});
