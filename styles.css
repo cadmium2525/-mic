@@ -332,6 +332,21 @@ input, textarea, select {
     background: linear-gradient(90deg, #b45309, #fbbf24);
     transition: width 0.12s linear;
 }
+/* PRESS START後に挟む画面遷移オーバーレイ用（起動ロード画面と同じ見た目をクラスベースで再現） */
+.boot-transition-gauge-track {
+    width: 9rem;
+    height: 0.375rem;
+    border-radius: 9999px;
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(146, 64, 14, 0.6);
+    overflow: hidden;
+}
+.boot-transition-gauge-fill {
+    height: 100%;
+    width: 0%;
+    border-radius: 9999px;
+    background: linear-gradient(90deg, #b45309, #fbbf24);
+}
 
 /* ===== マイルーム：時間帯演出 ===== */
 /* #myroom-area 自身を独立したスタッキングコンテキストにしておく（isolation:isolate）。

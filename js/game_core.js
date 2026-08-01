@@ -332,7 +332,10 @@ function playTitleBootIntro() {
     }
 
     // メニュー展開（②③）を実行する処理。「PRESS START」タップ/キー入力後に呼ばれる
-    function revealHomeMenu() {
+    // instant=true の場合、ステップ①〜③の演出（スタガーアニメーション）を行わず、
+    // 最終的な表示状態を即座に反映する（暗転ロード演出の裏で使う。演出は
+    // ロード画面側で既に見せているため、隠れた状態で一気に組み立ててよい）。
+    function revealHomeMenu(instant) {
         const MENU_STAGGER_MS = 110;
         window.HOME_INTRO_MENU_REVEALED = true;
         if (buttonsContainer) buttonsContainer.style.pointerEvents = '';
@@ -355,11 +358,31 @@ function playTitleBootIntro() {
             items = latestItems;
         }
 
+        if (instant) {
+            items.forEach(el => {
+                el.style.transition = 'none';
+                el.style.transform = 'translateY(0)';
+                el.style.opacity = '1';
+                el.style.pointerEvents = '';
+            });
+            if (nameInputBox) {
+                nameInputBox.style.transition = 'none';
+                nameInputBox.style.opacity = '1';
+            }
+            return;
+        }
+
         items.forEach((el, i) => {
             setTimeout(() => {
                 el.style.transition = 'transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.35s ease-out';
                 el.style.transform = 'translateY(0)';
                 el.style.opacity = '1';
+                // checkEndlessModeUnlockAndUpdateHomeButton() が演出完了前に解禁判定を終えた場合、
+                // 該当ボタンに直接 pointer-events:none を設定して見た目上だけ隠す処理を行っている
+                // （buttonsContainer側のpointer-eventsを戻すだけでは、子要素に直接設定された
+                //   pointer-eventsは上書きされず残ってしまい、ボタンが押せなくなる不具合になっていた）。
+                // ここで個々のボタンのpointer-eventsも明示的に解除する。
+                el.style.pointerEvents = '';
             }, i * MENU_STAGGER_MS);
         });
 
@@ -401,7 +424,7 @@ function playTitleBootIntro() {
                 pressStartEl.classList.add('press-start-blink');
             }
 
-            // タップ・クリック・キー入力のいずれかでホームメニュー展開へ進む
+            // タップ・クリック・キー入力のいずれかで「暗転→ロード演出→ホーム表示」へ進む
             let started = false;
             const proceed = () => {
                 if (started) return;
@@ -410,16 +433,75 @@ function playTitleBootIntro() {
                 document.removeEventListener('keydown', proceed);
                 if (pressStartEl) {
                     pressStartEl.classList.remove('press-start-blink');
-                    pressStartEl.style.transition = 'opacity 0.3s ease-out';
+                    pressStartEl.style.transition = 'opacity 0.25s ease-out';
                     pressStartEl.style.opacity = '0';
                 }
                 if (window.AudioManager) AudioManager.playSE('decide');
-                revealHomeMenu();
+
+                // 「PRESS START」のフェードアウトを待ってから、一度暗転してロード画面を挟み、
+                // その裏でホームメニューを組み立てた上で、ロード画面をフェードアウトさせて
+                // ホームへ「切り替わった」ように見せる（単にボタンをフェードインさせるだけでなく、
+                // きちんと画面が切り替わる一連の遷移として扱う）。
+                setTimeout(() => {
+                    showBootTransitionOverlay(() => {
+                        revealHomeMenu(true);
+                    });
+                }, 260);
             };
             document.addEventListener('pointerdown', proceed);
             document.addEventListener('keydown', proceed);
         }, BG_REVEAL_MS + LOGO_PAUSE_MS + LOGO_FADE_MS + PRESS_START_PAUSE_MS);
     });
+}
+
+// PRESS START後に挟む「暗転→ロード風演出→フェードアウト」の画面遷移オーバーレイ。
+// 起動時の app-loading-overlay と同じ見た目（円盤石＋Now Loading＋ゲージ）を再現するが、
+// あちらは既にDOMから remove() 済みのため、ここでは独立した要素として都度組み立てる。
+// callback は、オーバーレイがまだ画面を覆っている（＝裏の変化が見えない）タイミングで
+// 呼び出すので、ホームメニュー側の展開処理はアニメーションさせず即座に完了させてよい。
+function showBootTransitionOverlay(callback) {
+    const MIN_MS = 1800;
+    const gameContainer = document.getElementById('game-container') || document.body;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'absolute inset-0 z-[999] flex flex-col items-center justify-center bg-[#120b07]';
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.35s ease';
+    overlay.innerHTML = `
+        <img src="images/gacha/円盤石.png" alt="" class="w-16 h-16 mb-4 app-loading-disc-appear">
+        <p class="text-amber-200 font-bold text-sm tracking-wide pixel-font">Now loading<span class="boot-transition-dots">.</span></p>
+        <div class="boot-transition-gauge-track mt-3">
+            <div class="boot-transition-gauge-fill"></div>
+        </div>
+    `;
+    gameContainer.appendChild(overlay);
+
+    requestAnimationFrame(() => { overlay.style.opacity = '1'; });
+
+    // 「Now loading」ドットのアニメーション
+    const dotsEl = overlay.querySelector('.boot-transition-dots');
+    let dotCount = 1;
+    const dotsTimer = setInterval(() => {
+        dotCount = (dotCount % 3) + 1;
+        if (dotsEl) dotsEl.textContent = '.'.repeat(dotCount);
+    }, 350);
+
+    // 進捗ゲージ（あくまで演出用。MIN_MSかけて0→100%まで進める）
+    const fillEl = overlay.querySelector('.boot-transition-gauge-fill');
+    const startTime = performance.now();
+    function tickGauge(ts) {
+        const t = Math.min(1, (ts - startTime) / MIN_MS);
+        if (fillEl) fillEl.style.width = `${t * 100}%`;
+        if (t < 1) requestAnimationFrame(tickGauge);
+    }
+    requestAnimationFrame(tickGauge);
+
+    setTimeout(() => {
+        clearInterval(dotsTimer);
+        if (typeof callback === 'function') callback(); // 裏側（ホーム画面）を隠れた状態のまま組み立てる
+        overlay.style.opacity = '0';
+        setTimeout(() => overlay.remove(), 400);
+    }, MIN_MS);
 }
 
 // 画面遷移

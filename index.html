@@ -49,6 +49,12 @@
             <p id="app-loading-percent" class="text-amber-200/60 text-[10px] font-bold pixel-font mt-1">0%</p>
         </div>
         <script>
+            // ロード画面が表示され始めた時刻を記録しておく。実際のアセット読み込みが
+            // どれだけ速く終わっても、この時刻から最低 MIN_LOADING_MS が経過するまでは
+            // ロード画面を終わらせない（「読み込んでいる感」を最低限は見せるための演出）。
+            var __appLoadingStartedAt = Date.now();
+            var __appLoadingMinMs = 4000;
+
             // 「Now loading」のドット数（.→..→...→.→..の繰り返し）を、他のスクリプト読み込みを待たずに
             // ここで即座に開始する（読み込みが遅い環境でも、なるべく早くアニメーションが動き出すように）
             (function () {
@@ -63,9 +69,9 @@
 
             // 起動ロード画面の進捗ゲージ（実際のアセット読み込み量を厳密に計測しているわけではなく、
             // 「それっぽく」0%→100%へ貯まっていくように見せるための演出用）。
-            // 序盤は速く、92%あたりからは残りを少しずつ詰めるだけにして頭打ち感を出し、
-            // 実際に読み込みが完了した瞬間（window.__completeAppLoadingGauge呼び出し時）に
-            // 一気に100%まで駆け上がって見えるようにする。
+            // 最低表示時間(MIN_LOADING_MS)いっぱいを使ってゆっくり90%あたりまで貯まっていき、
+            // 実際に読み込みが完了し、かつ最低表示時間も経過した時点
+            // （window.__completeAppLoadingGauge呼び出し時）で一気に100%まで駆け上がって見えるようにする。
             (function () {
                 var fillEl = document.getElementById('app-loading-gauge-fill');
                 var pctEl = document.getElementById('app-loading-percent');
@@ -80,17 +86,14 @@
 
                 function tick() {
                     if (completed) return;
-                    var remaining = 92 - progress;
-                    progress = Math.min(92, progress + Math.max(0.15, remaining * 0.025));
+                    var remaining = 90 - progress;
+                    progress = Math.min(90, progress + Math.max(0.08, remaining * 0.011));
                     updateUI();
                     rafId = requestAnimationFrame(tick);
                 }
                 rafId = requestAnimationFrame(tick);
 
-                // window.load完了後、外側（game_core.js）から呼び出される。
-                // 残りを一気に100%まで埋めてから、少し間を置いてcallbackを実行する。
-                window.__completeAppLoadingGauge = function (callback) {
-                    if (completed) { if (callback) callback(); return; }
+                function finish(callback) {
                     completed = true;
                     if (rafId) cancelAnimationFrame(rafId);
                     var start = progress;
@@ -109,6 +112,20 @@
                         }
                     }
                     requestAnimationFrame(grow);
+                }
+
+                // 実際のアセット読み込み完了後、外側（game_core.js）から呼び出される。
+                // 読み込み開始からMIN_LOADING_MSが経過していなければ、経過するまで待ってから
+                // 100%まで埋めてcallbackを実行する。
+                window.__completeAppLoadingGauge = function (callback) {
+                    if (completed) { if (callback) callback(); return; }
+                    var elapsed = Date.now() - __appLoadingStartedAt;
+                    var remainingMin = __appLoadingMinMs - elapsed;
+                    if (remainingMin > 0) {
+                        setTimeout(function () { finish(callback); }, remainingMin);
+                    } else {
+                        finish(callback);
+                    }
                 };
             })();
         </script>
