@@ -2,13 +2,27 @@
 // audio.js
 // BGM / SE 管理モジュール。
 //
-// 外部の音声ファイルを一切使わず、Web Audio API でその場で波形を
-// 合成して再生する（＝アセット不要で軽量、オフラインPWAとも相性が良い）。
+// ★このファイルは、BGM再生エンジン（特に実音声ファイルの再生・停止まわり）を
+// 一から設計し直したものです。以前の実装は「合成BGM用の仕組み」に後から
+// 「ファイル再生用の仕組み」を継ぎ足す形で拡張していたため、両者の状態管理が
+// ズレて競合し、
+//   ・iPhoneでファイル再生BGM(home.mp3)が鳴らないことがある
+//   ・画面遷移を繰り返すと複数のBGMが重なって鳴り続ける
+// といった不具合の温床になっていました。
 //
+// 新しい設計では、合成BGM／ファイル再生BGMの両方を「1つの世代カウンタ
+// (bgmGeneration)」で一元管理します（詳細は下記のBGMエンジンのコメント参照）。
+// これにより、どんなタイミングで画面遷移や音量変更が起きても、常に
+// 「最後に要求された1曲だけ」が鳴ることを構造的に保証します。
+//
+// 効果音(SE)およびBGMの「作曲データ」（音符の並び）自体はこれまでの実装を
+// そのまま引き継いでいます（不具合とは無関係な、既存の楽曲コンテンツのため）。
+//
+// ・BGMは「合成（Web Audio APIでその場で波形生成）」と「実音声ファイル
+//   （mp3をfetch+decodeAudioDataで読み込み）」の2種類に対応し、BGM_FILE_SOURCES
+//   に登録するだけで合成→実音声ファイルへ切り替えられます（下記参照）。
 // ・音量は BGM/SE それぞれ 0〜100 の数値で個別に指定できる。初期値はどちらも 0（無音）。
 // ・設定は localStorage に保存され、次回起動時も復元される。
-//   （旧バージョンの「OFF・小・中・大」の4段階設定が残っている場合は、
-//   相当する数値へ自動的に変換して引き継ぐ）
 // ・画面遷移（changeScreen）・戦闘演出（showEffect）・通知（showToast）を
 //   ラップして自動的に適切な音を鳴らす。個々の画面のコードは変更不要。
 //
@@ -22,20 +36,19 @@ const AudioManager = (() => {
     const STORAGE_KEY = 'mfload_audio_settings';
     const VOLUME_MIN = 0;
     const VOLUME_MAX = 100;
-    // 音量100%時の実際のゲイン値（旧「大」相当の値の1/3。BGMが全体的に大きすぎるとの
-    // フィードバックを受けて引き下げ。SEは対象外のため変更しない）
+    // 音量100%時の実際のゲイン値（合成BGM用）
     const BGM_MAX_GAIN = 0.28 / 3;
     const SE_MAX_GAIN = 0.8;
-    // 実音声ファイル(home.mp3等)によるBGM再生時の、音量100%時の<audio>.volume値（0〜1）。
-    // 合成BGM側のBGM_MAX_GAINと基準を揃え、同じ「1/3に引き下げ」を反映している。
-    const FILE_BGM_MAX_VOLUME = 1 / 3;
+    // 音量100%時の実際のゲイン値（実音声ファイルBGM用）。合成BGMと同じ基準で揃えてある。
+    const FILE_BGM_MAX_GAIN = 1 / 3;
     // 旧バージョン（OFF/小/中/大の4段階）からの移行用：相当する0〜100の数値に変換する
     const LEGACY_LEVEL_TO_VOLUME = { off: 0, small: 30, mid: 55, large: 100 };
 
     let settings = { bgm: 0, se: 0 };
 
     // ユーザー操作やAudioContext生成を待たず、スクリプト読込み直後の可能な限り早い
-    // タイミングでAudioSession種別を'ambient'にしておく（対応ブラウザのみ・安全に無視される）
+    // タイミングでAudioSession種別を'ambient'にしておく（対応ブラウザのみ・安全に無視される）。
+    // これがiOSのマナーモード（ミュートスイッチ）にBGMを従わせるための土台になる。
     try {
         if (typeof navigator !== 'undefined' && 'audioSession' in navigator) {
             navigator.audioSession.type = 'ambient';
@@ -43,112 +56,10 @@ const AudioManager = (() => {
     } catch (e) { /* 無視 */ }
 
     let ctx = null;
-    let masterBgmGain = null;
-    let masterSeGain = null;
+    let masterBgmGain = null; // 合成BGM用マスターゲイン
+    let masterSeGain = null;  // SE用マスターゲイン
+    let fileMasterGain = null; // 実音声ファイルBGM用マスターゲイン
     let noiseBuffer = null;
-
-    let currentTrackName = null;
-    let bgmTimerId = null;
-    let bgmToken = 0;
-    let activeBgmNodes = []; // 現在スケジュール済みのBGM用osc/gainノード（曲切り替え時に即座に停止するため）
-
-    // ---------------------------------------------------
-    // 実音声ファイル(mp3等)によるBGM再生：
-    // 基本のBGMはすべてWeb Audio APIでその場合成しているが、ホーム画面（screen-title）だけは
-    // 収録済みの音声ファイル(home.mp3)をループ再生する。
-    //
-    // ★実装方針について（重要）：
-    // 当初は<audio>要素で直接再生していたが、
-    //   ・iOSのSafari/WebKitは<audio>要素の`.volume`をスクリプトから変更しても無視する
-    //     （常にハードウェア側の物理ボタン任せになる）ため、ボリュームスライダーがPC/Androidでは
-    //     効くのにiPhoneだけ効かない、という不具合になっていた。
-    //   ・その対策として<audio>要素をcreateMediaElementSource()でWeb Audio APIのグラフに
-    //     取り込む方式を試したが、今度はiOS Safariで音そのものが一切鳴らなくなる
-    //     （createMediaElementSource自体がiOSで不安定という既知の問題）という、
-    //     より重大な不具合を引き起こしてしまった。
-    // そのため、<audio>要素を一切使わず、mp3ファイルをfetch+decodeAudioData()で
-    // AudioBufferとして読み込み、合成BGMと全く同じ経路（AudioBufferSourceNode→GainNode→
-    // destination）で再生する方式に変更した。この方式なら、
-    //   ・音量調整はGainNodeで行うため、iOSでも確実に反映される
-    //   ・マナーモード（ミュートスイッチ）対応も、合成BGMと同じくWeb Audio APIの
-    //     既定の挙動（+ applyAmbientAudioSession()による念押し）にそのまま乗る
-    // ため、両方の問題を同時に解消できる。
-    // ---------------------------------------------------
-    const FILE_BGM_TRACKS = {
-        home: 'audio/home.mp3',
-    };
-    let fileBgmBuffer = null;        // デコード済みAudioBuffer（一度取得したらキャッシュし、再取得しない）
-    let fileBgmBufferLoading = null; // 読み込み中のPromise（多重fetch防止）
-    let fileBgmSourceNode = null;    // 現在再生中のAudioBufferSourceNode（無ければ非再生中）
-    let fileBgmGainNode = null;      // ファイル再生BGM専用の音量調整用GainNode
-    function isFileBgmTrack(trackName) {
-        return !!FILE_BGM_TRACKS[trackName];
-    }
-    function loadFileBgmBuffer(trackName) {
-        const src = FILE_BGM_TRACKS[trackName];
-        if (!src) return Promise.resolve(null);
-        if (fileBgmBuffer) return Promise.resolve(fileBgmBuffer);
-        if (fileBgmBufferLoading) return fileBgmBufferLoading;
-        const c = ensureContext();
-        if (!c) return Promise.resolve(null); // 実ジェスチャー前はまだ何もできない
-        fileBgmBufferLoading = fetch(src)
-            .then(res => res.arrayBuffer())
-            .then(data => c.decodeAudioData(data))
-            .then(buf => {
-                fileBgmBuffer = buf;
-                fileBgmBufferLoading = null;
-                return buf;
-            })
-            .catch(err => {
-                fileBgmBufferLoading = null;
-                console.warn('[AudioManager] home.mp3 の読み込みに失敗しました:', err);
-                return null;
-            });
-        return fileBgmBufferLoading;
-    }
-    function stopFileBgm() {
-        if (fileBgmSourceNode) {
-            try { fileBgmSourceNode.stop(); } catch (e) { /* 既に停止済み等は無視 */ }
-            try { fileBgmSourceNode.disconnect(); } catch (e) { /* 無視 */ }
-            fileBgmSourceNode = null;
-        }
-    }
-    function playFileBgm(trackName) {
-        const c = ensureContext();
-        if (!c) return; // ジェスチャー未取得等。後でunlock()等から改めて呼ばれる
-        loadFileBgmBuffer(trackName).then(buffer => {
-            if (!buffer) return;
-            // デコード待ちの間に曲やBGM音量設定が変わっていたら何もしない
-            if (currentTrackName !== trackName) return;
-            stopFileBgm(); // 念のため、既に鳴っている分があれば止めてから鳴らし直す
-            if (!fileBgmGainNode) {
-                fileBgmGainNode = c.createGain();
-                fileBgmGainNode.connect(c.destination);
-            }
-            fileBgmGainNode.gain.value = fileBgmVolume();
-            if (settings.bgm === 0) return; // 無音設定中はデコードだけ済ませて再生はしない
-            const source = c.createBufferSource();
-            source.buffer = buffer;
-            source.loop = true;
-            source.connect(fileBgmGainNode);
-            source.start(0);
-            fileBgmSourceNode = source;
-        });
-    }
-
-
-    // iOS Safari（特にホーム画面追加＝PWAスタンドアロン起動）では、実際のユーザー操作
-    // （タップ／キー入力）より前にAudioContextを生成してしまうと、その後どれだけ
-    // resume()やバッファ再生を試みてもそのContextインスタンス自体が二度と鳴らせない
-    // ままになる、という既知の挙動がある。
-    // 「Now loading→PRESS START」の起動演出では、画面表示だけでBGM再生ロジックが
-    // 自動的に走ってしまい（onScreenChange経由）、ユーザーがまだ一度もタップして
-    // いない段階でensureContext()が呼ばれてAudioContextが生成されてしまっていた。
-    // これがPRESS STARTをタップしても音が鳴らない不具合の原因。
-    // 対策：最初の実ジェスチャー（pointerdown/keydown）を受け取るまではensureContext()
-    // がAudioContextを生成しないようにガードする（曲名の記憶自体は行い、鳴らすのは
-    // ジェスチャー後に回す）。
-    let audioGestureReceived = false;
 
     function clampVolume(v) {
         const n = Number(v);
@@ -156,37 +67,28 @@ const AudioManager = (() => {
         return Math.max(VOLUME_MIN, Math.min(VOLUME_MAX, Math.round(n)));
     }
 
-    // BGMスライダー(0〜100)を、人の耳の感じ方（対数的）に合わせた指数カーブで実際の音量値へ
-    // 変換する共通ヘルパー。
-    // ------------------------------------------------------------------
-    // 単純な線形（v/100 * max）だと、人の耳はおおよそ対数的に音の大きさを感じるため、
-    // スライダーの下〜中間あたりの変化がほとんど聞き取れず、「0にすると無音になるが、
-    // 1〜100はどれもほぼ同じ小さい音にしか聞こえない」という不具合になっていた
-    // （特にBGMの上限ゲインを控えめな値にしたことで、線形だとなおさら差が潰れやすかった）。
-    // 指数カーブにすることで、スライダーを1段階動かすごとに「聞こえ方がはっきり変わる」
-    // ようにする。v=0は必ず完全な無音(0)を返す。
-    // minRatio：v→0（1に限りなく近づく手前）で、maxValueに対してどこまで絞るかの比率。
-    //   小さいほど「静かな側」のレンジが広がる（例：0.05 ≒ 最大からおよそ26dB分のレンジ）。
-    function perceptualBgmValue(v, maxValue) {
+    // スライダー(0〜100)を、人の耳の感じ方（対数的）に合わせた指数カーブで実際の音量値へ
+    // 変換する共通ヘルパー。単純な線形だと「0以外はどれもほぼ同じ小さい音」に聞こえて
+    // しまうため、指数カーブにすることでスライダーのどの位置でも聞こえ方がはっきり変わる
+    // ようにしている。v=0は必ず完全な無音(0)を返す。
+    function perceptualVolumeValue(v, maxValue) {
         const cv = clampVolume(v);
         if (cv <= 0) return 0;
         const minRatio = 0.05;
-        const t = cv / VOLUME_MAX; // 0（を超えたところ）〜1
+        const t = cv / VOLUME_MAX;
         return maxValue * minRatio * Math.pow(1 / minRatio, t);
     }
 
     function bgmVolumeToGain(v) {
-        return perceptualBgmValue(v, BGM_MAX_GAIN);
+        return perceptualVolumeValue(v, BGM_MAX_GAIN);
     }
 
     function seVolumeToGain(v) {
-        return (clampVolume(v) / VOLUME_MAX) * SE_MAX_GAIN;
+        return perceptualVolumeValue(v, SE_MAX_GAIN);
     }
 
-    // 実音声ファイル(home.mp3等)による<audio>要素再生用の音量（0〜1）。
-    // 合成BGMと同じ指数カーブ・同じ基準(FILE_BGM_MAX_VOLUME)でマッピングする。
-    function fileBgmVolume() {
-        return perceptualBgmValue(settings.bgm, FILE_BGM_MAX_VOLUME);
+    function fileBgmVolumeToGain(v) {
+        return perceptualVolumeValue(v, FILE_BGM_MAX_GAIN);
     }
 
     // ---------------------------------------------------
@@ -218,8 +120,7 @@ const AudioManager = (() => {
     // ★マナーモード（iOSのミュートスイッチ）対応：
     // SafariのAudioSession API (Editor's Draft) では、audioSession.typeの既定値は
     // 'ambient'（＝ミュートスイッチに従って無音になる）だが、実際には音声を再生する
-    // <audio>要素等が動くと、ブラウザ側の判断でセッション種別が'playback'相当（＝
-    // ミュートスイッチを無視して常に鳴る）へ暗黙に変わってしまうことがある。
+    // 処理が動くと、ブラウザ側の判断でセッション種別が暗黙に変わってしまうことがある。
     // これを明示的に'ambient'へ固定し直すことで、BGMがミュートスイッチ（マナーモード）
     // に従って鳴らなくなるようにする。非対応ブラウザでは何もしない（安全に無視される）。
     function applyAmbientAudioSession() {
@@ -229,6 +130,15 @@ const AudioManager = (() => {
             }
         } catch (e) { /* 非対応/失敗時は無視（この端末では従来通りの挙動になる） */ }
     }
+
+    // iOS Safari（特にホーム画面追加＝PWAスタンドアロン起動時）では、実際のユーザー操作
+    // （タップ／キー入力）より前にAudioContextを生成してしまうと、その後どれだけ
+    // resume()やバッファ再生を試みてもそのContextインスタンス自体が二度と鳴らせない
+    // ままになる、という既知の挙動がある。
+    // 対策：最初の実ジェスチャー（pointerdown/keydown/click）を受け取るまでは
+    // ensureContext()がAudioContextを生成しないようにガードする（曲名の記憶自体は
+    // 行い、鳴らすのはジェスチャー後に回す）。
+    let audioGestureReceived = false;
 
     function ensureContext() {
         if (ctx) return ctx;
@@ -245,6 +155,10 @@ const AudioManager = (() => {
             masterSeGain = ctx.createGain();
             masterSeGain.gain.value = seVolumeToGain(settings.se);
             masterSeGain.connect(ctx.destination);
+
+            fileMasterGain = ctx.createGain();
+            fileMasterGain.gain.value = fileBgmVolumeToGain(settings.bgm);
+            fileMasterGain.connect(ctx.destination);
         } catch (e) {
             console.warn('[AudioManager] Web Audio API が利用できません:', e);
             ctx = null;
@@ -262,30 +176,6 @@ const AudioManager = (() => {
         } else if (c.state === 'running') {
             startBgmPlaybackIfReady();
         }
-    }
-
-    // AudioContextが実際に「running」状態になった時にだけ呼ばれる、BGMスケジューリングの唯一の開始口。
-    // ------------------------------------------------------------------
-    // 背景：ブラウザの自動再生制限により、ユーザー操作前はAudioContextが
-    // 'suspended'のままで、その間はcurrentTime（音声用の時計）が進まない。
-    // 以前はplayBGM()等が呼ばれた時点で（suspended中であっても）即座に
-    // scheduleBgmLoop()でBGMをスケジュールしてしまっていたため、
-    // 「Now loading→PRESS START」のようにユーザーが長く操作しない画面が
-    // 続くと、setTimeoutによる自己ループ（wall-clock基準・suspendedでも
-    // 止まらない）が実際の発音とは無関係に何度も発火し、同じ曲がcurrentTime
-    // ≒0付近に何重にも重ねてスケジュールされてしまっていた。
-    // その状態でようやくタップ等によりresume()が成功すると、積み重なった
-    // 分がすべて一斉に鳴り始めて音が壊れて聞こえたり、逆に事実上何も
-    // 聞き取れない状態になったりする不具合の原因になっていた。
-    // 対策：scheduleBgmLoop()は「AudioContextが実際にrunningになった瞬間」
-    // にのみ呼び出すようにし、suspended中は一切スケジューリングしない
-    // （currentTrackNameを覚えておくだけ）ようにする。
-    function startBgmPlaybackIfReady() {
-        if (!ctx || ctx.state !== 'running') return;
-        if (!currentTrackName || settings.bgm === 0) return;
-        if (isFileBgmTrack(currentTrackName)) return; // ファイル再生BGMは合成エンジン側でスケジュールしない
-        if (bgmTimerId) return; // 既にスケジューリング中
-        scheduleBgmLoop(currentTrackName, bgmToken);
     }
 
     // iOS Safari（特にホーム画面追加＝PWAスタンドアロン起動時）は、resume()の
@@ -318,16 +208,16 @@ const AudioManager = (() => {
         ctx = null;
         masterBgmGain = null;
         masterSeGain = null;
-        activeBgmNodes = [];
-        bgmTimerId = null;
+        fileMasterGain = null;
+        synthActiveNodes = [];
+        synthTimerId = null;
+        fileBgmSourceNode = null;
         return ensureContext(); // audioGestureReceivedは既にtrueなので生成される
     }
 
     // ---------------------------------------------------
     // バックグラウンド復帰後の保険：フォアグラウンドに戻った直後の自動resume()だけでは
     // 復帰しきらない端末向けに、復帰後の「次の実タップ」で確実に立て直す。
-    // （visibilitychangeイベント自体はブラウザによってはユーザージェスチャーとして
-    // 扱われないため、実際のタップの中でAudioContextの作り直しまで行う方が確実）
     // ---------------------------------------------------
     let foregroundRecoveryArmed = false;
     function armForegroundRecovery() {
@@ -351,38 +241,17 @@ const AudioManager = (() => {
         document.addEventListener('click', recover, true);
         document.addEventListener('keydown', recover, true);
     }
+
     // 初回のユーザー操作でAudioContextのロックを解除する（ブラウザの自動再生制限対策）。
-    // ------------------------------------------------------------------
-    // Safari（PWA/通常ブラウザどちらも）では、1回目のタップ・ジェスチャーだけでは
-    // AudioContextの解除（'running'への遷移）が間に合わない／成立しないことがある
-    // （resume()のPromiseが遅れる、あるいは初回は反映されない等）既知のクセがある。
-    // 以前は「1回でも解除を試みたら完了とみなして以後は何もしない」実装だったため、
-    // PRESS STARTの1回目のタップで解除しきれなかった場合、そのまま二度と自動では
-    // 試みられず、実際に音が鳴るのは「たまたま次にタップした別のボタン」まで
-    // ずれ込んでしまっていた。
-    // 対策：実際に ctx.state === 'running' になったことを確認できるまでは
-    // リスナーを解除せず、以後のタップ・キー入力のたびに何度でも解除を再試行する。
-    // 追記：pointerdown（＝タッチ端末ではtouchstart相当）だけでは、WebKit系ブラウザで
-    // AudioContext.resume()が「有効なユーザー操作」として認識されないことがある
-    // （resume()自体は呼べてもPromiseが解決されずrunningに遷移しない）という既知の
-    // クセがある。実際にはネイティブの<button>要素をタップした場合は問題が起きにくいが、
-    // これは「PRESS START」のような通常のテキスト要素（<button>ではない）をタップした
-    // 場合との差として現れていた：<button>タップ時は後続の'click'イベントに対する
-    // 汎用SE再生処理（下方の document.addEventListener('click', ...)）がresume()を
-    // 呼んでおり、それがたまたま'click'起点だったために解除に成功していた。
-    // 対策：pointerdown/keydownに加えて'click'でも同じ解除処理を試みることで、
-    // ボタン以外の要素をタップした場合（PRESS STARTなど）でも確実に解除されるようにする。
+    // 実際に ctx.state === 'running' になったことを確認できるまではリスナーを解除せず、
+    // 以後のタップ・キー入力のたびに何度でも解除を再試行する。
     function installUnlockListener() {
         const unlock = () => {
             audioGestureReceived = true; // これでensureContext()が実際に生成を行えるようになる
             ensureContext();
             unlockWithSilentBuffer();
-            resume();
-            applyAmbientAudioSession(); // 各種音声再生等でセッション種別が変わっていないか、ジェスチャーの度に再度念押しする
-            // 実ジェスチャー前で読み込み・再生ができていなかった場合、ここで改めて試行する
-            if (currentTrackName && isFileBgmTrack(currentTrackName) && settings.bgm > 0 && !fileBgmSourceNode) {
-                playFileBgm(currentTrackName);
-            }
+            resume(); // ← 現在鳴らすべき曲（合成／ファイルいずれも）はここから一元的に開始される
+            applyAmbientAudioSession(); // ジェスチャーの度に、セッション種別が変わっていないか念押しする
             if (ctx && ctx.state === 'running') {
                 document.removeEventListener('pointerdown', unlock, true);
                 document.removeEventListener('click', unlock, true);
@@ -462,7 +331,6 @@ const AudioManager = (() => {
         src.stop(startAt + duration + 0.03);
         return { osc: src, gain: g };
     }
-
     // ---------------------------------------------------
     // SE（効果音）定義
     // ---------------------------------------------------
@@ -556,7 +424,6 @@ const AudioManager = (() => {
         const fn = SE_DEFS[name];
         if (fn) fn();
     }
-
     // ---------------------------------------------------
     // BGM（ループ楽曲）定義：メロディ + ベースの2声チップチューン
     // 各音符は [音名 or null(休符), 拍数] の配列
@@ -661,7 +528,7 @@ const AudioManager = (() => {
         },
         // レジェンドブリーダー・コルト（3セット目ボス戦）専用BGM。
         // 低音を厚めにしたテンポ控えめの重厚な曲調で「ボス戦」感を強調する。
-        boss: {
+        boss1: {
             tempo: 108, leadType: 'sawtooth', bassType: 'square',
             lead: [
                 // イントロ：低音域の付点リズムによる威圧的な入り (8拍)
@@ -704,7 +571,7 @@ const AudioManager = (() => {
         // ノコギリ波の鋭いリードと矩形波の力強いオクターブ刻みベースで畳みかけつつ、
         // サビでは跳躍の大きいアルペジオにより頂点の高揚感を演出する。
         // 「イントロ→ヴァース→サビ→ヴァース→サビ」の1周72拍構成で自然にループする。
-        finalboss: {
+        boss2: {
             tempo: 176, leadType: 'sawtooth', bassType: 'square',
             lead: [
                 // --- イントロ (8拍)：主音のオクターブ連打から一気に駆け上がる ---
@@ -851,7 +718,6 @@ const AudioManager = (() => {
             harmonyVolume: 0.12,
         },
     };
-
     // --- BGM用の簡易ドラム1打分（kick/snare/hat）を合成する ---
     // ・kick : 低いサイン波のピッチ落ち（サブベース的などすん、という一撃）
     // ・snare: 中域を残したノイズバースト＋短い三角波のスナップ音
@@ -876,17 +742,103 @@ const AudioManager = (() => {
     function totalBeats(seq) {
         return seq.reduce((s, [, d]) => s + d, 0);
     }
+    // ---------------------------------------------------
+    // BGMエンジン（合成BGM／実音声ファイルBGM 共通の再生制御）
+    // ---------------------------------------------------
+    // 「現在再生を要求されている世代（generation）」を1つのカウンタで一元管理する。
+    // playBGM()・stopBgm() を呼ぶたびにこのカウンタを+1し、既存の再生
+    // （合成BGMのスケジュールタイマー・オシレーター、ファイル再生のAudioBufferSourceNode）を
+    // 同期的に即座に停止してから、新しい再生を「今の世代番号」を持たせて開始する。
+    // 合成BGMのループ予約（setTimeout）や、ファイルの fetch+decode といった
+    // 非同期処理はすべて、自分が開始された時点の世代番号を覚えておき、実際に
+    // 音を出す直前に「今の世代と一致しているか」を必ず確認する。
+    // 一致していなければ何もしない（stale＝もう不要になった再生要求）。
+    // これにより、画面遷移を素早く繰り返した場合でも、常に「最後に要求された
+    // 1曲」だけが鳴り、複数の曲が重なって鳴り続けることがない
+    // （以前の実装は、合成BGM側とファイル再生側で別々に状態を持っていたため、
+    // 両者の停止漏れ・タイミングのズレが「複数のBGMが鳴り続ける」不具合の原因になっていた）。
+    let bgmGeneration = 0;
+    let currentTrackName = null;    // 現在「鳴らすべき」として記憶している曲名（音量0時も含めて記憶）
+    let synthTimerId = null;        // 合成BGMの次ループ予約タイマー
+    let synthActiveNodes = [];      // 合成BGMで現在スケジュール済みのosc/gainノード
+    let fileBgmSourceNode = null;   // 実音声ファイルBGMの現在再生中のAudioBufferSourceNode
+    let fileBgmFallbackEl = null;   // decodeAudioData失敗時などのフォールバック用<audio>要素
+    const fileBgmBufferCache = {};  // { trackName: AudioBuffer } デコード済みキャッシュ（一度読めば再取得しない）
+    const fileBgmLoadingCache = {}; // { trackName: Promise } 読み込み中Promise（同じ曲の多重fetch防止）
 
-    function scheduleBgmLoop(trackName, token) {
+    // 実音声ファイルBGMの登録先。ここに 'トラック名: ファイルパス' を追加するだけで、
+    // 該当トラックが合成BGMから実音声ファイル再生へ切り替わる。
+    // （例）戦闘曲を実音声化する場合： battle: 'audio/battle.mp3',
+    const BGM_FILE_SOURCES = {
+        home: 'audio/home.mp3',
+        dochu: 'audio/douchu.mp3',
+        // 今後追加予定（ファイルが用意でき次第、以下のコメントを外すだけでよい）：
+        // battle: 'audio/battle.mp3',
+        // boss1: 'audio/boss1.mp3',
+        // boss2: 'audio/boss2.mp3',
+        // myroom: 'audio/myroom.mp3',
+        // gacha: 'audio/gacha.mp3',
+    };
+
+    function fileTrackSrc(name) {
+        return BGM_FILE_SOURCES[name] || null;
+    }
+    function isSynthTrack(name) {
+        return !!BGM_TRACKS[name];
+    }
+
+    // 合成BGM・実音声ファイルBGMを問わず、現在鳴っている・鳴る予定のBGMを
+    // 同期的に即座に止める。曲の切り替え・停止のたびに必ず最初に呼ぶことで、
+    // 「前の曲が鳴ったまま次の曲が重なる」ことを構造的に防ぐ。
+    function stopAllBgmPlayback() {
+        if (synthTimerId) {
+            clearTimeout(synthTimerId);
+            synthTimerId = null;
+        }
+        stopAllSynthNodes();
+        if (fileBgmSourceNode) {
+            try { fileBgmSourceNode.stop(); } catch (e) { /* 既に停止済み等は無視 */ }
+            try { fileBgmSourceNode.disconnect(); } catch (e) { /* 無視 */ }
+            fileBgmSourceNode = null;
+        }
+        if (fileBgmFallbackEl) {
+            try { fileBgmFallbackEl.pause(); fileBgmFallbackEl.currentTime = 0; } catch (e) { /* 無視 */ }
+        }
+    }
+
+    // 現在鳴っている・鳴る予定の合成BGM用ノードを即座に無音化して停止する。
+    // tone() は1ループ分（曲によっては十数秒）の音符をまとめて未来の時刻に
+    // スケジュールしてしまうため、setTimeout を止めるだけでは既にスケジュール
+    // 済みの音がそのまま最後まで鳴り続けてしまう。各ノードを強制的にごく短い
+    // フェードアウトの後に停止させることで、曲の切り替え時に即座に止められるようにする。
+    function stopAllSynthNodes() {
+        if (!synthActiveNodes.length) return;
+        const nodes = synthActiveNodes;
+        synthActiveNodes = [];
+        const c = ctx;
+        const now = c ? c.currentTime : 0;
+        nodes.forEach(({ osc, gain }) => {
+            try {
+                if (c && gain) {
+                    gain.gain.cancelScheduledValues(now);
+                    gain.gain.setValueAtTime(gain.gain.value, now);
+                    gain.gain.linearRampToValueAtTime(0.0001, now + 0.03);
+                }
+            } catch (e) { /* 無視 */ }
+            try {
+                osc.stop(c ? now + 0.04 : 0);
+            } catch (e) { /* 既に停止済み等は無視 */ }
+        });
+    }
+
+    function scheduleSynthLoop(trackName, gen) {
+        if (gen !== bgmGeneration) return; // 世代が古い＝もう不要になった再生要求
         const track = BGM_TRACKS[trackName];
         const c = ensureContext();
-        if (!track || !c) return;
+        if (!track || !c || c.state !== 'running') return;
 
         const beatSec = 60 / track.tempo;
         const startAt = 0.06; // 発音開始までの僅かなマージン（when は "今から何秒後" の相対値）
-
-        // このループ呼び出しで新たにスケジュールするノードだけを追跡する
-        // （前回呼び出し分のノードは通常通り鳴り終わっているはずだが、念のため配列を差し替える）
         const scheduledNodes = [];
 
         let t = startAt;
@@ -934,119 +886,213 @@ const AudioManager = (() => {
             t += d * beatSec;
         });
 
-        activeBgmNodes = scheduledNodes;
+        synthActiveNodes = scheduledNodes;
 
         const loopMs = totalBeats(track.lead) * beatSec * 1000;
-        bgmTimerId = setTimeout(() => {
-            if (token !== bgmToken) return; // 途中で停止・曲変更されていたら止める
-            // ここが今回の核心的な修正点：
-            // このsetTimeoutは壁時計（実時間）基準で動くため、タブ/アプリが
-            // バックグラウンドになっていても関係なく発火し続けてしまう。
-            // visibilitychange等のイベントで止め損ねた場合でも、ここで
-            // 「AudioContextが実際にrunningかどうか」を直接確認することで、
-            // suspended/interrupted中に何重にもスケジュールが積み重なって
-            // 復帰時に音が重複したり消えたりする不具合を根本から防ぐ。
+        synthTimerId = setTimeout(() => {
+            if (gen !== bgmGeneration) return; // 途中で停止・曲変更されていたら止める
+            // このsetTimeoutは壁時計（実時間）基準で動くため、タブ/アプリがバックグラウンドに
+            // なっていても関係なく発火し続けてしまう。復帰時にAudioContextが実際にrunningか
+            // どうかを直接確認することで、suspended中に何重にもスケジュールが積み重なって
+            // 復帰時に音が重複したり消えたりする不具合を防ぐ。
             if (!ctx || ctx.state !== 'running') {
-                bgmTimerId = null; // ここでは何もしない。復帰時はresume()成功時の
-                                   // startBgmPlaybackIfReadyが改めて仕切り直す
+                synthTimerId = null; // ここでは何もしない。復帰時はresume()成功時のstartBgmPlaybackIfReadyが仕切り直す
                 return;
             }
-            scheduleBgmLoop(trackName, token);
+            scheduleSynthLoop(trackName, gen);
         }, Math.max(200, loopMs - 80));
     }
 
-    // 現在鳴っている・鳴る予定のBGM用ノードを即座に無音化して停止する。
-    // tone() は1ループ分（曲によっては十数秒）の音符をまとめて未来の時刻に
-    // スケジュールしてしまうため、setTimeout を止めるだけでは既にスケジュール
-    // 済みの音がそのまま最後まで鳴り続けてしまい、場面転換時に前のBGMと
-    // 新しいBGMが二重に鳴る不具合の原因になっていた。
-    // ここで各ノードを強制的にごく短いフェードアウトの後に停止させることで、
-    // 曲の切り替え時に即座に前の曲を止められるようにする。
-    function stopAllBgmNodes() {
-        if (!activeBgmNodes.length) return;
-        const nodes = activeBgmNodes;
-        activeBgmNodes = [];
-        const c = ctx;
-        const now = c ? c.currentTime : 0;
-        nodes.forEach(({ osc, gain }) => {
-            try {
-                if (c && gain) {
-                    gain.gain.cancelScheduledValues(now);
-                    gain.gain.setValueAtTime(gain.gain.value, now);
-                    gain.gain.linearRampToValueAtTime(0.0001, now + 0.03);
-                }
-            } catch (e) { /* 無視 */ }
-            try {
-                osc.stop(c ? now + 0.04 : 0);
-            } catch (e) { /* 既に停止済み等は無視 */ }
+    // 実音声ファイルBGMのAudioBufferを読み込む（初回のみfetch+decode、以降はキャッシュを返す）
+    function loadFileBgmBuffer(trackName, src, c) {
+        if (fileBgmBufferCache[trackName]) return Promise.resolve(fileBgmBufferCache[trackName]);
+        if (fileBgmLoadingCache[trackName]) return fileBgmLoadingCache[trackName];
+        const p = fetch(src)
+            .then((res) => {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.arrayBuffer();
+            })
+            .then((data) => c.decodeAudioData(data))
+            .then((buf) => {
+                fileBgmBufferCache[trackName] = buf;
+                delete fileBgmLoadingCache[trackName];
+                return buf;
+            })
+            .catch((err) => {
+                delete fileBgmLoadingCache[trackName];
+                console.warn('[AudioManager] ' + src + ' の読み込み/デコードに失敗しました。<audio>要素でのフォールバック再生を試みます:', err);
+                return null;
+            });
+        fileBgmLoadingCache[trackName] = p;
+        return p;
+    }
+
+    // decodeAudioData失敗時のフォールバック：<audio>要素で直接再生する。
+    // iOSでは.volumeがスクリプトから効かない制約があるが、完全な無音よりは望ましいため
+    // 最後の手段として用意している（本命は上のAudioBuffer再生ルート）。
+    function startFileBgmFallback(trackName, src, gen) {
+        if (gen !== bgmGeneration) return;
+        if (!fileBgmFallbackEl) fileBgmFallbackEl = new Audio();
+        const el = fileBgmFallbackEl;
+        el.loop = true;
+        if (!el.src || !el.src.endsWith(src)) el.src = src;
+        el.volume = 1;
+        const p = el.play();
+        if (p && typeof p.catch === 'function') {
+            p.catch((err) => console.warn('[AudioManager] ' + src + ' のフォールバック再生にも失敗しました:', err));
+        }
+    }
+
+    function startFileBgm(trackName, gen) {
+        const src = fileTrackSrc(trackName);
+        if (!src) return;
+        const c = ensureContext();
+        if (!c) return; // ジェスチャー未取得。resume()成功時にstartBgmPlaybackIfReadyが改めて拾う
+        loadFileBgmBuffer(trackName, src, c).then((buffer) => {
+            if (gen !== bgmGeneration) return; // 世代が古い＝もう不要になった再生要求
+            if (!buffer) {
+                startFileBgmFallback(trackName, src, gen);
+                return;
+            }
+            if (!fileMasterGain) {
+                fileMasterGain = c.createGain();
+                fileMasterGain.connect(c.destination);
+            }
+            fileMasterGain.gain.value = fileBgmVolumeToGain(settings.bgm);
+            const source = c.createBufferSource();
+            source.buffer = buffer;
+            source.loop = true;
+            source.connect(fileMasterGain);
+            source.start(0);
+            fileBgmSourceNode = source;
         });
     }
 
-    function stopBgmScheduling() {
-        bgmToken++;
-        if (bgmTimerId) {
-            clearTimeout(bgmTimerId);
-            bgmTimerId = null;
+    function dispatchBgmTrack(trackName, gen) {
+        if (fileTrackSrc(trackName)) {
+            startFileBgm(trackName, gen);
+        } else if (isSynthTrack(trackName)) {
+            const c = ensureContext();
+            if (!c || c.state !== 'running') return; // running化した瞬間にstartBgmPlaybackIfReadyが拾う
+            scheduleSynthLoop(trackName, gen);
         }
-        stopAllBgmNodes();
     }
 
-    // trackName を「現在流すべき曲」として記憶する。
-    // BGM音量が0のときは実際には鳴らさないが、次に音量を上げた時に自動再開できるよう記憶だけしておく。
+    // AudioContextが実際に「running」状態になった時、および画面が前面へ復帰した時に
+    // 呼ばれる、BGM再生の唯一の再開口。「今、鳴っているべきなのに鳴っていない」場合にだけ
+    // 現在の曲(currentTrackName)を今の世代番号で鳴らし直す。
+    function startBgmPlaybackIfReady() {
+        if (!ctx || ctx.state !== 'running') return;
+        if (!currentTrackName || settings.bgm === 0) return;
+        if (synthTimerId || fileBgmSourceNode) return; // 既に鳴っている
+        dispatchBgmTrack(currentTrackName, bgmGeneration);
+    }
+
+    // trackName を「現在流すべき曲」として記憶し、直ちに鳴らし始める。
+    // BGM音量が0のときは実際には鳴らさないが、次に音量を上げた時に自動再開できるよう
+    // trackNameだけは記憶しておく。
     function playBGM(trackName) {
-        if (isFileBgmTrack(trackName)) {
-            if (currentTrackName === trackName && fileBgmSourceNode) return; // 既に再生中
-            currentTrackName = trackName;
-            stopBgmScheduling(); // 合成BGM側が鳴っていれば止める
-            resume(); // AudioBufferSourceNodeを鳴らすにはctxがrunning状態である必要がある
-            playFileBgm(trackName);
+        if (currentTrackName === trackName) return; // 既に同じ曲を再生中（またはその予定）
+        currentTrackName = trackName;
+        bgmGeneration++;
+        const myGen = bgmGeneration;
+        stopAllBgmPlayback();
+        if (!trackName) return; // 明示的な停止
+        if (settings.bgm === 0) return; // 無音設定中は記憶だけして鳴らさない
+        dispatchBgmTrack(trackName, myGen);
+    }
+
+    function stopBgm() {
+        currentTrackName = null;
+        bgmGeneration++;
+        stopAllBgmPlayback();
+    }
+
+    function getCurrentTrack() {
+        return currentTrackName;
+    }
+
+    // ---------------------------------------------------
+    // 設定変更
+    // ---------------------------------------------------
+    function applyGainImmediately() {
+        const c = ensureContext();
+        if (masterBgmGain && c) masterBgmGain.gain.setTargetAtTime(bgmVolumeToGain(settings.bgm), c.currentTime, 0.05);
+        if (masterSeGain && c) masterSeGain.gain.setTargetAtTime(seVolumeToGain(settings.se), c.currentTime, 0.05);
+        if (fileMasterGain && c) fileMasterGain.gain.setTargetAtTime(fileBgmVolumeToGain(settings.bgm), c.currentTime, 0.05);
+    }
+
+    // volume: 0〜100の数値
+    function setBgmVolume(volume) {
+        const v = clampVolume(volume);
+        const wasOff = settings.bgm === 0;
+        settings.bgm = v;
+        saveSettings();
+        resume();
+        applyGainImmediately();
+        if (!currentTrackName) return;
+        if (v === 0) {
+            stopAllBgmPlayback();
             return;
         }
-        if (!BGM_TRACKS[trackName]) return;
-        if (currentTrackName === trackName && bgmTimerId) return; // 既に同じ曲を再生中
-        currentTrackName = trackName;
-        stopFileBgm(); // ファイル再生側が鳴っていれば止める
-        stopBgmScheduling();
-        if (settings.bgm === 0) return;
-        const c = ensureContext();
-        if (!c) return;
-        // runningであれば即座に鳴らす。suspended（自動再生制限でブロック中）の場合は
-        // ここではスケジューリングせず、resume()が成功した瞬間にstartBgmPlaybackIfReadyが
-        // 拾って開始する（frozenなcurrentTimeに対して先走ってスケジュールしない）。
-        resume();
-        if (c.state === 'running') {
-            scheduleBgmLoop(trackName, bgmToken);
+        if (wasOff) {
+            // 無音→音ありに変わった瞬間。「今の曲」を新しい世代で鳴らし直す
+            bgmGeneration++;
+            const myGen = bgmGeneration;
+            stopAllBgmPlayback();
+            dispatchBgmTrack(currentTrackName, myGen);
         }
     }
 
+    // volume: 0〜100の数値
+    function setSeVolume(volume) {
+        const v = clampVolume(volume);
+        settings.se = v;
+        saveSettings();
+        resume();
+        applyGainImmediately();
+    }
+
+    function getSettings() {
+        return { ...settings };
+    }
+
     // ---------------------------------------------------
-    // 画面遷移に応じた自動BGM切り替え
-    // （個々の勝敗が絡む結果画面は各ゲームロジック側で明示的に
-    //   playBGM('victory' / 'defeat') を呼ぶため、ここには含めない）
+    // 画面ID → BGMトラック名 の対応表
     // ---------------------------------------------------
+    // 'dochu'：ガッツファクトリー／エンドレスモード／PvPを選択してから、
+    //   実際のバトルが始まるまでの準備・選択画面で流れるBGM（douchu.mp3）。
     const SCREEN_BGM_MAP = {
         'screen-title': 'home',
         'screen-battle': 'battle',
-        'screen-masmon-realtime-keyword': 'title',
-        'screen-masmon-realtime-waiting': 'title',
+        // --- PvP（マッチング〜対戦準備） ---
+        'screen-masmon-realtime-keyword': 'dochu',
+        'screen-masmon-realtime-waiting': 'dochu',
         'screen-masmon-realtime-matched': 'battle',
         'screen-masmon-battle-result': 'title',
         'screen-pvp-ranking': 'title',
-        'screen-pvp-rental-select': 'title',
-        'screen-pvp-preset-list': 'title',
-        'screen-pvp-preset-editor': 'title',
-        'screen-pvp-preset-monster-editor': 'title',
-        'screen-kinnejiki-title': 'title',
-        'screen-kinnejiki-select': 'title',
-        'screen-kinnejiki-swap': 'title',
+        'screen-pvp-rental-select': 'dochu',
+        'screen-pvp-preset-list': 'dochu',
+        'screen-pvp-preset-editor': 'dochu',
+        'screen-pvp-preset-monster-editor': 'dochu',
+        // --- ガッツファクトリー（きんねじき） ---
+        'screen-kinnejiki-title': 'dochu',
+        'screen-kinnejiki-select': 'dochu',
+        'screen-kinnejiki-swap': 'dochu',
+        'screen-kinnejiki-encounter': 'dochu',
         'screen-kinnejiki-result': 'title',
         'screen-kinnejiki-ranking': 'title',
+        // --- エンドレスモード ---
+        'screen-endless-home': 'dochu',
+        'screen-endless-team-builder': 'dochu',
+        'screen-endless-select': 'dochu',
+        // --- その他 ---
         'screen-myroom': 'myroom',
         'screen-gacha': 'gacha',
     };
 
     // 「screen-battle」表示時、現在ガッツファクトリー（きんねじき）のボス戦かどうかを見て
-    // 通常戦闘曲('battle')かボス曲('boss'/'finalboss')かを振り分ける。
+    // 通常戦闘曲('battle')かボス曲('boss1'/'boss2')かを振り分ける。
     // MASMON_BATTLE_STATE.kinNejiki は launchKinNejikiBattleEngine 内で
     // changeScreen('screen-battle') より前にセットされているため、ここで参照可能。
     // 注意：MASMON_BATTLE_STATEはmasmon_battle.js側でconst宣言されており、
@@ -1057,7 +1103,7 @@ const AudioManager = (() => {
             const state = (typeof MASMON_BATTLE_STATE !== 'undefined') ? MASMON_BATTLE_STATE : null;
             const kn = state && state.kinNejiki;
             if (kn && kn.isNejiki) {
-                return kn.set >= 7 ? 'finalboss' : 'boss';
+                return kn.set >= 7 ? 'boss2' : 'boss1';
             }
         } catch (e) { /* 参照できない場合は通常戦闘曲にフォールバック */ }
         return 'battle';
@@ -1096,89 +1142,22 @@ const AudioManager = (() => {
         else if (/手に入れた|獲得|入手|引き継ぎました|宿した/.test(message)) playSE('item');
         else playSE('notify');
     }
-
-    // ---------------------------------------------------
-    // 設定変更
-    // ---------------------------------------------------
-    function applyGainImmediately() {
-        const c = ensureContext();
-        if (masterBgmGain && c) masterBgmGain.gain.setTargetAtTime(bgmVolumeToGain(settings.bgm), c.currentTime, 0.05);
-        if (masterSeGain && c) masterSeGain.gain.setTargetAtTime(seVolumeToGain(settings.se), c.currentTime, 0.05);
-        if (fileBgmGainNode && c) {
-            fileBgmGainNode.gain.setTargetAtTime(fileBgmVolume(), c.currentTime, 0.05);
-        }
-    }
-
-    // volume: 0〜100の数値
-    function setBgmVolume(volume) {
-        const v = clampVolume(volume);
-        const wasOff = settings.bgm === 0;
-        settings.bgm = v;
-        saveSettings();
-        resume();
-        applyGainImmediately();
-        if (currentTrackName && isFileBgmTrack(currentTrackName)) {
-            if (v === 0) {
-                stopFileBgm();
-            } else if (wasOff || !fileBgmSourceNode) {
-                playFileBgm(currentTrackName);
-            }
-            return;
-        }
-        if (v === 0) {
-            stopBgmScheduling();
-        } else if (currentTrackName && (wasOff || !bgmTimerId)) {
-            stopBgmScheduling();
-            if (ctx && ctx.state === 'running') {
-                scheduleBgmLoop(currentTrackName, bgmToken);
-            }
-            // suspended中はresume()の成功コールバック（startBgmPlaybackIfReady）が拾って開始する
-        }
-    }
-
-    // volume: 0〜100の数値
-    function setSeVolume(volume) {
-        const v = clampVolume(volume);
-        settings.se = v;
-        saveSettings();
-        resume();
-        applyGainImmediately();
-    }
-
-    function getSettings() {
-        return { ...settings };
-    }
-
     loadSettings();
     installUnlockListener();
 
     // ---------------------------------------------------
     // タスク切り替え（タブ/アプリの表示・非表示）対策
     // ---------------------------------------------------
-    // このBGMは setTimeout で次ループ分を自前スケジューリングしているため、
-    // バックグラウンドに回るとブラウザがタイマーを間引く／遅延させ、
-    //   ・復帰までの間、次ループの予約が来ず「音が途切れる（消える）」
-    //   ・復帰した瞬間、遅延していた予約とAudioContextの状態がズレたまま
-    //     新しい音符群を重ねてスケジュールしてしまい「音が二重に鳴る」
-    // という不具合が起きていた。さらにAudioContextの自動再開は「初回の
-    // クリック/キー入力」1回限りのリスナーしかなく、バックグラウンドで
-    // ブラウザ側からcontextがsuspendされても復帰時に再開する手段が無かった。
-    //
-    // 対策：非表示になった瞬間にBGMのスケジューリング（タイマー・発音予定の
-    // ノード）を完全に停止し、前面に戻った瞬間にAudioContextを再開した上で
-    // 同じ曲を最初から鳴らし直す。こうすることで「途切れた続きを無理に
-    // 合わせる」処理を避け、重複・消失のどちらも起こらないようにする。
+    // 非表示になった瞬間にBGMの再生（合成／ファイルいずれも）を完全に停止し、
+    // 前面に戻った瞬間にAudioContextを再開した上で同じ曲を最初から鳴らし直す。
+    // こうすることで「途切れた続きを無理に合わせる」処理を避け、重複・消失の
+    // どちらも起こらないようにする。
     function handleVisibilityChange() {
         if (document.hidden) {
-            stopBgmScheduling(); // currentTrackNameは保持したまま、鳴っている分だけ止める
-            stopFileBgm();
+            stopAllBgmPlayback(); // currentTrackNameは保持したまま、鳴っている分だけ止める
         } else {
             resume();
-            if (currentTrackName && isFileBgmTrack(currentTrackName)) {
-                if (settings.bgm > 0) playFileBgm(currentTrackName);
-            } else if (currentTrackName && settings.bgm > 0 && ctx && ctx.state === 'running') {
-                scheduleBgmLoop(currentTrackName, bgmToken);
-            }
+            if (ctx && ctx.state === 'running') startBgmPlaybackIfReady();
             // suspended中はresume()の成功コールバック（startBgmPlaybackIfReady）が拾って開始する。
             // 長時間バックグラウンドの後は上記のresume()だけでは復帰しない端末があるため、
             // 保険として「復帰後の次の実タップ」でAudioContextを作り直す仕組みも有効化しておく。
@@ -1190,18 +1169,8 @@ const AudioManager = (() => {
     window.addEventListener('pageshow', () => { if (!document.hidden) handleVisibilityChange(); });
     window.addEventListener('focus', () => { if (!document.hidden) handleVisibilityChange(); });
     // 非表示になる側も同様に、visibilitychangeが取りこぼす端末があるための保険
-    window.addEventListener('pagehide', () => { stopBgmScheduling(); stopFileBgm(); });
-    window.addEventListener('blur', () => { if (document.hidden) { stopBgmScheduling(); stopFileBgm(); } });
-
-    function stopBgm() {
-        currentTrackName = null;
-        stopBgmScheduling();
-        stopFileBgm();
-    }
-
-    function getCurrentTrack() {
-        return currentTrackName;
-    }
+    window.addEventListener('pagehide', () => { stopAllBgmPlayback(); });
+    window.addEventListener('blur', () => { if (document.hidden) stopAllBgmPlayback(); });
 
     return {
         VOLUME_MIN,

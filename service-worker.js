@@ -4,7 +4,7 @@
 // キャッシュのバージョンを上げると、ユーザー環境の古いキャッシュが破棄され、
 // 新しいファイル一式が再取得されます。js/images 等を更新した場合は
 // 必ず CACHE_VERSION の値を変更してください（変更しないと更新が反映されません）。
-const CACHE_VERSION = 'v41';
+const CACHE_VERSION = 'v42';
 const CACHE_NAME = `guts-road-cache-${CACHE_VERSION}`;
 
 // 同一オリジンの静的アセット（アプリ本体）。ここに列挙したファイルは
@@ -66,6 +66,7 @@ const PRECACHE_URLS = [
   'js/debug_mode.js',
   'js/audio.js',
   'audio/home.mp3',
+  'audio/douchu.mp3',
   'images/branding/title.png',
   'images/アローヘッド.png',
   'images/キュービ.png',
