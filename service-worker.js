@@ -4,7 +4,7 @@
 // キャッシュのバージョンを上げると、ユーザー環境の古いキャッシュが破棄され、
 // 新しいファイル一式が再取得されます。js/images 等を更新した場合は
 // 必ず CACHE_VERSION の値を変更してください（変更しないと更新が反映されません）。
-const CACHE_VERSION = 'v46';
+const CACHE_VERSION = 'v47';
 const CACHE_NAME = `guts-road-cache-${CACHE_VERSION}`;
 
 // 同一オリジンの静的アセット（アプリ本体）。ここに列挙したファイルは
@@ -135,7 +135,7 @@ self.addEventListener('fetch', (event) => {
   // HTML(ナビゲーション)は「まずネットワーク、失敗したらキャッシュ」
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-store' })
         .then((res) => {
           const resClone = res.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone));
@@ -152,7 +152,7 @@ self.addEventListener('fetch', (event) => {
   //   何度更新してもユーザー環境に古いコードが残り続けてしまう問題があったため）
   if (/\.(js|css)$/.test(url.pathname)) {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-store' })
         .then((res) => {
           if (res && res.status === 200) {
             const resClone = res.clone();
