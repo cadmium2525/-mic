@@ -360,6 +360,13 @@ body.compact-ui-mode #game-container {
     width: 125% !important;
     height: 125% !important;
     flex-shrink: 0 !important;
+    /* bodyがflexコンテナ(flex-col)のため、幅を明示指定するとalign-items:stretchの
+       フォールバックでcross軸(横方向)がflex-start(左寄せ)になり、はみ出した分が
+       右側だけに寄ってしまう（画面が右にずれて見える不具合の原因）。
+       align-selfで明示的に中央寄せすることで、はみ出した分を左右均等にする。 */
+    align-self: center !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
     transform: scale(0.8);
     transform-origin: top center;
 }
