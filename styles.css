@@ -348,6 +348,22 @@ input, textarea, select {
     background: linear-gradient(90deg, #b45309, #fbbf24);
 }
 
+/* ===== コンパクト表示モード（設定＞スマホサイズ選択） ===== */
+/* iPhone SE等、画面の縦方向が短い端末向け。#game-containerを実際の画面サイズより
+   大きく（125%）レイアウトさせた上で0.8倍に縮小表示することで、固定pxのUIが
+   小さい画面に収まりきらずレイアウトが崩れる問題を緩和する。
+   縮小後の見た目のサイズは125%×0.8=100%になるよう計算してあるため、
+   画面いっぱいに表示される点は標準モードと変わらない（内部の情報量が増えるだけ）。
+   #game-containerの高さは style="height:100%" のインラインスタイルで指定されているため、
+   !importantで上書きする。 */
+body.compact-ui-mode #game-container {
+    width: 125% !important;
+    height: 125% !important;
+    flex-shrink: 0 !important;
+    transform: scale(0.8);
+    transform-origin: top center;
+}
+
 /* ===== マイルーム：時間帯演出 ===== */
 /* #myroom-area 自身を独立したスタッキングコンテキストにしておく（isolation:isolate）。
    これが無いと、中のモンスター（Y座標に応じたz-index）や、ドラッグ中の家具のz-indexが

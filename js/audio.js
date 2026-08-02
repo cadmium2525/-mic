@@ -1307,14 +1307,68 @@ function updateAudioSettingsUI() {
     const seLabel = document.getElementById('audio-value-se');
     if (seSlider && document.activeElement !== seSlider) seSlider.value = s.se;
     if (seLabel) seLabel.textContent = s.se;
-
-    const iconEl = document.getElementById('audio-settings-icon');
-    if (iconEl) {
-        const muted = s.bgm === 0 && s.se === 0;
-        iconEl.className = muted
-            ? 'fa-solid fa-volume-xmark'
-            : 'fa-solid fa-volume-high';
-    }
 }
 
 document.addEventListener('DOMContentLoaded', updateAudioSettingsUI);
+
+// =====================================================
+// 設定モーダル：タブ切り替え（「音量/SE調整」⇄「スマホサイズ選択」）
+// =====================================================
+function switchSettingsTab(tab) {
+    const audioPanel = document.getElementById('settings-tab-audio');
+    const displayPanel = document.getElementById('settings-tab-display');
+    const audioBtn = document.getElementById('settings-tab-btn-audio');
+    const displayBtn = document.getElementById('settings-tab-btn-display');
+    const isAudio = tab === 'audio';
+
+    if (audioPanel) audioPanel.classList.toggle('hidden', !isAudio);
+    if (displayPanel) displayPanel.classList.toggle('hidden', isAudio);
+
+    [[audioBtn, isAudio], [displayBtn, !isAudio]].forEach(([btn, active]) => {
+        if (!btn) return;
+        btn.classList.toggle('bg-amber-600', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('text-gray-400', !active);
+    });
+
+    if (tab === 'display') updateCompactUiModeButtons();
+}
+
+// =====================================================
+// 表示モード（スマホサイズ選択）：iPhone SE等、画面の小さい端末向けの
+// コンパクト表示モード。#game-container自体を実寸より大きくレイアウトさせた上で
+// 縮小表示することで、固定pxのUIが小さい画面に収まりきらない問題を緩和する
+// （具体的な倍率はstyles.cssの body.compact-ui-mode #game-container を参照）。
+// 既定（標準）レイアウトは一切変更しないため、通常サイズの端末には影響しない。
+// =====================================================
+const COMPACT_UI_STORAGE_KEY = 'mfload_compact_ui_mode';
+
+function setCompactUiMode(enabled) {
+    document.body.classList.toggle('compact-ui-mode', !!enabled);
+    try { localStorage.setItem(COMPACT_UI_STORAGE_KEY, enabled ? '1' : '0'); } catch (e) { /* 無視 */ }
+    updateCompactUiModeButtons();
+}
+
+function updateCompactUiModeButtons() {
+    const isCompact = document.body.classList.contains('compact-ui-mode');
+    const normalBtn = document.getElementById('compact-mode-btn-normal');
+    const compactBtn = document.getElementById('compact-mode-btn-compact');
+    [[normalBtn, !isCompact], [compactBtn, isCompact]].forEach(([btn, active]) => {
+        if (!btn) return;
+        btn.classList.toggle('border-amber-500', active);
+        btn.classList.toggle('bg-amber-950/40', active);
+        btn.classList.toggle('border-gray-700', !active);
+        btn.classList.toggle('text-gray-300', !active);
+    });
+}
+
+// 起動時、保存済みの表示モードを即座に復元する（レイアウトのガタつきを防ぐため、
+// 他のスクリプトの読み込みを待たずできるだけ早いタイミングで適用する）
+(function restoreCompactUiModeOnBoot() {
+    try {
+        if (localStorage.getItem(COMPACT_UI_STORAGE_KEY) === '1') {
+            document.body.classList.add('compact-ui-mode');
+        }
+    } catch (e) { /* 無視 */ }
+})();
+document.addEventListener('DOMContentLoaded', updateCompactUiModeButtons);

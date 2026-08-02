@@ -130,10 +130,10 @@
             })();
         </script>
 
-        <!-- サウンド設定ボタン（全画面共通・常時表示） -->
-        <button onclick="openAudioSettingsModal()" aria-label="サウンド設定"
+        <!-- 設定ボタン（全画面共通・常時表示） -->
+        <button onclick="openAudioSettingsModal()" aria-label="設定"
             class="absolute top-2 right-2 z-40 w-8 h-8 flex items-center justify-center bg-[#1a120b]/80 hover:bg-[#2a1b15] border border-amber-800 rounded-full shadow-lg text-amber-300 text-sm transition-all active:scale-90">
-            <i id="audio-settings-icon" class="fa-solid fa-volume-xmark"></i>
+            <i class="fa-solid fa-gear"></i>
         </button>
 
         <!-- 🛠️ デバッグラン終了ボタン（〇戦目から開始した通しランの最中、どの画面にいても常時表示。
@@ -1630,32 +1630,61 @@
 
     <!-- サウンド設定モーダル（BGM/SEの音量：0〜100の数値でそれぞれ指定） -->
     <div id="audio-settings-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeAudioSettingsModal()">
-        <div class="bg-[#2a1b15] w-full max-w-xs p-4 rounded-2xl border-2 border-amber-600 space-y-4 shadow-2xl" onclick="event.stopPropagation()">
+        <div class="bg-[#2a1b15] w-full max-w-xs p-4 rounded-2xl border-2 border-amber-600 space-y-3 shadow-2xl" onclick="event.stopPropagation()">
             <h4 class="text-base font-black text-white pixel-font flex items-center space-x-2 border-b border-amber-800 pb-2">
-                <i class="fa-solid fa-volume-high text-amber-400"></i>
-                <span>サウンド設定</span>
+                <i class="fa-solid fa-gear text-amber-400"></i>
+                <span>設定</span>
             </h4>
 
-            <!-- BGM 音量 -->
-            <div>
-                <div class="flex items-center justify-between mb-1.5">
-                    <p class="text-xs text-amber-300 font-bold">🎵 BGM 音量</p>
-                    <span id="audio-value-bgm" class="text-xs text-amber-200 font-bold tabular-nums">0</span>
-                </div>
-                <input id="audio-slider-bgm" type="range" min="0" max="100" step="1" value="0"
-                    oninput="setAudioVolume('bgm', this.value)" onchange="confirmAudioVolume('bgm', this.value)"
-                    class="w-full accent-amber-500" />
+            <!-- タブ切り替え -->
+            <div class="flex gap-1 bg-[#1a120b] p-1 rounded-lg">
+                <button id="settings-tab-btn-audio" onclick="switchSettingsTab('audio')"
+                    class="flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all bg-amber-600 text-white">🎵 音量/SE調整</button>
+                <button id="settings-tab-btn-display" onclick="switchSettingsTab('display')"
+                    class="flex-1 py-1.5 rounded-md text-[10px] font-bold transition-all text-gray-400">📱 スマホサイズ選択</button>
             </div>
 
-            <!-- SE 音量 -->
-            <div>
-                <div class="flex items-center justify-between mb-1.5">
-                    <p class="text-xs text-amber-300 font-bold">🔔 効果音（SE）音量</p>
-                    <span id="audio-value-se" class="text-xs text-amber-200 font-bold tabular-nums">0</span>
+            <!-- 音量/SE調整タブ -->
+            <div id="settings-tab-audio" class="space-y-4">
+                <!-- BGM 音量 -->
+                <div>
+                    <div class="flex items-center justify-between mb-1.5">
+                        <p class="text-xs text-amber-300 font-bold">🎵 BGM 音量</p>
+                        <span id="audio-value-bgm" class="text-xs text-amber-200 font-bold tabular-nums">0</span>
+                    </div>
+                    <input id="audio-slider-bgm" type="range" min="0" max="100" step="1" value="0"
+                        oninput="setAudioVolume('bgm', this.value)" onchange="confirmAudioVolume('bgm', this.value)"
+                        class="w-full accent-amber-500" />
                 </div>
-                <input id="audio-slider-se" type="range" min="0" max="100" step="1" value="0"
-                    oninput="setAudioVolume('se', this.value)" onchange="confirmAudioVolume('se', this.value)"
-                    class="w-full accent-amber-500" />
+
+                <!-- SE 音量 -->
+                <div>
+                    <div class="flex items-center justify-between mb-1.5">
+                        <p class="text-xs text-amber-300 font-bold">🔔 効果音（SE）音量</p>
+                        <span id="audio-value-se" class="text-xs text-amber-200 font-bold tabular-nums">0</span>
+                    </div>
+                    <input id="audio-slider-se" type="range" min="0" max="100" step="1" value="0"
+                        oninput="setAudioVolume('se', this.value)" onchange="confirmAudioVolume('se', this.value)"
+                        class="w-full accent-amber-500" />
+                </div>
+            </div>
+
+            <!-- スマホサイズ選択タブ -->
+            <div id="settings-tab-display" class="space-y-2.5 hidden">
+                <p class="text-[10px] text-gray-400 leading-relaxed">
+                    お使いのスマホの画面サイズに合わせて表示モードを選べます。iPhone SEなど画面の小さい端末で
+                    バトル画面のレイアウトが崩れる場合は「コンパクト」をお試しください。
+                </p>
+                <button id="compact-mode-btn-normal" onclick="setCompactUiMode(false)"
+                    class="w-full text-left p-2.5 rounded-lg border-2 border-gray-700 text-gray-300 transition-all active:scale-95">
+                    <div class="font-bold text-xs">📱 標準</div>
+                    <div class="text-[9px] text-gray-400 mt-0.5">通常サイズ〜大きめのスマホ向け（既定）</div>
+                </button>
+                <button id="compact-mode-btn-compact" onclick="setCompactUiMode(true)"
+                    class="w-full text-left p-2.5 rounded-lg border-2 border-gray-700 text-gray-300 transition-all active:scale-95">
+                    <div class="font-bold text-xs">📲 コンパクト</div>
+                    <div class="text-[9px] text-gray-400 mt-0.5">iPhone SE等、画面の小さいスマホ向け</div>
+                </button>
             </div>
 
             <button onclick="closeAudioSettingsModal()" class="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl text-xs transition-all">

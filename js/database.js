@@ -593,7 +593,7 @@ function getStatusAilmentBadgeText(unit) {
 const SKILLS_DB = {
     // --- モッチー系統 ---
     sakuranomai: { name: '桜の舞', aura: null, cost: 25, type: 'buff_pow', hitRate: 100, force: 0, gutsDown: 0, useEffect: 'self_pow_int_up50_stack3', desc: '桜の力を体内で増幅させる。自身のちからとかしこさを50%上昇させる。3回まで重複可。' },
-    migawarimochi: { name: 'みがわり餅', aura: null, cost: 40, type: 'substitute', hitRate: 100, force: 0, gutsDown: 0, selfDamagePct: 0.2, desc: '自身と同じ大きさの桜餅を設置し、自身への攻撃を2回防ぐ。発動時、自身も最大ライフの20%のダメージを受ける。モンスターを交換しても身代わりの桜餅は場に残り続ける。' },
+    migawarimochi: { name: 'みがわり餅', aura: null, cost: 40, type: 'substitute', hitRate: 100, force: 0, gutsDown: 0, selfDamagePct: 0.25, desc: '自身と同じ大きさの桜餅を設置し、自身への攻撃を肩代わりする。身代わりの耐久値は自身の最大ライフの1/4で、受けたダメージ量の分だけ耐久値が減り、0になると壊れる。発動時、自身も最大ライフの25%のダメージを受ける。モンスターを交換しても身代わりの桜餅は場に残り続ける。' },
     gaccho: { name: 'ガッチョ', aura: null, cost: 30, type: 'pow', hitRate: 85, force: 0.75, gutsDown: 12, effect: 'hitdown_stack_3', hitCount: 2, desc: '突っ張りによる2回攻撃。相手GUTS-12。さらに命中した場合、目が眩み相手の命中率が10%低下する（最大3回まで累積）' },
     sakurafubuki: { name: 'さくら吹雪', aura: 'red', cost: 25, type: 'int', hitRate: 89, force: 1.3, gutsDown: 10, effect: 'guts_recovery_down_10', desc: '桜の花びらを舞い散らせる。相手GUTS-10。さらに命中した場合、相手の次のガッツ回復量を10減らす。' },
     cho_rollinmochi: { name: '超ローリンモッチ', aura: 'yellow', cost: 40, type: 'pow', hitRate: 74, force: 2.3, gutsDown: 20, effect: 'def_down_15_perma', desc: '大回転して激突する。相手GUTS-20。さらに命中した場合、相手が交代するまでの間、丈夫さを15%低下させる' },
@@ -886,7 +886,7 @@ const SKILLS_DB = {
     zan_axis_bullet: { name: 'アクシズバレット', aura: 'red', cost: 50, type: 'pow', hitRate: 75, force: 2.3, gutsDown: 9, critBonus: 0.28, effect: 'dot_mine_def_down10', desc: '回転を加えて撃ち込む貫通力の高い斬撃。相手GUTS-9。さらに命中した場合、3ターンの間相手の最大ライフ8%の継続ダメージを与え、さらに3ターンの間相手の丈夫さを10%低下させる' },
     zan_dark_haunt: { name: 'ダークホウスト', aura: null, cost: 48, type: 'pow', hitRate: 95, force: 2.7, gutsDown: 5, critBonus: 0.22, effect: 'dot_mine', dotPct: 0.14, desc: '闇の力を宿した渾身の一刀両断。相手GUTS-5。さらに命中した場合、3ターンの間相手の最大ライフ14%の継続ダメージを与える' },
     zan_makibishi: { name: 'まきびし', aura: null, cost: 20, type: 'hazard', hitRate: 100, force: 0, gutsDown: 0, noDamage: true, effect: 'stealth_rock', logVerb: 'まきびしを設置した', desc: '相手フィールド上に鋭いまきびしをばら撒く。相手はモンスターを交代して繰り出すたびに、最大ライフの1/8のダメージを受けるようになる（一度設置すると、バトルが終わるまでずっと効果が持続する）。' },
-    zan_migawari_no_jutsu: { name: 'みがわりの術', aura: null, cost: 40, type: 'substitute', hitRate: 100, force: 0, gutsDown: 0, selfDamagePct: 0.2, desc: '自身を模したぬいぐるみを作り出し、自身への攻撃を2回防ぐ。発動時、自身も最大ライフの20%のダメージを受ける。モンスターを交換しても身代わりのぬいぐるみは場に残り続ける。' }
+    zan_migawari_no_jutsu: { name: 'みがわりの術', aura: null, cost: 40, type: 'substitute', hitRate: 100, force: 0, gutsDown: 0, selfDamagePct: 0.25, desc: '自身を模したぬいぐるみを作り出し、自身への攻撃を肩代わりする。身代わりの耐久値は自身の最大ライフの1/4で、受けたダメージ量の分だけ耐久値が減り、0になると壊れる。発動時、自身も最大ライフの25%のダメージを受ける。モンスターを交換しても身代わりのぬいぐるみは場に残り続ける。' }
 };
 
 // --- ステータス獲得逓減システム (Diminishing Returns) ---

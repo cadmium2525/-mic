@@ -51,7 +51,8 @@ const MASMON_BATTLE_STATE = {
     pendingEnemyAction: null,
     battleResult: null,     // 'win' | 'lose'
     opponentOwnerName: '',
-    // 「みがわり餅」で設置した身代わりの残り回数。ユニット単位ではなくチーム（陣営）単位で持続する
+    // 「みがわり餅」で設置した身代わりの残り耐久値（自身の最大ライフの1/4で設置し、受けたダメージ量が
+    // そのまま差し引かれる）。ユニット単位ではなくチーム（陣営）単位で持続する
     // （モンスターを交換しても消えない）。0なら身代わり無し。
     playerSubstituteHits: 0,
     enemySubstituteHits: 0,
@@ -183,12 +184,13 @@ function updateBattleFastModeButtonUI() {
 }
 
 // 実際の待ち時間の基準値（この値自体は変更しない。参照は必ずBATTLE_STEP_DELAY経由で行うこと）
+// ※「バトルスピードが速く感じる」というフィードバックを受けて、既定値を底上げ済み。
 const BATTLE_STEP_DELAY_BASE = {
-    afterSkillName: 550,  // 技名表示の後
-    afterHitEffect: 550,  // HIT/MISS/クリティカルの演出の後
-    afterDamage: 650,     // ダメージ数値表示の後
-    perExtraLog: 550,     // 追加効果（ガッツダウン・状態異常・ドレイン等）1件ごと
-    beforeNextTurn: 500   // 全ての演出が終わってから次のターンに移るまでの間
+    afterSkillName: 700,  // 技名表示の後
+    afterHitEffect: 700,  // HIT/MISS/クリティカルの演出の後
+    afterDamage: 800,     // ダメージ数値表示の後
+    perExtraLog: 650,     // 追加効果（ガッツダウン・状態異常・ドレイン等）1件ごと
+    beforeNextTurn: 650   // 全ての演出が終わってから次のターンに移るまでの間
 };
 
 // BATTLE_STEP_DELAY.xxx で参照するたびに、高速モードなら自動的に半分の値を返すProxy。
@@ -721,8 +723,10 @@ function openPostVictorySwitchModal(candidates, nextEnemyUnit, onDone) {
     confirmPhase.classList.remove('hidden');
     selectPhase.classList.add('hidden');
     if (confirmText) {
+        const auraInfo = nextEnemyUnit && AURA_TYPES[nextEnemyUnit.aura];
+        const auraLabel = auraInfo ? `${auraInfo.emoji}${auraInfo.name} ` : '';
         confirmText.textContent = nextEnemyUnit
-            ? `相手ブリーダーは【${nextEnemyUnit.name}】を出してくるようだ。こちらも交代する？`
+            ? `相手ブリーダーは【${auraLabel}${nextEnemyUnit.name}】を出してくるようだ。こちらも交代する？`
             : '相手が次のマスモンを繰り出そうとしている。こちらも交代する？';
     }
 
@@ -2105,29 +2109,12 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
     // sk.hitCount: 技自体が固定で複数回攻撃になる場合（例：メテオバーストの4回攻撃）の基本回数
     let hitCount = (sk.hitCount || 1) * (isDoubleHit ? 2 : 1);
 
-    // みがわり餅で設置された身代わりが残っている場合、攻撃はダメージ・ガッツダウン・追加効果一切なしで防がれる。
-    // 2回攻撃扱いの場合、身代わりの残り回数を超える分は身代わりを貫通し、実際に相手へ攻撃が届く
-    // （プラズマでみがわりを1つ削ってから攻撃技を打つことで、みがわりを削りきり相手を攻撃するための仕様）。
+    // みがわり餅で設置された身代わりが残っている場合、攻撃はダメージ・ガッツダウン・追加効果なしで防がれる。
+    // 耐久値（自身の最大ライフの1/4）を持ち、各ヒットのダメージ量をそのまま耐久値から差し引く方式。
+    // 耐久値を使い切った場合はその時点で壊れ、超過分のダメージはそのヒット限りで無効化される
+    // （後続のヒットが残っている多段攻撃の場合、残りのヒットは実際に相手へ届く）。
+    // 実際の判定は各ヒットのダメージが確定するダメージ計算ループ側で行う（下記参照）。
     const defenderSubKey = side === 'player' ? 'enemySubstituteHits' : 'playerSubstituteHits';
-    if (isHit && MASMON_BATTLE_STATE[defenderSubKey] > 0) {
-        const consumedSub = Math.min(MASMON_BATTLE_STATE[defenderSubKey], hitCount);
-        MASMON_BATTLE_STATE[defenderSubKey] -= consumedSub;
-        const remaining = MASMON_BATTLE_STATE[defenderSubKey];
-        const defenderSide = side === 'player' ? 'enemy' : 'player';
-        steps.push({
-            run: () => {
-                showEffect('🧸 身代わり！');
-                addLog(`🧸 身代わり人形が${defender.name}の代わりに攻撃を${consumedSub > 1 ? consumedSub + '回分' : ''}受けた！（身代わりの残り回数: ${remaining}）`);
-                // みがわりが尽きた場合、この瞬間にモンスター本体の絵へ戻す
-                if (remaining <= 0) renderBattleFieldIcon(defenderSide, defender);
-            },
-            wait: BATTLE_STEP_DELAY.afterHitEffect
-        });
-        hitCount -= consumedSub;
-        if (hitCount <= 0) {
-            return;
-        }
-    }
 
     // ダメージ無し・状態異常付与のみを狙う技（どくのこな等）：命中判定・追加効果は通常通り行うが、ダメージ演算は一切行わない
     if (isHit && sk.noDamage) {
@@ -2257,6 +2244,26 @@ function buildAttackSkillSteps(steps, side, attacker, defender, sk) {
         // 九重神眼等のシールドによる被ダメージ吸収
         const shieldResult = applyShieldAbsorption(defender, damage);
         damage = shieldResult.finalDamage;
+
+        // みがわり（耐久値ベース）による吸収：このヒットのダメージを耐久値の許す範囲で肩代わりする。
+        // 耐久値を使い切った場合はここで壊れ、超過分のダメージはこのヒット限りで無効化される
+        // （多段攻撃で耐久値を使い切った場合、残りのヒットは実際に相手へ届く）。
+        if (MASMON_BATTLE_STATE[defenderSubKey] > 0) {
+            const absorbed = Math.min(MASMON_BATTLE_STATE[defenderSubKey], damage);
+            MASMON_BATTLE_STATE[defenderSubKey] = Math.max(0, MASMON_BATTLE_STATE[defenderSubKey] - absorbed);
+            const remainingSub = MASMON_BATTLE_STATE[defenderSubKey];
+            const defenderSideForSub = side === 'player' ? 'enemy' : 'player';
+            steps.push({
+                run: () => {
+                    showEffect('🧸 身代わり！');
+                    animateSprite(cfg.oppSpriteContainer, cfg.oppSpriteAnim);
+                    addLog(`🧸 身代わり人形が${defender.name}の代わりに ${absorbed} ダメージを受けた！${remainingSub <= 0 ? '（身代わりは壊れた！）' : `（身代わりの残り耐久値: ${remainingSub}）`}`);
+                    if (remainingSub <= 0) renderBattleFieldIcon(defenderSideForSub, defender);
+                },
+                wait: BATTLE_STEP_DELAY.afterHitEffect
+            });
+            continue; // このヒットは身代わりが肩代わりしたため、本体への実ダメージ・ガッツダウン等は発生しない
+        }
 
         steps.push({
             run: () => {
@@ -2419,7 +2426,9 @@ function buildEvadeSteps(steps, side, unit, sk, skKey, previousSkillKeyUsed) {
 }
 
 // --- みがわり餅：チーム（陣営）側に持続する身代わりを設置する演出ステップ ---
-// モンスターを交換しても効果が残るよう、ユニットではなく MASMON_BATTLE_STATE 側に回数を持たせる。
+// モンスターを交換しても効果が残るよう、ユニットではなく MASMON_BATTLE_STATE 側に耐久値を持たせる。
+// 耐久値は「設置した瞬間の自身の最大ライフの1/4」。回数ではなくダメージ量そのものを耐久値から
+// 差し引く方式で、耐久値を使い切ると壊れる（詳細はbuildAttackSkillSteps内の吸収判定を参照）。
 // sk.selfDamagePct が設定されている場合、発動時に自身も最大ライフの割合分のダメージを受ける。
 function buildSubstituteSteps(steps, side, unit, sk) {
     const cfg = SIDE_UI[side];
@@ -2427,10 +2436,11 @@ function buildSubstituteSteps(steps, side, unit, sk) {
     steps.push({
         run: () => {
             const already = MASMON_BATTLE_STATE[stateKey] > 0;
-            MASMON_BATTLE_STATE[stateKey] = 2;
+            const durability = Math.max(1, Math.floor(unit.stats.maxLife * 0.25));
+            MASMON_BATTLE_STATE[stateKey] = durability;
             addLog(already
-                ? `🧸 ${unit.name} は新しい身代わり人形を設置し直した！（身代わりの残り回数が2回に更新された）`
-                : `🧸 ${unit.name} は自身を模したぬいぐるみを設置した！（次の攻撃を2回まで防ぐ。モンスターを交換しても場に残り続ける）`);
+                ? `🧸 ${unit.name} は新しい身代わり人形を設置し直した！（身代わりの耐久値が ${durability} に更新された）`
+                : `🧸 ${unit.name} は自身を模したぬいぐるみを設置した！（耐久値 ${durability} 分のダメージを肩代わりする。モンスターを交換しても場に残り続ける）`);
             showEffect(cfg.substituteEffect);
 
             const selfDamagePct = (sk && sk.selfDamagePct) || 0;

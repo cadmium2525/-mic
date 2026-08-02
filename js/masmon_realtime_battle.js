@@ -777,6 +777,41 @@ function triggerRealtimeForcedSwitchTimeout(state) {
 // リアルタイム対戦では行動結果がログ文字列としてのみ同期されるため、
 // 文字列パターンから何が起きたかを判定し、双方のクライアントで同じ演出を出す。
 // -----------------------------------------------------
+// 特定の陣営（'player1'/'player2'）のフィールドアイコンを、みがわり／モンスター本体の
+// どちらの絵で表示するかを即座に切り替える（ログ表示の進行に合わせて呼ばれる）。
+function updateRealtimeFieldIconForSlot(slot, showSubstitute) {
+    if (!REALTIME_BATTLE.cachedState) return;
+    const isMe = slot === REALTIME_BATTLE.mySlot;
+    const elId = isMe ? 'battle-player-icon' : 'battle-enemy-icon';
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const team = REALTIME_BATTLE.cachedState.teams[slot];
+    const unit = team && team.units[team.activeIdx];
+    if (!unit) return;
+    if (showSubstitute) {
+        renderSubstituteVisual(el, isMe);
+    } else {
+        renderMonsterVisual(el, unit.monsterBaseName, unit.emoji, unit.isAwakened, isMe, unit.aura);
+    }
+}
+
+// ログ行に付与されたvisualCues（みがわり設置／破壊／攻撃中のpeek-out・peek-in）を、
+// そのログ行が実際に表示されるタイミングで適用する。
+function triggerRealtimeVisualCues(entry) {
+    if (!entry || !entry.visualCues || !entry.visualCues.length) return;
+    entry.visualCues.forEach(cue => {
+        if (cue.type === 'substitute-cast') {
+            updateRealtimeFieldIconForSlot(cue.slot, true);
+        } else if (cue.type === 'substitute-break') {
+            updateRealtimeFieldIconForSlot(cue.slot, false);
+        } else if (cue.type === 'peek-out') {
+            updateRealtimeFieldIconForSlot(cue.slot, false);
+        } else if (cue.type === 'peek-in') {
+            updateRealtimeFieldIconForSlot(cue.slot, true);
+        }
+    });
+}
+
 function triggerRealtimeCombatEffects(entry) {
     if (!REALTIME_BATTLE.active || !entry || !entry.text) return;
     const text = entry.text;
@@ -1003,6 +1038,8 @@ function processRealtimeLogQueue() {
         if (entry.guts) applyRealtimeGutsBars(entry.guts);
         // HIT/回避/クリティカルなど、CPU戦と同じ演出をログ内容から再現する
         triggerRealtimeCombatEffects(entry);
+        // みがわりの設置／破壊／攻撃中のpeek-out・peek-inなど、このログ行に紐づくイラスト切り替えを適用する
+        triggerRealtimeVisualCues(entry);
         // 根性の発動は状態を持続保存しないため、ログのタイミングで一時演出を出す（CPU戦と同じ表現）
         if (entry.text.includes('根性が発動') && REALTIME_BATTLE.cachedState) {
             const meNow = getRealtimeActiveUnit(REALTIME_BATTLE.cachedState, REALTIME_BATTLE.mySlot);
@@ -1312,8 +1349,10 @@ function renderRealtimeForcedSwitchPicker(state, container) {
         const oppTeam = state.teams[oppSlot];
         const oppNextUnit = oppTeam ? oppTeam.units[oppTeam.activeIdx] : null;
         const oppOwnerLabel = state.ownerNames ? state.ownerNames[oppSlot] : '相手';
+        const auraInfo = oppNextUnit && AURA_TYPES[oppNextUnit.aura];
+        const auraLabel = auraInfo ? `${auraInfo.emoji}${auraInfo.name} ` : '';
         title.textContent = oppNextUnit
-            ? `🔄 ${oppOwnerLabel}は【${oppNextUnit.name}】を出してくるようだ。こちらも交代しますか？`
+            ? `🔄 ${oppOwnerLabel}は【${auraLabel}${oppNextUnit.name}】を出してくるようだ。こちらも交代しますか？`
             : '🔄 マスモンを交代しますか？';
     } else {
         title.textContent = '💥 次に出すマスモンを選んでください';
@@ -1530,39 +1569,97 @@ async function performRealtimeForcedSwitch(targetIdx) {
             const target = myTeam.units[targetIdx];
             if (!target || target.life <= 0) return; // abort：無効な交代先
 
-            myTeam.activeIdx = targetIdx;
             const ownerLabel = current.ownerNames ? current.ownerNames[mySlot] : 'あなた';
-            resultLogs.push(`${ownerLabel}は【${target.name}】を繰り出した！`);
             delete current.pendingForcedSwitch[mySlot];
+            current.pendingSwitchChoice = current.pendingSwitchChoice || {};
+            current.pendingSwitchChoice[mySlot] = targetIdx;
 
-            // ステルスロック等：交代直後にダメージで倒れてしまった場合は再度交代先を選ばせる（控えがいれば）
-            const hazardLog = applyRealtimeStealthRockDamage(myTeam, target);
-            if (hazardLog) resultLogs.push(hazardLog);
-            if (target.life <= 0) {
-                const nextIdx = findFirstAliveIdx(myTeam);
-                if (nextIdx === -1) {
-                    current.status = 'finished';
-                    current.winner = oppSlot;
-                    current.winReason = 'ko';
-                    const oppTeam = current.teams[oppSlot];
-                    const oppUnit = oppTeam.units[oppTeam.activeIdx];
-                    resultLogs.push({ text: `${oppUnit ? oppUnit.name : (current.ownerNames && current.ownerNames[oppSlot])} の勝利！`, actor: oppSlot });
-                    current.lastActionAt = Date.now();
-                    return current;
-                }
-                current.pendingForcedSwitch[mySlot] = true;
+            // ★公平性対応：相手も「必須（true）」の強制交代待ちのままである場合
+            // （＝みちづれ等の相打ちで両者同時に交代が必要になったケース）は、
+            // ここでは自分の選択をステージするだけに留め、フィールドにはまだ反映しない。
+            // 先に選んだ側のモンスターだけが見えてしまうと、後から選ぶ側が有利になって
+            // しまうため、両者が選び終えたタイミングで同時に繰り出す。
+            // 相手が「任意（optional）」または既に交代待ちでない場合は、従来通り即座に反映する
+            // （例：撃破後の任意交代フローでは、相手の次の一体を先に見せた上で確認する仕様のため）。
+            const oppStillRequiredWait = current.pendingForcedSwitch && current.pendingForcedSwitch[oppSlot] === true;
+            if (oppStillRequiredWait) {
                 current.turnDeadline = Date.now() + REALTIME_TURN_TIME_LIMIT_MS;
                 resultLogs.push(`${ownerLabel}は次に出すマスモンを選んでいる…`);
                 current.lastActionAt = Date.now();
                 return current;
             }
 
-            const stillWaitingOpponent = !!(current.pendingForcedSwitch && current.pendingForcedSwitch[oppSlot]);
+            // ここに到達するのは「相手はもう必須待ちではない」場合。
+            // ステージ済みの選択（自分・相手が両方待ちだった場合は相手の分も）をまとめて確定し、
+            // 同時にフィールドへ繰り出す。
+            const slotsToCommit = [mySlot];
+            if (current.pendingSwitchChoice[oppSlot] != null) slotsToCommit.push(oppSlot);
+
+            const resolvedSlots = [];
+            slotsToCommit.forEach(slot => {
+                const team = current.teams[slot];
+                const idx = current.pendingSwitchChoice[slot];
+                const unit = team.units[idx];
+                delete current.pendingSwitchChoice[slot];
+                if (!unit || unit.life <= 0) return; // 基本起こらない想定（保険）
+                team.activeIdx = idx;
+                const label = current.ownerNames ? current.ownerNames[slot] : (slot === mySlot ? 'あなた' : '相手');
+                resultLogs.push({ text: `${label}は【${unit.name}】を繰り出した！`, actor: slot });
+
+                // ステルスロック等：交代直後にダメージで倒れてしまった場合は再度交代先を選ばせる（控えがいれば）
+                const hazardLog = applyRealtimeStealthRockDamage(team, unit);
+                if (hazardLog) resultLogs.push({ text: hazardLog, actor: slot });
+                if (unit.life <= 0) {
+                    const nextIdx = findFirstAliveIdx(team);
+                    if (nextIdx === -1) {
+                        const winnerSlot = slot === mySlot ? oppSlot : mySlot;
+                        current.status = 'finished';
+                        current.winner = winnerSlot;
+                        current.winReason = 'ko';
+                        const winnerTeam = current.teams[winnerSlot];
+                        const winnerUnit = winnerTeam.units[winnerTeam.activeIdx];
+                        resultLogs.push({ text: `${winnerUnit ? winnerUnit.name : (current.ownerNames && current.ownerNames[winnerSlot])} の勝利！`, actor: winnerSlot });
+                    } else {
+                        current.pendingForcedSwitch[slot] = true;
+                        resultLogs.push({ text: `${label}は次に出すマスモンを選んでいる…`, actor: slot });
+                    }
+                } else {
+                    resolvedSlots.push(slot);
+                }
+            });
+
+            if (current.status === 'finished') {
+                current.lastActionAt = Date.now();
+                return current;
+            }
+
+            // ★保留していた「相手を倒した側への任意交代確認」を、倒された側の選択が確定した
+            // 今このタイミングで有効化する。こうすることで、確認画面に表示される「相手は○○を
+            // 出すようだ」の○○が、たった今確定した正しい次のモンスター名になる
+            // （制限時間もこの瞬間から新たに30秒＝REALTIME_TURN_TIME_LIMIT_MSぶん与えられる）。
+            if (current.pendingPostVictoryOptional) {
+                resolvedSlots.forEach(resolvedSlot => {
+                    const winnerSlot = resolvedSlot === mySlot ? oppSlot : mySlot;
+                    if (current.pendingPostVictoryOptional[winnerSlot]) {
+                        delete current.pendingPostVictoryOptional[winnerSlot];
+                        const stillHasCandidates = getRealtimeSwitchCandidatesForSlot(current, winnerSlot).length > 0;
+                        if (stillHasCandidates && !current.pendingForcedSwitch[winnerSlot]) {
+                            current.pendingForcedSwitch[winnerSlot] = 'optional';
+                        }
+                    }
+                });
+            }
+
+            const stillWaitingOpponent = !!(current.pendingForcedSwitch && (current.pendingForcedSwitch[mySlot] || current.pendingForcedSwitch[oppSlot]));
             if (!stillWaitingOpponent) {
                 // 双方の強制交代が解決した（相手側は元々不要だった場合も含む）＝次のターンへ進める
                 current.pendingForcedSwitch = {};
+                current.pendingSwitchChoice = {};
                 current.pendingActions = { player1: null, player2: null };
                 current.turnNumber = (current.turnNumber || 1) + 1;
+                current.turnDeadline = Date.now() + REALTIME_TURN_TIME_LIMIT_MS;
+            } else {
+                // 任意交代を今まさに有効化した場合も含め、ここから改めて制限時間を与える
                 current.turnDeadline = Date.now() + REALTIME_TURN_TIME_LIMIT_MS;
             }
             current.lastActionAt = Date.now();
@@ -1670,7 +1767,7 @@ function buildRealtimeTurnActionDescriptor(unit, action) {
 // REALTIME_BATTLE.txSnapshotState は resolveRealtimeTurn() の先頭で、そのトランザクション中の
 // current（state）を指すように設定される（同一トランザクション内は完全に同期実行のため安全）。
 function pushRealtimeLog(resultLogs, actorSlot, text) {
-    if (text === undefined || text === null) return;
+    if (text === undefined || text === null) return null;
     const entry = { text, actor: actorSlot };
     const cur = REALTIME_BATTLE.txSnapshotState;
     if (cur && cur.teams && cur.teams.player1 && cur.teams.player2) {
@@ -1687,6 +1784,18 @@ function pushRealtimeLog(resultLogs, actorSlot, text) {
         };
     }
     resultLogs.push(entry);
+    return entry;
+}
+
+// 特定のログ行に「表示上のイラスト切り替え」の指示を紐付ける。
+// ログはFirebase経由で1件ずつ間隔を空けて表示される（processRealtimeLogQueue）ため、
+// 「みがわり設置」「みがわりが壊れた」「攻撃中だけ本体の絵に戻す」といった見た目の変化は、
+// 最終状態から一括で計算するのではなく、対応するログ行が実際に表示されたタイミングで
+// 適用する必要がある。visualCuesはその紐付け先。
+function addRealtimeVisualCue(entry, cue) {
+    if (!entry) return;
+    if (!entry.visualCues) entry.visualCues = [];
+    entry.visualCues.push(cue);
 }
 
 function checkRealtimeFaintAndWin(current, teamSlot, otherSlot, resultLogs) {
@@ -1708,12 +1817,16 @@ function checkRealtimeFaintAndWin(current, teamSlot, otherSlot, resultLogs) {
 
     current.pendingForcedSwitch = current.pendingForcedSwitch || {};
     current.pendingForcedSwitch[teamSlot] = true;
-    // 相手を倒した側にも「こちらもモンスターを変えるか」の任意交代チャンスを与える
-    // （倒された側は必須交代＝true、勝った側は任意＝'optional'として区別する）。
-    // 控えがいない場合は聞くまでもないので立てない。
+    // 相手を倒した側にも「こちらもモンスターを変えるか」の任意交代チャンスを与えるが、
+    // ここでは即座に立てない。倒された側（teamSlot）がまだ次のモンスターを選んでいない時点で
+    // 任意交代の確認を出してしまうと、「相手は○○を出すようだ」の○○が直前に倒したモンスターの
+    // ままになってしまう（相手はまだ何も選んでいないため）。
+    // 倒された側の選択が確定した瞬間（performRealtimeForcedSwitch側）に、正しい次のモンスター名で
+    // 改めて任意交代の確認を有効化するため、ここでは「保留中」の印だけを残しておく。
+    current.pendingPostVictoryOptional = current.pendingPostVictoryOptional || {};
     const winnerCandidates = getRealtimeSwitchCandidatesForSlot(current, otherSlot);
     if (winnerCandidates.length > 0) {
-        current.pendingForcedSwitch[otherSlot] = 'optional';
+        current.pendingPostVictoryOptional[otherSlot] = true;
     }
     // 強制交代の選択にも制限時間を設ける（無操作で試合が止まってしまうのを防ぐ）。
     // triggerRealtimeForcedSwitchTimeout側でこのdeadlineを見て自動選択する。
@@ -1778,15 +1891,17 @@ function checkRealtimeBothSidesFaint(current, slotA, slotB, resultLogs) {
         const ownerLabelB = current.ownerNames ? current.ownerNames[slotB] : '相手';
         pushRealtimeLog(resultLogs, slotB, `${ownerLabelB}は次に出すマスモンを選んでいる…`);
     }
-    // 片方だけが倒された場合、倒した側（生き残っている側）にも任意の交代チャンスを与える
-    // （相打ちで両方戦闘不能の場合は、双方どのみち必須交代になるためoptionalは不要）
+    // 片方だけが倒された場合、倒した側（生き残っている側）にも任意の交代チャンスを与えるが、
+    // checkRealtimeFaintAndWinと同様、ここでは即座に立てず「保留中」の印だけ残す
+    // （倒された側の選択が確定してから、正しい次のモンスター名で有効化するため）。
+    current.pendingPostVictoryOptional = current.pendingPostVictoryOptional || {};
     if (aFainted && !bFainted && !current.pendingForcedSwitch[slotB]) {
         const winnerCandidatesB = getRealtimeSwitchCandidatesForSlot(current, slotB);
-        if (winnerCandidatesB.length > 0) current.pendingForcedSwitch[slotB] = 'optional';
+        if (winnerCandidatesB.length > 0) current.pendingPostVictoryOptional[slotB] = true;
     }
     if (bFainted && !aFainted && !current.pendingForcedSwitch[slotA]) {
         const winnerCandidatesA = getRealtimeSwitchCandidatesForSlot(current, slotA);
-        if (winnerCandidatesA.length > 0) current.pendingForcedSwitch[slotA] = 'optional';
+        if (winnerCandidatesA.length > 0) current.pendingPostVictoryOptional[slotA] = true;
     }
     return 'needSwitch';
 }
@@ -1867,7 +1982,14 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
         me.guts -= sk.cost;
         me.lastSkillKeyUsed = action.key;
         incrementSkillUseCount(me, action.key);
-        pushRealtimeLog(resultLogs, actingSlot, `${me.name} の【${sk.name}】！`);
+        const skillNameEntry = pushRealtimeLog(resultLogs, actingSlot, `${me.name} の【${sk.name}】！`);
+        // みがわり設置中に自身が攻撃技を繰り出す場合、一瞬だけモンスター本体の絵を表示してから
+        // 攻撃する（CPU戦のbuildSkillNameStepと同じ仕様）。実際の絵の切り替えは、このログ行が
+        // ログキュー側で表示されるタイミングでtriggerRealtimeVisualCuesが行う。
+        const shouldPeekOutForAttack = (sk.type === 'pow' || sk.type === 'int') && actingTeam.substituteHits > 0;
+        if (shouldPeekOutForAttack) {
+            addRealtimeVisualCue(skillNameEntry, { type: 'peek-out', slot: actingSlot });
+        }
         // 技発動時（命中判定に関わらず）の自己強化効果（アサルトダンス等）
         applySkillOnUseEffect(me, sk, previousSkillKeyUsed, action.key).forEach(msg => pushRealtimeLog(resultLogs, actingSlot, msg.detail));
 
@@ -1908,13 +2030,10 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             let hitCount = (sk.hitCount || 1) * (isDoubleHit ? 2 : 1);
 
             if (isHit && otherTeam.substituteHits > 0) {
-                // みがわり餅が残っている場合、2回攻撃扱いの分だけ多く消費する。
-                // 身代わりの残り回数を超える分は身代わりを貫通し、実際に相手へ攻撃が届く
-                // （プラズマでみがわりを1つ削ってから攻撃技を打つことで、みがわりを削りきり相手を攻撃するための仕様）。
-                const consumedSub = Math.min(otherTeam.substituteHits, hitCount);
-                otherTeam.substituteHits -= consumedSub;
-                pushRealtimeLog(resultLogs, actingSlot, `🧸 身代わり人形が${opp.name}の代わりに攻撃を${consumedSub > 1 ? consumedSub + '回分' : ''}受けた！（身代わりの残り回数: ${otherTeam.substituteHits}）`);
-                hitCount -= consumedSub;
+                // みがわり（耐久値ベース）：以降のダメージ計算ループ内で、各ヒットのダメージ量を
+                // 耐久値からそのまま差し引く（詳細は下のダメージループ内コメント参照）。
+                // ここでは何もしない（旧仕様は技を撃った時点で一括消費していたが、
+                // ヒットごとの実ダメージが分からないと正しく判定できないため、判定自体をループ内に移した）。
             }
 
             if (isHit && hitCount > 0 && sk.noDamage) {
@@ -2008,6 +2127,20 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
                 const shieldResult = applyShieldAbsorption(opp, damage);
                 damage = shieldResult.finalDamage;
 
+                // みがわり（耐久値ベース）による吸収：このヒットのダメージを耐久値の許す範囲で肩代わりする。
+                // 耐久値を使い切った場合はここで壊れ、超過分のダメージはこのヒット限りで無効化される
+                // （多段攻撃で耐久値を使い切った場合、残りのヒットは実際に相手へ届く）。
+                if (otherTeam.substituteHits > 0) {
+                    const absorbed = Math.min(otherTeam.substituteHits, damage);
+                    otherTeam.substituteHits = Math.max(0, otherTeam.substituteHits - absorbed);
+                    const remainingSub = otherTeam.substituteHits;
+                    const subEntry = pushRealtimeLog(resultLogs, actingSlot, `🧸 身代わり人形が${opp.name}の代わりに ${absorbed} ダメージを受けた！${remainingSub <= 0 ? '（身代わりは壊れた！）' : `（身代わりの残り耐久値: ${remainingSub}）`}`);
+                    if (remainingSub <= 0) {
+                        addRealtimeVisualCue(subEntry, { type: 'substitute-break', slot: otherSlot });
+                    }
+                    continue; // このヒットは身代わりが肩代わりしたため、本体への実ダメージ・ガッツダウン等は発生しない
+                }
+
                 opp.life = Math.max(0, opp.life - damage);
                 pushRealtimeLog(resultLogs, actingSlot, isCrit ? `★クリティカル！ ${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}${hitTag}` : `${opp.name} に ${damage} ダメージ！${meExtraDmgMsg}${hitTag}`);
                 if (shieldResult.absorbed > 0) {
@@ -2094,10 +2227,12 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             pushRealtimeLog(resultLogs, actingSlot, `${me.name} は癒された！ライフが ${healAmount} 回復！`);
         } else if (sk.type === 'substitute') {
             const already = actingTeam.substituteHits > 0;
-            actingTeam.substituteHits = 2;
-            pushRealtimeLog(resultLogs, actingSlot, already
-                ? `🧸 ${me.name} は新しい身代わり人形を設置し直した！（身代わりの残り回数が2回に更新された）`
-                : `🧸 ${me.name} は自身を模したぬいぐるみを設置した！（次の攻撃を2回まで防ぐ。モンスターを交換しても場に残り続ける）`);
+            const durability = Math.max(1, Math.floor(me.maxLife * 0.25));
+            actingTeam.substituteHits = durability;
+            const castEntry = pushRealtimeLog(resultLogs, actingSlot, already
+                ? `🧸 ${me.name} は新しい身代わり人形を設置し直した！（身代わりの耐久値が ${durability} に更新された）`
+                : `🧸 ${me.name} は自身を模したぬいぐるみを設置した！（耐久値 ${durability} 分のダメージを肩代わりする。モンスターを交換しても場に残り続ける）`);
+            addRealtimeVisualCue(castEntry, { type: 'substitute-cast', slot: actingSlot });
 
             const selfDamagePct = sk.selfDamagePct || 0;
             if (selfDamagePct > 0) {
@@ -2129,6 +2264,13 @@ function resolveOneRealtimeAction(current, actingSlot, otherSlot, action, result
             } else {
                 pushRealtimeLog(resultLogs, actingSlot, `🪨 ${me.name} は相手のフィールド上に${verb}！（相手はこれ以降、モンスターを交代して繰り出すたびにダメージを受ける）`);
             }
+        }
+
+        // みがわり設置中に攻撃技で一瞬だけ本体の絵を見せていた場合、この行動の最後のログ行に
+        // 「みがわりの絵へ戻す」cueを付与する（まだみがわりが残っている場合のみ。攻撃中に
+        // 壊れていた場合はsubstitute-breakのcueが既についているため、ここでは何もしない）。
+        if (shouldPeekOutForAttack && actingTeam.substituteHits > 0 && resultLogs.length > 0) {
+            addRealtimeVisualCue(resultLogs[resultLogs.length - 1], { type: 'peek-in', slot: actingSlot });
         }
     } else if (action.kind === 'defend') {
         me.isDefending = true;

@@ -535,10 +535,10 @@ function chooseKinNejikiMostAction(e, p, affordableSkills) {
     }
 
     // --- ③ みがわり対策 ---
-    // プレイヤーがみがわりを設置している間（残り2回まで攻撃を無効化）、単発技を撃っても
-    // みがわりの残り回数を1つ減らすだけで実質何もダメージを与えられない。
-    // メテオバースト（4回攻撃）なら、みがわりの残り2回分を1ターンで消費しきった上で
-    // 残り2発が本体に直撃するため、みがわり対策として最優先で使う。
+    // プレイヤーがみがわりを設置している間（耐久値を使い切るまで攻撃を肩代わりされる）、
+    // 単発技を撃ってもみがわりの耐久値を削るだけで実質ダメージを与えられないことが多い。
+    // メテオバースト（4回攻撃）なら1ターンで複数回分のダメージを叩き込めるため、
+    // 耐久値を削り切って残りのヒットを本体に直撃させやすく、みがわり対策として優先して使う。
     const playerHasSubstitute = (MASMON_BATTLE_STATE.playerSubstituteHits || 0) > 0;
     if (playerHasSubstitute && (e.skills || []).includes('boss_meteor')) {
         const meteorNow = affordableSkills.find(s => s.key === 'boss_meteor');
@@ -1493,28 +1493,36 @@ function renderKinNejikiOrderStep() {
     }
 
     // --- 自パーティの出す順番選択（タップで先頭＝インデックス0と入れ替える） ---
+    // このステップはモンスターが3体しか並ばないため、カードを大きめに取り、
+    // ステータスに加えて技（オーラ込み）・装備も分かるようにしている。
     orderContainer.innerHTML = '';
     KIN_NEJIKI_STATE.playerParty.forEach((m, idx) => {
         if (!m) return;
         const isLeader = idx === 0;
         const card = document.createElement('div');
-        card.className = `bg-[#2a1b15] border rounded-xl p-2 cursor-pointer active:scale-[0.98] transition-all flex items-center space-x-2 ${isLeader ? 'border-sky-400 shadow-[0_0_6px_2px_rgba(56,189,248,0.4)]' : 'border-amber-900/50'}`;
+        card.className = `bg-[#2a1b15] border-2 rounded-xl p-3 cursor-pointer active:scale-[0.98] transition-all flex items-center space-x-3 ${isLeader ? 'border-sky-400 shadow-[0_0_6px_2px_rgba(56,189,248,0.4)]' : 'border-amber-900/50'}`;
         card.onclick = () => swapKinNejikiPartyToLead(idx);
         const visualId = `kinnejiki-order-visual-${idx}`;
         const auraInfo = m.aura ? AURA_TYPES[m.aura] : null;
         const monClassKey = getMonClassKeyForName(m.monsterBaseName);
         const monClassInfo = monClassKey ? MON_CLASS_TYPES[monClassKey] : null;
-        const auraText = (auraInfo ? auraInfo.emoji : '') + (monClassInfo ? monClassInfo.emoji : '');
+        const auraText = (auraInfo ? auraInfo.emoji + auraInfo.name : '') + (monClassInfo ? ' ' + monClassInfo.emoji : '');
+        const skillNames = buildSkillListWithAuraText(m.skills || []);
+        const equipText = m.equip
+            ? `${(EQUIPMENT_DB[m.equip.equipId] || {}).icon || '⚙️'} ${getEquipmentDisplayName(m.equip)}（${getEquipmentDisplayDesc(m.equip)}）`
+            : '装備なし';
 
         card.innerHTML = `
-            <div id="${visualId}" class="flex-shrink-0 w-12 h-12 flex items-center justify-center text-2xl"></div>
+            <div id="${visualId}" class="flex-shrink-0 w-20 h-20 flex items-center justify-center text-4xl"></div>
             <div class="flex-1 min-w-0">
                 <div class="flex items-center justify-between">
-                    <div class="text-xs font-bold text-amber-200">${isLeader ? '👑 ' : ''}${m.name}</div>
-                    <div class="text-[8px] text-purple-300 font-bold flex-shrink-0 ml-1">${auraText}</div>
+                    <div class="text-sm font-bold text-amber-200">${isLeader ? '👑 ' : ''}${m.name}</div>
+                    <div class="text-[10px] text-purple-300 font-bold flex-shrink-0 ml-1">${auraText}</div>
                 </div>
-                <div class="text-[9px] text-gray-400 mt-0.5">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def} / 行動速度${getMoveSpeedRankForMasmon(m)}</div>
-                <div class="text-[9px] ${isLeader ? 'text-sky-300' : 'text-gray-600'} mt-0.5">${isLeader ? '→ このモンスターが先頭に出ます' : 'タップして先頭に出す'}</div>
+                <div class="text-[10px] text-gray-400 mt-1">HP${m.stats.maxLife} / ちから${m.stats.pow} / かしこさ${m.stats.int} / 命中${m.stats.hit} / 回避${m.stats.spd} / 丈夫さ${m.stats.def} / 行動速度${getMoveSpeedRankForMasmon(m)}</div>
+                <div class="text-[10px] text-gray-500 mt-1 leading-relaxed">技: ${skillNames}</div>
+                <div class="text-[10px] text-sky-300 mt-1 leading-relaxed">🎽 ${equipText}</div>
+                <div class="text-[10px] font-bold ${isLeader ? 'text-sky-300' : 'text-gray-600'} mt-1.5">${isLeader ? '→ このモンスターが先頭に出ます' : 'タップして先頭に出す'}</div>
             </div>
         `;
         orderContainer.appendChild(card);
@@ -1710,7 +1718,13 @@ async function fetchKinNejikiRanking(limit = 100) {
         snap.forEach(child => {
             list.push({ id: child.key, ...child.val() });
         });
-        list.sort((a, b) => (b.bestWins || 0) - (a.bestWins || 0));
+        list.sort((a, b) => {
+            const winsDiff = (b.bestWins || 0) - (a.bestWins || 0);
+            if (winsDiff !== 0) return winsDiff;
+            // 同率の場合は、その記録を達成した日時（updatedAt）が早い順にする
+            // （先にその記録へ到達した方を上位にする）
+            return (a.updatedAt || 0) - (b.updatedAt || 0);
+        });
         return list.slice(0, limit);
     } catch (e) {
         console.error('[ガッツファクトリー] ランキング取得エラー:', e);
