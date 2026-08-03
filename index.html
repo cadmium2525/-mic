@@ -630,15 +630,24 @@
             <div id="screen-kinnejiki-title" class="screen flex-col justify-between h-full p-6 text-center title-screen-bg">
                 <div class="mt-4 relative z-10">
                     <div class="text-5xl mb-2">👑</div>
-                    <h1 class="text-2xl font-extrabold text-amber-400 tracking-wider pixel-font border-b-4 border-amber-600 pb-2">ガッツファクトリー</h1>
+                    <div class="flex items-center justify-center space-x-2">
+                        <button onclick="cycleKinNejikiTitleMode()" aria-label="前のモード" class="fantasy-btn w-9 h-9 flex items-center justify-center rounded-full bg-[#2a1b15] border border-amber-700 text-amber-300 active:scale-95 transition-all flex-shrink-0">
+                            <i class="fa-solid fa-chevron-left"></i>
+                        </button>
+                        <h1 id="kinnejiki-title-mode-name" class="text-xl font-extrabold text-amber-400 tracking-wider pixel-font border-b-4 border-amber-600 pb-2 flex-1 min-w-0">ガッツファクトリー</h1>
+                        <button onclick="cycleKinNejikiTitleMode()" aria-label="次のモード" class="fantasy-btn w-9 h-9 flex items-center justify-center rounded-full bg-[#2a1b15] border border-amber-700 text-amber-300 active:scale-95 transition-all flex-shrink-0">
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </button>
+                    </div>
                     <p class="text-[10px] text-amber-200/60 mt-2">～ レンタルモンスターバトルファクトリー ～</p>
                 </div>
 
                 <div class="bg-[#2a1b15]/95 p-3 rounded-xl border-2 border-amber-700/50 text-left text-xs text-gray-300 space-y-2 my-3 leading-relaxed fantasy-btn relative z-10">
                     <p><span class="text-amber-400 font-bold">■ ルール</span><br>毎回ランダムに提示される6体のレンタルモンスターから3体を選んでパーティを結成し、CPUトレーナーと対戦します。</p>
                     <p><span class="text-amber-400 font-bold">■ 進行</span><br>1セット7戦、これを7セット（計49連勝）繰り返します。セットが進むほど相手は強く、AIも賢くなります。</p>
-                    <p><span class="text-amber-400 font-bold">■ 交換</span><br>1勝するごとに、倒した相手のモンスター1体と自分の手持ち1体を交換できます。</p>
+                    <p><span class="text-amber-400 font-bold">■ 交換</span><br>1勝するごとに、倒した相手のモンスター1体と自分の手持ち1体を交換できます（ボスモンスターは交換候補になりません）。</p>
                     <p><span class="text-amber-400 font-bold">■ ボス登場</span><br>3セット目・7セット目の最後（7戦目）に、レジェンドブリーダー・コルトと呼ばれる専属の強敵が登場します。</p>
+                    <p id="kinnejiki-title-terrain-rule" class="hidden text-cyan-300"></p>
                     <p class="text-red-400">※1度敗北するとその挑戦は終了です。育成やアイテム持ち込みは無く、実力とパーティ構成が全てを決めます。</p>
                 </div>
 
@@ -778,7 +787,7 @@
             <div id="screen-kinnejiki-ranking" class="screen flex-col justify-between h-full p-4 bg-[#1a120b] space-y-3">
                 <div class="bg-amber-950/40 p-3 rounded-xl border border-amber-700 text-center">
                     <div class="text-3xl mb-1">👑</div>
-                    <h2 class="text-lg font-black text-amber-300 pixel-font">ガッツファクトリー 通算勝利数ランキング</h2>
+                    <h2 id="kinnejiki-ranking-title" class="text-lg font-black text-amber-300 pixel-font">ガッツファクトリー 通算勝利数ランキング</h2>
                 </div>
 
                 <div class="flex-1 overflow-y-auto space-y-1.5 pr-1" id="kinnejiki-ranking-list">

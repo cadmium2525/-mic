@@ -34,6 +34,83 @@ const KIN_NEJIKI_STATE = {
 };
 
 // =====================================================
+// 新モード「ガッツファクトリー 〜辺境行〜」（地形変化モード）専用の状態。
+// KIN_NEJIKI_STATE（従来のガッツファクトリー）とは完全に独立したオブジェクトとして持つことで、
+// 中断データ・ランキング・進行状況が本編と混ざらないようにする。
+// 形（フィールド構成）は KIN_NEJIKI_STATE と同一。
+// =====================================================
+const KIN_NEJIKI_TERRAIN_STATE = {
+    active: false,
+    set: 1,
+    battleInSet: 1,
+    totalWins: 0,
+    playerParty: [],
+    offer: [],
+    selectedIdx: [],
+    pendingSwap: null,
+    nextBattlePrepared: null,
+    taskKillCount: 0,
+    exchangeCount: 0,
+    isDebugRun: false
+};
+
+// --- 現在アクティブなモード（screen-kinnejiki-titleのカルーセルで選択中のモード、
+//     および現在進行中のランのモード）。'classic'＝従来のガッツファクトリー／'terrain'＝新モード。 ---
+let KIN_NEJIKI_ACTIVE_MODE = 'classic';
+
+// --- 現在のモードに対応する状態オブジェクトを返す（Kin Nejiki State の略）。---
+// kinnejiki.js内の大半のロジック（生成・描画・勝敗処理等）はこの関数経由で状態を参照することで、
+// 従来のガッツファクトリーと新モードの両方に共通のコードで対応している。
+function KNS() {
+    return KIN_NEJIKI_ACTIVE_MODE === 'terrain' ? KIN_NEJIKI_TERRAIN_STATE : KIN_NEJIKI_STATE;
+}
+
+// --- 新モードの名称（画面表示・トースト・ランキング見出し等で共通利用） ---
+const KIN_NEJIKI_TERRAIN_MODE_NAME = 'ガッツファクトリー 〜辺境行〜';
+
+// --- 現在アクティブなモードの表示名を返す ---
+function kinNejikiModeDisplayName() {
+    return KIN_NEJIKI_ACTIVE_MODE === 'terrain' ? KIN_NEJIKI_TERRAIN_MODE_NAME : 'ガッツファクトリー';
+}
+
+// =====================================================
+// 新モード「ガッツファクトリー 〜辺境行〜」：セット毎の地形設定
+// 1セット目:通常（闘技場） 2:火山 3:森林 4:海岸 5:砂漠 6・7セット目以降:毎試合ランダム
+// 地形の実体（背景画像・オーラボーナス）はデバッグモードで使用しているBATTLE_STAGES（database.js）を
+// そのまま流用する。
+// =====================================================
+const KIN_NEJIKI_TERRAIN_STAGE_BY_SET = { 1: 'arena', 2: 'volcano', 3: 'forest', 4: 'coast', 5: 'desert' };
+const KIN_NEJIKI_TERRAIN_RANDOM_POOL = ['arena', 'volcano', 'forest', 'coast', 'desert'];
+
+// --- セット番号から、そのセットで使う地形キー（BATTLE_STAGESのキー）を返す ---
+// 6セット目以降は毎試合（バトル開始のたびに）ランダムに決め直す。
+function getKinTerrainStageKeyForBattle(setNumber) {
+    const fixed = KIN_NEJIKI_TERRAIN_STAGE_BY_SET[setNumber];
+    if (fixed) return fixed;
+    return KIN_NEJIKI_TERRAIN_RANDOM_POOL[Math.floor(Math.random() * KIN_NEJIKI_TERRAIN_RANDOM_POOL.length)];
+}
+
+// --- タイトル/交換画面等での表示用：セット番号に対応する地形の名称 ---
+function getKinTerrainStageDisplayName(setNumber) {
+    const fixed = KIN_NEJIKI_TERRAIN_STAGE_BY_SET[setNumber];
+    if (fixed && BATTLE_STAGES[fixed]) return BATTLE_STAGES[fixed].name;
+    return 'ランダム';
+}
+
+// --- 新モード専用：1セット（7戦）を終えるたびに手持ちを全リセットし、
+//     次セットの地形にふさわしい強さの6体から改めて3体を選び直させる。
+//     この選び直し自体も交換回数（exchangeCount）に1加算される
+//    （renderKinNejikiSelectScreen→confirmKinNejikiPartyの既存仕様をそのまま利用）。 ---
+function terrainStartNewSetSelection() {
+    KNS().offer = generateKinNejikiOffer(KNS().set);
+    KNS().selectedIdx = [];
+    const terrainName = getKinTerrainStageDisplayName(KNS().set);
+    showToast(`🗺️ 第${KNS().set}セット突入！ 地形:「${terrainName}」 手持ちが全リセットされました。6体から3体を選び直してください。`);
+    renderKinNejikiSelectScreen();
+    changeScreen('screen-kinnejiki-select');
+}
+
+// =====================================================
 // 対戦相手ブリーダー名鑑（ボス戦を除く通常戦の相手に順番に割り当てる二つ名付きブリーダー）
 // 通算バトル数（1〜49）に応じて、この配列を先頭からループしながら割り当てる。
 // =====================================================
@@ -66,8 +143,16 @@ function getKinNejikiBreederName(totalBattleNumber) {
 // ・任意のタイミング（勝利後の交換画面）でセーブ可能
 // ・再開後に敗北した場合は、そのセーブデータを削除する
 // ・クリア（49勝達成）時も削除する
+// ・モード（classic／terrain）ごとに完全に別々のキーを使うことで、
+//   従来のガッツファクトリーと新モード「ガッツファクトリー 〜辺境行〜」の中断データが
+//   互いに競合しないようにしている。
 // =====================================================
-const KIN_NEJIKI_SUSPEND_KEY = 'mfload_kinnejiki_suspend_v1';
+function kinNejikiSuspendKeyForMode(mode) {
+    return mode === 'terrain' ? 'mfload_kinnejiki_terrain_suspend_v1' : 'mfload_kinnejiki_suspend_v1';
+}
+function kinNejikiSuspendKey() {
+    return kinNejikiSuspendKeyForMode(KIN_NEJIKI_ACTIVE_MODE);
+}
 
 // =====================================================
 // タスクキル対策
@@ -77,37 +162,48 @@ const KIN_NEJIKI_SUSPEND_KEY = 'mfload_kinnejiki_suspend_v1';
 // ・3回検知した時点でその挑戦を強制的にゲームオーバー扱いとする
 //   （負けそうになったらタスクキルして再開する、というやり直しを防ぐための仕様）
 // =====================================================
-const KIN_NEJIKI_BATTLE_FLAG_KEY = 'mfload_kinnejiki_battle_flag_v1';
+function kinNejikiBattleFlagKeyForMode(mode) {
+    return mode === 'terrain' ? 'mfload_kinnejiki_terrain_battle_flag_v1' : 'mfload_kinnejiki_battle_flag_v1';
+}
+function kinNejikiBattleFlagKey() {
+    return kinNejikiBattleFlagKeyForMode(KIN_NEJIKI_ACTIVE_MODE);
+}
 const KIN_NEJIKI_MAX_TASK_KILLS = 3;
 
 function markKinNejikiBattleStarted() {
     try {
-        localStorage.setItem(KIN_NEJIKI_BATTLE_FLAG_KEY, '1');
+        localStorage.setItem(kinNejikiBattleFlagKey(), '1');
     } catch (e) { /* ignore */ }
 }
 
 function clearKinNejikiBattleFlag() {
     try {
-        localStorage.removeItem(KIN_NEJIKI_BATTLE_FLAG_KEY);
+        localStorage.removeItem(kinNejikiBattleFlagKey());
     } catch (e) { /* ignore */ }
 }
 
 // --- アプリ起動時に1度だけ呼ばれ、直前の終了がタスクキルだったかどうかを判定する ---
-function checkKinNejikiTaskKillOnLoad() {
+// classic／terrain 両モードのキーを個別にチェックする（どちらをプレイ中に終了されたか
+// 起動時点では分からないため、両方確認する必要がある）。
+function checkKinNejikiTaskKillOnLoadForMode(mode) {
+    const battleFlagKey = kinNejikiBattleFlagKeyForMode(mode);
+    const suspendKey = kinNejikiSuspendKeyForMode(mode);
+    const modeLabel = (mode === 'terrain') ? KIN_NEJIKI_TERRAIN_MODE_NAME : 'ガッツファクトリー';
+
     let battleWasInProgress = false;
     try {
-        battleWasInProgress = !!localStorage.getItem(KIN_NEJIKI_BATTLE_FLAG_KEY);
+        battleWasInProgress = !!localStorage.getItem(battleFlagKey);
     } catch (e) {
         battleWasInProgress = false;
     }
     if (!battleWasInProgress) return;
 
     // バトル画面のまま終了された形跡があるので、フラグは一旦クリアする
-    clearKinNejikiBattleFlag();
+    try { localStorage.removeItem(battleFlagKey); } catch (e) { /* ignore */ }
 
     let saved = null;
     try {
-        const raw = localStorage.getItem(KIN_NEJIKI_SUSPEND_KEY);
+        const raw = localStorage.getItem(suspendKey);
         if (raw) saved = JSON.parse(raw);
     } catch (e) {
         saved = null;
@@ -119,19 +215,19 @@ function checkKinNejikiTaskKillOnLoad() {
     if (newCount >= KIN_NEJIKI_MAX_TASK_KILLS) {
         // 規定回数に達したので、その挑戦を強制的にゲームオーバー扱いにする
         const finalWins = saved.totalWins || 0;
-        clearKinNejikiSuspendSave();
+        try { localStorage.removeItem(suspendKey); } catch (e) { /* ignore */ }
         try {
-            if (typeof saveKinNejikiRanking === 'function') saveKinNejikiRanking(finalWins, false);
+            if (typeof saveKinNejikiRanking === 'function') saveKinNejikiRanking(finalWins, false, mode);
         } catch (e) { /* ignore */ }
         setTimeout(() => {
             if (typeof showToast === 'function') {
-                showToast(`⚠️ タスクキルを${KIN_NEJIKI_MAX_TASK_KILLS}回検知したため、ガッツファクトリーの挑戦がゲームオーバーになりました（通算${finalWins}勝）`);
+                showToast(`⚠️ タスクキルを${KIN_NEJIKI_MAX_TASK_KILLS}回検知したため、${modeLabel}の挑戦がゲームオーバーになりました（通算${finalWins}勝）`);
             }
         }, 600);
     } else {
         saved.taskKillCount = newCount;
         try {
-            localStorage.setItem(KIN_NEJIKI_SUSPEND_KEY, JSON.stringify(saved));
+            localStorage.setItem(suspendKey, JSON.stringify(saved));
         } catch (e) { /* ignore */ }
         setTimeout(() => {
             if (typeof showToast === 'function') {
@@ -141,22 +237,27 @@ function checkKinNejikiTaskKillOnLoad() {
     }
 }
 
+function checkKinNejikiTaskKillOnLoad() {
+    checkKinNejikiTaskKillOnLoadForMode('classic');
+    checkKinNejikiTaskKillOnLoadForMode('terrain');
+}
+
 window.addEventListener('load', checkKinNejikiTaskKillOnLoad);
 
 function hasKinNejikiSuspendSave() {
     try {
-        return !!localStorage.getItem(KIN_NEJIKI_SUSPEND_KEY);
+        return !!localStorage.getItem(kinNejikiSuspendKey());
     } catch (e) {
         return false;
     }
 }
 
 function saveKinNejikiSuspend() {
-    if (!KIN_NEJIKI_STATE.active) {
+    if (!KNS().active) {
         showToast('挑戦中のみ一時セーブできます。');
         return;
     }
-    if (KIN_NEJIKI_STATE.isDebugRun) {
+    if (KNS().isDebugRun) {
         // デバッグから開始したランは、本編の一時セーブ（他に進行中の本番のランがあるかもしれない）を
         // 誤って上書きしてしまわないよう、一時セーブ自体をさせない。
         showToast('🛠️ デバッグランは一時セーブできません（本編のセーブデータ保護のため）。');
@@ -165,29 +266,29 @@ function saveKinNejikiSuspend() {
     // 勝利後の交換画面から呼ばれた場合、この勝利分をまだカウンタ（battleInSet/set）へ
     // 反映していないことがあるので、その場合はここで先に反映してからセーブする。
     // （これをしないと再開時に直前に勝ったバトルをもう一度やり直すことになってしまう）
-    if (KIN_NEJIKI_STATE.pendingSwap) {
+    if (KNS().pendingSwap) {
         advanceKinNejikiCounters();
     }
     // セーブ時点ではバトル中ではないはずなので、念のためバトル中フラグをクリアしておく
     clearKinNejikiBattleFlag();
     try {
         const payload = {
-            set: KIN_NEJIKI_STATE.set,
-            battleInSet: KIN_NEJIKI_STATE.battleInSet,
-            totalWins: KIN_NEJIKI_STATE.totalWins,
-            playerParty: KIN_NEJIKI_STATE.playerParty,
+            set: KNS().set,
+            battleInSet: KNS().battleInSet,
+            totalWins: KNS().totalWins,
+            playerParty: KNS().playerParty,
             // 次バトルの対戦相手（事前生成済みのもの）も一緒に保存し、再開時にCPUの構成が
             // 変わらないようにする（保存せずに再開時その場で作り直すと、相手が毎回変わってしまう）
-            nextBattlePrepared: KIN_NEJIKI_STATE.nextBattlePrepared || null,
+            nextBattlePrepared: KNS().nextBattlePrepared || null,
             // タスクキル検知回数も保存し、再開後に別セッションへ引き継がれるようにする
-            taskKillCount: KIN_NEJIKI_STATE.taskKillCount || 0,
+            taskKillCount: KNS().taskKillCount || 0,
             // 交換回数（ボーナス枠の判定に使う）も保存する。これが抜けていると、再開のたびに
             // カウントが0にリセットされ、ボーナス枠が永遠に出現しなくなる不具合になる。
-            exchangeCount: KIN_NEJIKI_STATE.exchangeCount || 0,
+            exchangeCount: KNS().exchangeCount || 0,
             savedAt: Date.now()
         };
-        localStorage.setItem(KIN_NEJIKI_SUSPEND_KEY, JSON.stringify(payload));
-        KIN_NEJIKI_STATE.active = false;
+        localStorage.setItem(kinNejikiSuspendKey(), JSON.stringify(payload));
+        KNS().active = false;
         showToast('一時セーブしました。タイトルに戻ります。');
         setTimeout(() => changeScreen('screen-title'), 800);
     } catch (e) {
@@ -198,7 +299,7 @@ function saveKinNejikiSuspend() {
 
 function clearKinNejikiSuspendSave() {
     try {
-        localStorage.removeItem(KIN_NEJIKI_SUSPEND_KEY);
+        localStorage.removeItem(kinNejikiSuspendKey());
     } catch (e) { /* ignore */ }
 }
 
@@ -211,7 +312,7 @@ function updateKinNejikiResumeButtonVisibility() {
 function resumeKinNejikiRun() {
     let saved = null;
     try {
-        const raw = localStorage.getItem(KIN_NEJIKI_SUSPEND_KEY);
+        const raw = localStorage.getItem(kinNejikiSuspendKey());
         if (raw) saved = JSON.parse(raw);
     } catch (e) {
         saved = null;
@@ -221,19 +322,19 @@ function resumeKinNejikiRun() {
         return;
     }
 
-    KIN_NEJIKI_STATE.active = true;
-    KIN_NEJIKI_STATE.set = saved.set;
-    KIN_NEJIKI_STATE.battleInSet = saved.battleInSet;
-    KIN_NEJIKI_STATE.totalWins = saved.totalWins;
-    KIN_NEJIKI_STATE.playerParty = saved.playerParty;
-    KIN_NEJIKI_STATE.pendingSwap = null;
+    KNS().active = true;
+    KNS().set = saved.set;
+    KNS().battleInSet = saved.battleInSet;
+    KNS().totalWins = saved.totalWins;
+    KNS().playerParty = saved.playerParty;
+    KNS().pendingSwap = null;
     // 保存しておいた次バトルの対戦相手をそのまま復元する（CPUの構成を再開のたびに
     // 変えないようにするため。無ければnullのままとなり、従来通りその場で生成される）
-    KIN_NEJIKI_STATE.nextBattlePrepared = saved.nextBattlePrepared || null;
-    KIN_NEJIKI_STATE.taskKillCount = saved.taskKillCount || 0;
+    KNS().nextBattlePrepared = saved.nextBattlePrepared || null;
+    KNS().taskKillCount = saved.taskKillCount || 0;
     // 交換回数（ボーナス枠の判定に使う）も復元する。以前はここが抜けていたため、
     // 再開のたびに交換カウントが0に戻り、ボーナス枠が出現しなくなる不具合があった。
-    KIN_NEJIKI_STATE.exchangeCount = saved.exchangeCount || 0;
+    KNS().exchangeCount = saved.exchangeCount || 0;
     // 復元した値を、表示中の画面（もしあれば）にも即座に反映しておく。
     // ※ saved.exchangeCount が無い（=このフィールドが増える前に作られた古い一時セーブ）場合は、
     //   復元しようがないため0から再スタートになる。これはデータ仕様上の一度きりの過渡的な挙動であり、
@@ -423,7 +524,10 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, e
             skillEnhancements: {},
             // guaranteeEquip=true：敵（ボス本体）は装備なしにはせず必ず何かを持たせる
             equip: kinNejikiRollEquipmentForSet(7, excludeEquip, true),
-            ownerName: bossDef.title
+            ownerName: bossDef.title,
+            // ボス専属モンスターの目印。交換画面（kinNejikiHandleBattleEnd）で、
+            // 倒した相手チームからこのフラグが立っている個体を除外し、自分のチームに迎え入れられないようにする。
+            isBoss: true
         };
         // guaranteeEquip=true：帯同2体も同様に必ず何かを装備させる
         // ※以前は常にセット7相当（最大ステータス・特殊装備・全型解放）で生成してしまっていたため、
@@ -837,14 +941,14 @@ function maybeExecuteKinNejikiEnemySwitch() {
 
 // --- 交換1回分をカウントする（1ラン内のみ有効） ---
 function incrementKinNejikiExchangeCount() {
-    KIN_NEJIKI_STATE.exchangeCount = (KIN_NEJIKI_STATE.exchangeCount || 0) + 1;
+    KNS().exchangeCount = (KNS().exchangeCount || 0) + 1;
     updateKinNejikiExchangeCountDisplay();
 }
 
 // --- 現在の交換回数・次のボーナス枠までの残り回数を、表示中の画面すべてに反映する ---
 // （パーティ選出画面・交換画面のバナー部分に共通クラスで埋め込んである）
 function updateKinNejikiExchangeCountDisplay() {
-    const count = KIN_NEJIKI_STATE.exchangeCount || 0;
+    const count = KNS().exchangeCount || 0;
     const bonusSlotCount = Math.floor(count / 7);
     const remaining = 7 - (count % 7);
     const text = bonusSlotCount > 0
@@ -856,26 +960,55 @@ function updateKinNejikiExchangeCountDisplay() {
 
 // --- タイトルから「ガッツファクトリー」の説明画面へ ---
 function startKinNejikiEntry() {
-    updateKinNejikiResumeButtonVisibility();
+    renderKinNejikiTitleScreen();
     changeScreen('screen-kinnejiki-title');
+}
+
+// --- タイトル画面（screen-kinnejiki-title）の左右矢印で選択中のモードを切り替える ---
+function cycleKinNejikiTitleMode() {
+    KIN_NEJIKI_ACTIVE_MODE = (KIN_NEJIKI_ACTIVE_MODE === 'terrain') ? 'classic' : 'terrain';
+    renderKinNejikiTitleScreen();
+}
+
+// --- タイトル画面のタイトル文言・ルール説明・再開ボタンの表示を、現在選択中のモードに合わせて描画する ---
+function renderKinNejikiTitleScreen() {
+    updateKinNejikiResumeButtonVisibility();
+
+    const nameEl = document.getElementById('kinnejiki-title-mode-name');
+    if (nameEl) nameEl.textContent = kinNejikiModeDisplayName();
+
+    const rulesEl = document.getElementById('kinnejiki-title-terrain-rule');
+    if (rulesEl) {
+        if (KIN_NEJIKI_ACTIVE_MODE === 'terrain') {
+            rulesEl.classList.remove('hidden');
+            rulesEl.innerHTML =
+                '<span class="text-amber-400 font-bold">■ このモード限定ルール</span><br>' +
+                '🗺️ セットごとに地形が変化：<br>' +
+                '1セット目 通常／2 火山／3 森林／4 海岸／5 砂漠／6・7 毎試合ランダム<br>' +
+                '🔁 1セットごとに手持ちが全リセット！ 6体の中から3体を選び直す（この選出も交換1回分としてカウント）';
+        } else {
+            rulesEl.classList.add('hidden');
+            rulesEl.innerHTML = '';
+        }
+    }
 }
 
 // --- ランを開始し、最初の6体提示を生成する（交換回数は必ず0から始まるため、ここではボーナス枠は付かない） ---
 function beginKinNejikiRun() {
     clearKinNejikiSuspendSave(); // 新規に挑戦を始める場合、古い一時セーブは破棄する
     clearKinNejikiBattleFlag(); // 前回の挑戦から残っているかもしれないバトル中フラグもクリアする
-    KIN_NEJIKI_STATE.active = true;
-    KIN_NEJIKI_STATE.set = 1;
-    KIN_NEJIKI_STATE.battleInSet = 1;
-    KIN_NEJIKI_STATE.totalWins = 0;
-    KIN_NEJIKI_STATE.playerParty = [];
-    KIN_NEJIKI_STATE.selectedIdx = [];
-    KIN_NEJIKI_STATE.pendingSwap = null;
-    KIN_NEJIKI_STATE.nextBattlePrepared = null;
-    KIN_NEJIKI_STATE.taskKillCount = 0;
-    KIN_NEJIKI_STATE.exchangeCount = 0; // 交換回数は新規ランのたびに必ず0から始まる
+    KNS().active = true;
+    KNS().set = 1;
+    KNS().battleInSet = 1;
+    KNS().totalWins = 0;
+    KNS().playerParty = [];
+    KNS().selectedIdx = [];
+    KNS().pendingSwap = null;
+    KNS().nextBattlePrepared = null;
+    KNS().taskKillCount = 0;
+    KNS().exchangeCount = 0; // 交換回数は新規ランのたびに必ず0から始まる
 
-    KIN_NEJIKI_STATE.offer = generateKinNejikiOffer(1);
+    KNS().offer = generateKinNejikiOffer(1);
     renderKinNejikiSelectScreen();
     changeScreen('screen-kinnejiki-select');
 }
@@ -1009,9 +1142,9 @@ function renderKinNejikiSelectScreen() {
     container.innerHTML = '';
     updateKinNejikiExchangeCountDisplay();
 
-    KIN_NEJIKI_STATE.offer.forEach((m, idx) => {
+    KNS().offer.forEach((m, idx) => {
         if (!m) return;
-        const isSelected = KIN_NEJIKI_STATE.selectedIdx.includes(idx);
+        const isSelected = KNS().selectedIdx.includes(idx);
         const card = document.createElement('div');
         card.className = `bg-[#2a1b15] border rounded-xl p-2.5 cursor-pointer active:scale-[0.98] transition-all ${isSelected ? 'border-amber-400 shadow-[0_0_6px_2px_rgba(251,191,36,0.4)]' : (m.isBonusSlot ? 'border-fuchsia-500/70' : 'border-amber-900/50')}`;
         // タップ＝選択トグル、長押し＝詳細モーダル表示（両方を1つのヘルパーにまとめて管理する）
@@ -1045,7 +1178,7 @@ function renderKinNejikiSelectScreen() {
 
     const confirmBtn = document.getElementById('kinnejiki-confirm-party-btn');
     if (confirmBtn) {
-        const count = KIN_NEJIKI_STATE.selectedIdx.length;
+        const count = KNS().selectedIdx.length;
         confirmBtn.disabled = count !== 3;
         confirmBtn.textContent = count === 3 ? 'このパーティで挑戦開始！' : `パーティを選択中 (${count}/3)`;
         confirmBtn.classList.toggle('opacity-50', count !== 3);
@@ -1053,15 +1186,15 @@ function renderKinNejikiSelectScreen() {
 }
 
 function toggleKinNejikiSelect(idx) {
-    const pos = KIN_NEJIKI_STATE.selectedIdx.indexOf(idx);
+    const pos = KNS().selectedIdx.indexOf(idx);
     if (pos >= 0) {
-        KIN_NEJIKI_STATE.selectedIdx.splice(pos, 1);
+        KNS().selectedIdx.splice(pos, 1);
     } else {
-        if (KIN_NEJIKI_STATE.selectedIdx.length >= 3) {
+        if (KNS().selectedIdx.length >= 3) {
             showToast('パーティは3体までです。');
             return;
         }
-        KIN_NEJIKI_STATE.selectedIdx.push(idx);
+        KNS().selectedIdx.push(idx);
     }
     renderKinNejikiSelectScreen();
 }
@@ -1079,22 +1212,22 @@ async function trackKinNejikiMonsterUsage(speciesId) {
 }
 
 async function confirmKinNejikiParty() {
-    if (KIN_NEJIKI_STATE.selectedIdx.length !== 3) return;
-    KIN_NEJIKI_STATE.playerParty = KIN_NEJIKI_STATE.selectedIdx.map(idx => JSON.parse(JSON.stringify(KIN_NEJIKI_STATE.offer[idx])));
-    KIN_NEJIKI_STATE.playerParty.forEach(m => { if (m) trackKinNejikiMonsterUsage(m.speciesId); });
+    if (KNS().selectedIdx.length !== 3) return;
+    KNS().playerParty = KNS().selectedIdx.map(idx => JSON.parse(JSON.stringify(KNS().offer[idx])));
+    KNS().playerParty.forEach(m => { if (m) trackKinNejikiMonsterUsage(m.speciesId); });
     incrementKinNejikiExchangeCount(); // 初手の3体選択も「交換1回」としてカウントする
     // 絆ポイントが貯まったモンスターがいれば、自分のパーティに入っている間だけステータスを底上げする
     if (typeof fetchAllMyRoomBonds === 'function') {
         const bondsMap = await fetchAllMyRoomBonds();
-        applyMyRoomBondBuffToParty(KIN_NEJIKI_STATE.playerParty, bondsMap);
+        applyMyRoomBondBuffToParty(KNS().playerParty, bondsMap);
     }
     advanceToNextKinNejikiBattle();
 }
 
 // --- 次バトルの set / battleInSet / ボス戦判定を、カウンタを実際に進めずに先読みする ---
 function peekNextKinNejikiBattleMeta() {
-    let nextSet = KIN_NEJIKI_STATE.set;
-    let nextBattleInSet = KIN_NEJIKI_STATE.battleInSet;
+    let nextSet = KNS().set;
+    let nextBattleInSet = KNS().battleInSet;
     if (nextBattleInSet >= 7) {
         nextBattleInSet = 1;
         nextSet++;
@@ -1133,19 +1266,19 @@ function buildKinNejikiBattlePackage(set, battleInSet, isNejiki, excludeSpecies,
 // 通常は kinNejikiHandleBattleEnd で事前生成された nextBattlePrepared をそのまま使う。
 // （初戦や、一時セーブからの再開など事前生成が無い場合のみ、その場で生成する）
 function advanceToNextKinNejikiBattle() {
-    if (KIN_NEJIKI_STATE.nextBattlePrepared) {
-        const prepared = KIN_NEJIKI_STATE.nextBattlePrepared;
-        KIN_NEJIKI_STATE.nextBattlePrepared = null;
+    if (KNS().nextBattlePrepared) {
+        const prepared = KNS().nextBattlePrepared;
+        KNS().nextBattlePrepared = null;
         startKinNejikiBattleEngine(prepared.opponentTeam, prepared.floorLabel, prepared.isNejiki, prepared.aiLevel);
         return;
     }
 
     // 事前生成が無い場合の保険：現在の手持ちパーティの種族・装備だけを除外して生成する
     // （直前の対戦相手の情報は無いため、その分の除外はできない）
-    const set = KIN_NEJIKI_STATE.set;
-    const battleInSet = KIN_NEJIKI_STATE.battleInSet;
+    const set = KNS().set;
+    const battleInSet = KNS().battleInSet;
     const isNejiki = battleInSet === 7 && (set === 3 || set === 7);
-    const exclusions = buildKinNejikiExclusions(KIN_NEJIKI_STATE.playerParty, null);
+    const exclusions = buildKinNejikiExclusions(KNS().playerParty, null);
     const battlePackage = buildKinNejikiBattlePackage(set, battleInSet, isNejiki, exclusions.species, exclusions.equip);
 
     startKinNejikiBattleEngine(battlePackage.opponentTeam, battlePackage.floorLabel, battlePackage.isNejiki, battlePackage.aiLevel);
@@ -1254,9 +1387,9 @@ function launchKinNejikiBattleEngine(opponentTeamRaw, floorText, isNejiki, aiLev
     markKinNejikiBattleStarted();
     MASMON_BATTLE_STATE.mode = 'cpu_team';
     MASMON_BATTLE_STATE.isDebugBattle = false;
-    MASMON_BATTLE_STATE.playerTeam = KIN_NEJIKI_STATE.playerParty.map(m => convertMasmonToBattleUnit(m, m.equip || null));
+    MASMON_BATTLE_STATE.playerTeam = KNS().playerParty.map(m => convertMasmonToBattleUnit(m, m.equip || null));
     MASMON_BATTLE_STATE.enemyTeam = opponentTeamRaw.map(m => convertMasmonToBattleUnit(m, m.equip || null));
-    MASMON_BATTLE_STATE.playerMeta = [...KIN_NEJIKI_STATE.playerParty];
+    MASMON_BATTLE_STATE.playerMeta = [...KNS().playerParty];
     MASMON_BATTLE_STATE.enemyMeta = [...opponentTeamRaw];
     MASMON_BATTLE_STATE.playerActiveIdx = 0;
     MASMON_BATTLE_STATE.enemyActiveIdx = 0;
@@ -1270,10 +1403,15 @@ function launchKinNejikiBattleEngine(opponentTeamRaw, floorText, isNejiki, aiLev
     MASMON_BATTLE_STATE.enemySubstituteHits = 0;
     MASMON_BATTLE_STATE.playerFieldStealthRock = false;
     MASMON_BATTLE_STATE.enemyFieldStealthRock = false;
+    // 新モード（地形変化モード）のみ、セット数に応じたバトル背景（地形）を指定する。
+    // 従来のガッツファクトリーは常に闘技場（ボーナス無し）のまま。
+    MASMON_BATTLE_STATE.forcedStageKey = (KIN_NEJIKI_ACTIVE_MODE === 'terrain')
+        ? getKinTerrainStageKeyForBattle(KNS().set)
+        : null;
     MASMON_BATTLE_STATE.kinNejiki = {
         inRun: true,
-        set: KIN_NEJIKI_STATE.set,
-        battleIndex: KIN_NEJIKI_STATE.battleInSet,
+        set: KNS().set,
+        battleIndex: KNS().battleInSet,
         isNejiki: !!isNejiki,
         aiLevel: aiLevel,
         aiPersonality: pickKinNejikiAiPersonality()
@@ -1291,30 +1429,43 @@ function kinNejikiHandleBattleEnd(isWin) {
         return;
     }
 
-    KIN_NEJIKI_STATE.totalWins++;
-    const defeatedTeam = [...MASMON_BATTLE_STATE.enemyMeta];
-    KIN_NEJIKI_STATE.pendingSwap = {
+    KNS().totalWins++;
+    // ボス専属モンスター（isBoss）は交換候補から除外する（倒しても自分のチームには迎え入れられない仕様）
+    const defeatedTeam = [...MASMON_BATTLE_STATE.enemyMeta].filter(m => m && !m.isBoss);
+    KNS().pendingSwap = {
         defeatedTeam,
         wasNejiki: !!(MASMON_BATTLE_STATE.kinNejiki && MASMON_BATTLE_STATE.kinNejiki.isNejiki)
     };
 
-    if (KIN_NEJIKI_STATE.totalWins >= 49) {
+    if (KNS().totalWins >= 49) {
         kinNejikiFinishRun(true);
         return;
     }
 
+    // 新モード（地形変化モード）は、1セット（7戦）を終えるごとに手持ちを全リセットし、
+    // 次セットの地形に応じた6体から再度3体を選び直す（通常の交換画面は経由しない）。
+    const isTerrainSetBoundary = (KIN_NEJIKI_ACTIVE_MODE === 'terrain' && KNS().battleInSet >= 7);
+
     // 「こちらが交換する前に相手のモンスターが決まる」仕様のため、次バトルの対戦相手は
     // 交換画面（手持ち変更）が開く前＝このタイミングで確定させる。
     // 除外対象：現在の手持ち（交換前のパーティ）＋今まさに倒した相手チーム、それぞれの種族と装備。
+    // ※ 新モードのセット境界（手持ち全リセット）の場合、現在の手持ちはこの後破棄されるため除外対象に含めない。
     const next = peekNextKinNejikiBattleMeta();
-    const exclusions = buildKinNejikiExclusions(KIN_NEJIKI_STATE.playerParty, defeatedTeam);
-    KIN_NEJIKI_STATE.nextBattlePrepared = buildKinNejikiBattlePackage(
+    const exclusions = buildKinNejikiExclusions(isTerrainSetBoundary ? [] : KNS().playerParty, defeatedTeam);
+    KNS().nextBattlePrepared = buildKinNejikiBattlePackage(
         next.set, next.battleInSet, next.isNejiki, exclusions.species, exclusions.equip
     );
 
+    if (isTerrainSetBoundary) {
+        advanceKinNejikiCounters(); // set/battleInSetを進め、pendingSwapをクリアする
+        KNS().playerParty = []; // 手持ちを全リセット
+        terrainStartNewSetSelection();
+        return;
+    }
+
     // 交換回数が7の倍数に達している場合、通常の3体候補（倒した相手チーム）とは別枠で、
     // 1セット先の強さのボーナスモンスターを交換画面の候補に追加する。
-    const bonusSlotCount = Math.floor((KIN_NEJIKI_STATE.exchangeCount || 0) / 7);
+    const bonusSlotCount = Math.floor((KNS().exchangeCount || 0) / 7);
     if (bonusSlotCount > 0) {
         // 「倒した相手チーム」だけでなく「現在の自陣パーティ」の種族も除外しないと、
         // 自陣に既にいるモンスターと同じ種族のボーナスモンスターが出てしまい、
@@ -1323,9 +1474,9 @@ function kinNejikiHandleBattleEnd(isWin) {
         bonusCandidates.forEach(m => {
             if (!m) return;
             m.isBonusSlot = true;
-            KIN_NEJIKI_STATE.pendingSwap.defeatedTeam.push(m);
+            KNS().pendingSwap.defeatedTeam.push(m);
         });
-        showToast(`⭐ 交換${KIN_NEJIKI_STATE.exchangeCount}回達成！交換候補に1セット先のボーナスモンスターが${bonusSlotCount}体追加されています！`);
+        showToast(`⭐ 交換${KNS().exchangeCount}回達成！交換候補に1セット先のボーナスモンスターが${bonusSlotCount}体追加されています！`);
     }
 
     renderKinNejikiSwapScreen();
@@ -1396,8 +1547,8 @@ function renderKinNejikiSwapLists() {
         });
     };
 
-    renderList(mineContainer, KIN_NEJIKI_STATE.playerParty, kinNejikiSwapMineIdx, (idx) => { kinNejikiSwapMineIdx = idx; renderKinNejikiSwapLists(); }, 'mine');
-    renderList(theirsContainer, KIN_NEJIKI_STATE.pendingSwap.defeatedTeam, kinNejikiSwapTheirsIdx, (idx) => { kinNejikiSwapTheirsIdx = idx; renderKinNejikiSwapLists(); }, 'theirs');
+    renderList(mineContainer, KNS().playerParty, kinNejikiSwapMineIdx, (idx) => { kinNejikiSwapMineIdx = idx; renderKinNejikiSwapLists(); }, 'mine');
+    renderList(theirsContainer, KNS().pendingSwap.defeatedTeam, kinNejikiSwapTheirsIdx, (idx) => { kinNejikiSwapTheirsIdx = idx; renderKinNejikiSwapLists(); }, 'theirs');
 
     const btn = document.getElementById('kinnejiki-confirm-swap-btn');
     if (btn) btn.disabled = (kinNejikiSwapMineIdx === null || kinNejikiSwapTheirsIdx === null);
@@ -1405,11 +1556,11 @@ function renderKinNejikiSwapLists() {
 
 async function confirmKinNejikiSwap() {
     if (kinNejikiSwapMineIdx === null || kinNejikiSwapTheirsIdx === null) return;
-    const theirs = KIN_NEJIKI_STATE.pendingSwap.defeatedTeam[kinNejikiSwapTheirsIdx];
+    const theirs = KNS().pendingSwap.defeatedTeam[kinNejikiSwapTheirsIdx];
     const cloned = JSON.parse(JSON.stringify(theirs));
     cloned.stats.life = cloned.stats.maxLife; // 交換直後は全回復した状態で仲間になる
     cloned.ownerName = 'あなた';
-    KIN_NEJIKI_STATE.playerParty[kinNejikiSwapMineIdx] = cloned;
+    KNS().playerParty[kinNejikiSwapMineIdx] = cloned;
     trackKinNejikiMonsterUsage(cloned.speciesId);
     incrementKinNejikiExchangeCount(); // 実際に交換した場合のみ「交換1回」としてカウントする（スキップ時はカウントしない）
     // 新しく仲間になったモンスターも、絆ポイントが貯まっていればここでステータスを底上げする
@@ -1451,10 +1602,10 @@ function renderKinNejikiOrderStep() {
     // セットが進むほど得られる情報を減らし、5セット目以降は偵察情報そのものを無くす。
     // （次に迎えるバトルが属するセット番号。7戦目クリア直後はまだset自体が繰り上がっていないため、
     //   battleInSetが7に達している場合はここで+1して補正する）
-    const nextSetNumber = (KIN_NEJIKI_STATE.battleInSet >= 7) ? KIN_NEJIKI_STATE.set + 1 : KIN_NEJIKI_STATE.set;
+    const nextSetNumber = (KNS().battleInSet >= 7) ? KNS().set + 1 : KNS().set;
     hintContainer.innerHTML = '';
-    const nextLead = (KIN_NEJIKI_STATE.nextBattlePrepared && KIN_NEJIKI_STATE.nextBattlePrepared.opponentTeam)
-        ? KIN_NEJIKI_STATE.nextBattlePrepared.opponentTeam[0]
+    const nextLead = (KNS().nextBattlePrepared && KNS().nextBattlePrepared.opponentTeam)
+        ? KNS().nextBattlePrepared.opponentTeam[0]
         : null;
 
     if (!nextLead || nextSetNumber >= 5) {
@@ -1496,7 +1647,7 @@ function renderKinNejikiOrderStep() {
     // このステップはモンスターが3体しか並ばないため、カードを大きめに取り、
     // ステータスに加えて技（オーラ込み）・装備も分かるようにしている。
     orderContainer.innerHTML = '';
-    KIN_NEJIKI_STATE.playerParty.forEach((m, idx) => {
+    KNS().playerParty.forEach((m, idx) => {
         if (!m) return;
         const isLeader = idx === 0;
         const card = document.createElement('div');
@@ -1534,7 +1685,7 @@ function renderKinNejikiOrderStep() {
 // --- タップされたモンスターを先頭（インデックス0＝次のバトルで最初に繰り出す位置）に入れ替える ---
 function swapKinNejikiPartyToLead(idx) {
     if (idx === 0) return;
-    const party = KIN_NEJIKI_STATE.playerParty;
+    const party = KNS().playerParty;
     const tmp = party[0];
     party[0] = party[idx];
     party[idx] = tmp;
@@ -1560,14 +1711,14 @@ function showKinNejikiSwapNextStep() {
 // 「次のバトルへ進む」時だけでなく、「セーブして終了する」時にもこの勝利分を必ず反映させる
 // （反映せずにセーブすると、再開時に直前に勝ったバトルをもう一度戦うことになってしまうため）
 function advanceKinNejikiCounters() {
-    KIN_NEJIKI_STATE.playerParty.forEach(m => { m.stats.life = m.stats.maxLife; });
-    KIN_NEJIKI_STATE.pendingSwap = null;
+    KNS().playerParty.forEach(m => { m.stats.life = m.stats.maxLife; });
+    KNS().pendingSwap = null;
 
-    if (KIN_NEJIKI_STATE.battleInSet >= 7) {
-        KIN_NEJIKI_STATE.battleInSet = 1;
-        KIN_NEJIKI_STATE.set++;
+    if (KNS().battleInSet >= 7) {
+        KNS().battleInSet = 1;
+        KNS().set++;
     } else {
-        KIN_NEJIKI_STATE.battleInSet++;
+        KNS().battleInSet++;
     }
 }
 
@@ -1580,10 +1731,10 @@ function proceedAfterKinNejikiSwap() {
 // ラン終了・ランキング
 // =====================================================
 async function kinNejikiFinishRun(cleared) {
-    KIN_NEJIKI_STATE.active = false;
-    const wasDebugRun = KIN_NEJIKI_STATE.isDebugRun;
-    KIN_NEJIKI_STATE.isDebugRun = false; // ランが終わったのでフラグは必ずリセットする
-    const finalWins = KIN_NEJIKI_STATE.totalWins;
+    KNS().active = false;
+    const wasDebugRun = KNS().isDebugRun;
+    KNS().isDebugRun = false; // ランが終わったのでフラグは必ずリセットする
+    const finalWins = KNS().totalWins;
     if (wasDebugRun) {
         // デバッグから開始したランは、本編の一時セーブ（他に進行中の本番のランがあるかもしれない）を
         // 誤って消したり、ランキングへ書き込んだりしないよう、ここで完全に処理を分ける。
@@ -1600,8 +1751,10 @@ async function kinNejikiFinishRun(cleared) {
     // ランキングへの書き込みが完了しないまま消えてしまう（特に早期敗退時に起きやすい）。
     // そのため画面遷移の前に保存の完了を待つ。
     await saveKinNejikiRanking(finalWins, cleared);
-    if (cleared && typeof checkEndlessModeUnlockAndUpdateHomeButton === 'function') {
+    if (KIN_NEJIKI_ACTIVE_MODE === 'classic' && cleared && typeof checkEndlessModeUnlockAndUpdateHomeButton === 'function') {
         // 初クリアの場合、タイトルに戻った時にすぐ「エンドレスモード」ボタンが出るよう即座に再判定する
+        // （エンドレスモードの解放条件は従来のガッツファクトリーのクリア記録のみを見るため、
+        //   新モード「〜辺境行〜」のクリアはこの判定に影響させない）
         checkEndlessModeUnlockAndUpdateHomeButton();
     }
     renderKinNejikiResultScreen(finalWins, cleared);
@@ -1627,12 +1780,16 @@ async function kinNejikiFinishRun(cleared) {
 // （例：自己ベスト23勝の後にアプリを閉じ、続けて友人が7勝で終えたところ、
 // 23勝の記録が消えて7勝だけが残ってしまった、という報告があった）。
 // transaction()はサーバー側の最新値を基準に再試行してくれるため、この種の競合が起きない。
-async function saveKinNejikiRanking(wins, cleared) {
+async function saveKinNejikiRanking(wins, cleared, modeOverride) {
     if (typeof initFirebase !== 'function' || !initFirebase()) return;
+    const mode = modeOverride || KIN_NEJIKI_ACTIVE_MODE;
+    // 新モード「ガッツファクトリー 〜辺境行〜」は、従来のガッツファクトリーとは
+    // 完全に別のランキング（Firebaseパス）に記録する。
+    const rankingPath = (mode === 'terrain') ? 'kinnejiki_terrain_ranking' : 'kinnejiki_ranking';
     const pid = getMyPlayerId();
     const name = (typeof GAME_STATE !== 'undefined' && GAME_STATE.playerName) ? GAME_STATE.playerName : 'ブリーダー';
     try {
-        const ref = firebaseDb.ref(`kinnejiki_ranking/${pid}`);
+        const ref = firebaseDb.ref(`${rankingPath}/${pid}`);
         await ref.transaction(current => {
             const best = (current && current.bestWins) || 0;
             const totalRuns = ((current && current.totalRuns) || 0) + 1; // このランで挑戦1回分を必ずカウントする
@@ -1707,13 +1864,14 @@ async function fetchMyKinNejikiMonsterUsageTop(limit = 5) {
 
 async function fetchKinNejikiRanking(limit = 100) {
     if (typeof initFirebase !== 'function' || !initFirebase()) return [];
+    const rankingPath = (KIN_NEJIKI_ACTIVE_MODE === 'terrain') ? 'kinnejiki_terrain_ranking' : 'kinnejiki_ranking';
     try {
         // orderByChild('bestWins').limitToLast(limit) だと、bestWinsが存在しない/型が
         // 揃っていないデータが混ざった場合に正しく並び替えられず、結果的にほぼ1件しか
         // 表示されない不具合が起きていた。
-        // そのため、kinnejiki_ranking配下のデータを一旦すべて取得し、
+        // そのため、対象パス配下のデータを一旦すべて取得し、
         // クライアント側で確実にソート・件数制限をかける方式に変更する。
-        const snap = await firebaseDb.ref('kinnejiki_ranking').once('value');
+        const snap = await firebaseDb.ref(rankingPath).once('value');
         const list = [];
         snap.forEach(child => {
             list.push({ id: child.key, ...child.val() });
@@ -1740,7 +1898,7 @@ function renderKinNejikiResultScreen(wins, cleared) {
 
     if (cleared) {
         badge.textContent = '👑';
-        title.textContent = 'ガッツファクトリー制覇！';
+        title.textContent = `${kinNejikiModeDisplayName()} 制覇！`;
         title.className = 'text-2xl font-black text-amber-400 pixel-font';
     } else {
         badge.textContent = '🏳️';
@@ -1758,6 +1916,8 @@ function renderKinNejikiResultScreen(wins, cleared) {
 
 async function showKinNejikiRankingScreen() {
     changeScreen('screen-kinnejiki-ranking');
+    const titleEl = document.getElementById('kinnejiki-ranking-title');
+    if (titleEl) titleEl.textContent = `${kinNejikiModeDisplayName()} 通算勝利数ランキング`;
     const listEl = document.getElementById('kinnejiki-ranking-list');
     if (!listEl) return;
     listEl.innerHTML = '<div class="text-center text-gray-500 text-xs py-8">読み込み中...</div>';

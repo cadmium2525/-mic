@@ -330,9 +330,10 @@ function startMasmonBattleCommon(floorText) {
     // 「攻撃終了」「防御して終了」ボタンは非表示にする（防御は技一覧に統合）
     document.getElementById('battle-endturn-controls').classList.add('hidden');
 
-    // バトルステージ（背景・オーラボーナス）。デバッグバトルではDEBUG_STATEで指定した
-    // ステージを、通常バトルでは必ず「闘技場」（ボーナス無し）を設定する。
-    setBattleStage(MASMON_BATTLE_STATE.isDebugBattle ? MASMON_BATTLE_STATE.debugStage : 'arena');
+    // バトルステージ（背景・オーラボーナス）。デバッグバトルではDEBUG_STATEで指定したステージを、
+    // ガッツファクトリー「地形変化モード」ではセットに応じたステージ（forcedStageKey）を、
+    // それ以外の通常バトルでは必ず「闘技場」（ボーナス無し）を設定する。
+    setBattleStage(MASMON_BATTLE_STATE.isDebugBattle ? MASMON_BATTLE_STATE.debugStage : (MASMON_BATTLE_STATE.forcedStageKey || 'arena'));
     const stageBadge = document.getElementById('battle-terrain-badge');
     if (stageBadge) {
         const stage = BATTLE_STAGES[CURRENT_BATTLE_STAGE_KEY];

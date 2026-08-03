@@ -630,6 +630,10 @@ function startDebugKinNejikiRunFromBattle() {
     const set = Math.ceil(totalBattleNumber / 7);
     const battleInSet = ((totalBattleNumber - 1) % 7) + 1;
 
+    // このデバッグ機能は従来のガッツファクトリー（classic）専用。地形変化モード（terrain）の
+    // 状態を誤っていじってしまわないよう、KNS()が参照するアクティブモードを明示的にclassicへ固定する。
+    KIN_NEJIKI_ACTIVE_MODE = 'classic';
+
     KIN_NEJIKI_STATE.active = true;
     KIN_NEJIKI_STATE.isDebugRun = true; // ランキング保存・一時セーブ上書き・使用率トラッキングを無効化するフラグ
     KIN_NEJIKI_STATE.set = set;

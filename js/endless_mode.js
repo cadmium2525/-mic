@@ -764,6 +764,8 @@ function launchEndlessBattleEngine(playerParty, opponentTeamRaw, floorText, isBo
     MASMON_BATTLE_STATE.enemySubstituteHits = 0;
     MASMON_BATTLE_STATE.playerFieldStealthRock = false;
     MASMON_BATTLE_STATE.enemyFieldStealthRock = false;
+    // エンドレスモードは地形変化モードの対象外のため、常に闘技場のままにする
+    MASMON_BATTLE_STATE.forcedStageKey = null;
     // BGM判定専用（audio.jsのresolveBattleTrackが参照）：ボス戦かどうか・セット3型／セット7型のいずれかで
     // 通常ボス曲('boss')か最終決戦曲('finalboss')かが決まる。inRunは必ずfalseにし、
     // kinNejikiHandleBattleEnd（本編ガッツファクトリー用の勝敗処理）に誤って処理が渡らないようにする。
