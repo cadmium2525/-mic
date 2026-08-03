@@ -10,7 +10,73 @@
 // =====================================================
 
 // --- バージョン・最終更新日（タイトル画面左下に小さく表示。更新のたびにここを書き換える） ---
-const GAME_VERSION_INFO = { version: 'ver1.0.4', updatedAt: '2026-07-31' };
+const GAME_VERSION_INFO = { version: 'ver1.0.5', updatedAt: '2026-08-04' };
+
+// --- 更新履歴（お知らせ）。新しい項目を配列の先頭に追加していく。
+//     idは既読管理に使うキー。配列の先頭（＝最新）のidと既読済みidを比較し、
+//     未読の新しいお知らせがあればホーム画面の📜アイコンに赤丸通知を出す。 ---
+const GAME_UPDATE_NOTICES = [
+    {
+        id: 'terrain_hard_2026_08_04',
+        date: '2026-08-04',
+        title: 'ガッツファクトリー 〜辺境行〜 HARD 実装',
+        body: 'タイトル画面「ガッツファクトリーに挑戦！」上部の矢印で切り替えられる新モード「〜辺境行〜HARD」を追加しました。敵AIが最初から最強で登場するほか、各セットの7戦目には次のセットに登場するモンスターが一足先に姿を見せます。'
+    },
+    {
+        id: 'terrain_2026_08_04',
+        date: '2026-08-04',
+        title: 'ガッツファクトリー 〜辺境行〜 実装',
+        body: 'セットごとに地形（火山・森林・海岸・砂漠など）が変化し、1セットごとに手持ちを選び直す新モード「〜辺境行〜」を追加しました。タイトル画面「ガッツファクトリーに挑戦！」上部の矢印から切り替えられます。'
+    }
+];
+
+// --- 既読済みの最新お知らせidを保存するLocalStorageキー ---
+const GAME_UPDATE_NOTICE_READ_KEY = 'mfload_update_notice_read_id_v1';
+
+// --- 未読の新しいお知らせがあるかどうかを判定する ---
+function hasUnreadUpdateNotice() {
+    if (!GAME_UPDATE_NOTICES.length) return false;
+    try {
+        const readId = localStorage.getItem(GAME_UPDATE_NOTICE_READ_KEY);
+        return readId !== GAME_UPDATE_NOTICES[0].id;
+    } catch (e) {
+        return false;
+    }
+}
+
+// --- ホーム画面の📜アイコンの赤丸通知表示を、既読状態に合わせて更新する ---
+function refreshUpdateNoticeBadge() {
+    const badge = document.getElementById('home-notice-badge');
+    if (badge) badge.classList.toggle('hidden', !hasUnreadUpdateNotice());
+}
+
+// --- お知らせモーダルを開く：一覧を描画し、既読状態にして赤丸通知を消す ---
+function openUpdateNoticeModal() {
+    const listEl = document.getElementById('update-notice-list');
+    if (listEl) {
+        listEl.innerHTML = GAME_UPDATE_NOTICES.map(n => `
+            <div class="bg-[#1a120b] border border-amber-800 rounded-lg p-2.5 space-y-1">
+                <div class="flex items-center justify-between">
+                    <p class="text-xs font-bold text-amber-300">${n.title}</p>
+                    <span class="text-[9px] text-gray-500 flex-shrink-0 ml-2">${n.date.replace(/-/g, '/')}</span>
+                </div>
+                <p class="text-[10px] text-gray-300 leading-relaxed">${n.body}</p>
+            </div>
+        `).join('');
+    }
+    const modal = document.getElementById('update-notice-modal');
+    if (modal) modal.classList.remove('hidden');
+
+    if (GAME_UPDATE_NOTICES.length) {
+        try { localStorage.setItem(GAME_UPDATE_NOTICE_READ_KEY, GAME_UPDATE_NOTICES[0].id); } catch (e) {}
+    }
+    refreshUpdateNoticeBadge();
+}
+
+function closeUpdateNoticeModal() {
+    const modal = document.getElementById('update-notice-modal');
+    if (modal) modal.classList.add('hidden');
+}
 
 // --- ブリーダー名の永続化（LocalStorage） ---
 function loadStoredPlayerName() {
@@ -252,6 +318,9 @@ window.addEventListener('load', () => {
     if (typeof initFirebase === 'function') initFirebase();
     if (typeof checkEndlessModeUnlockAndUpdateHomeButton === 'function') checkEndlessModeUnlockAndUpdateHomeButton();
     if (typeof refreshKinNejikiTerrainNewBadge === 'function') refreshKinNejikiTerrainNewBadge();
+    const homeNoticeBtn = document.getElementById('home-notice-btn');
+    if (homeNoticeBtn) homeNoticeBtn.classList.toggle('hidden', GAME_STATE.currentScreen !== 'screen-title');
+    if (typeof refreshUpdateNoticeBadge === 'function') refreshUpdateNoticeBadge();
     const versionEl = document.getElementById('title-version-display');
     if (versionEl && typeof GAME_VERSION_INFO !== 'undefined') {
         const dateLabel = (GAME_VERSION_INFO.updatedAt || '').replace(/-/g, '/');
@@ -514,6 +583,10 @@ function changeScreen(screenId) {
     });
     document.getElementById(screenId).classList.add('active');
     GAME_STATE.currentScreen = screenId;
+
+    // お知らせ（📜）ボタンはホーム画面（screen-title）でのみ表示する
+    const noticeBtn = document.getElementById('home-notice-btn');
+    if (noticeBtn) noticeBtn.classList.toggle('hidden', screenId !== 'screen-title');
 }
 
 // 技詳細モーダルを閉じる（内容の描画は openMasmonSkillModal / openRealtimeSkillModal 側が担当する）

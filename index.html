@@ -130,11 +130,23 @@
             })();
         </script>
 
-        <!-- 設定ボタン（全画面共通・常時表示） -->
-        <button onclick="openAudioSettingsModal()" aria-label="設定"
-            class="absolute top-2 right-2 z-40 w-8 h-8 flex items-center justify-center bg-[#1a120b]/80 hover:bg-[#2a1b15] border border-amber-800 rounded-full shadow-lg text-amber-300 text-sm transition-all active:scale-90">
-            <i class="fa-solid fa-gear"></i>
-        </button>
+        <!-- 設定ボタン（全画面共通・常時表示）＋ お知らせボタン（ホーム画面限定表示、changeScreen()が表示切替） -->
+        <div class="absolute top-2 right-2 z-40 flex items-center space-x-1.5">
+            <div class="relative">
+                <button id="home-notice-btn" onclick="openUpdateNoticeModal()" aria-label="お知らせ"
+                    class="hidden w-8 h-8 flex items-center justify-center bg-[#1a120b]/80 hover:bg-[#2a1b15] border border-amber-800 rounded-full shadow-lg text-amber-300 text-sm transition-all active:scale-90">
+                    <span>📜</span>
+                </button>
+                <span id="home-notice-badge" class="hidden absolute -top-1 -right-1 flex h-3 w-3 pointer-events-none">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-red-600 border border-red-200"></span>
+                </span>
+            </div>
+            <button onclick="openAudioSettingsModal()" aria-label="設定"
+                class="w-8 h-8 flex items-center justify-center bg-[#1a120b]/80 hover:bg-[#2a1b15] border border-amber-800 rounded-full shadow-lg text-amber-300 text-sm transition-all active:scale-90">
+                <i class="fa-solid fa-gear"></i>
+            </button>
+        </div>
 
         <!-- 🛠️ デバッグラン終了ボタン（〇戦目から開始した通しランの最中、どの画面にいても常時表示。
              KIN_NEJIKI_STATE.isDebugRunがtrueの間だけ表示され、endDebugKinNejikiRun()で強制終了できる） -->
@@ -1644,6 +1656,18 @@
     </div>
 
     <!-- サウンド設定モーダル（BGM/SEの音量：0〜100の数値でそれぞれ指定） -->
+    <!-- お知らせ（更新履歴）モーダル -->
+    <div id="update-notice-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeUpdateNoticeModal()">
+        <div class="bg-[#2a1b15] w-full max-w-xs p-4 rounded-2xl border-2 border-amber-600 space-y-3 shadow-2xl max-h-[80vh] flex flex-col" onclick="event.stopPropagation()">
+            <h4 class="text-base font-black text-white pixel-font flex items-center space-x-2 border-b border-amber-800 pb-2 flex-shrink-0">
+                <span>📜</span>
+                <span>お知らせ</span>
+            </h4>
+            <div id="update-notice-list" class="space-y-2 overflow-y-auto flex-1 min-h-0"></div>
+            <button onclick="closeUpdateNoticeModal()" class="fantasy-btn w-full py-2 bg-[#1a120b] hover:bg-[#3a2418] text-gray-300 font-bold rounded-lg text-xs shadow border border-amber-800 transition-all active:scale-95 flex-shrink-0">閉じる</button>
+        </div>
+    </div>
+
     <div id="audio-settings-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeAudioSettingsModal()">
         <div class="bg-[#2a1b15] w-full max-w-xs p-4 rounded-2xl border-2 border-amber-600 space-y-3 shadow-2xl" onclick="event.stopPropagation()">
             <h4 class="text-base font-black text-white pixel-font flex items-center space-x-2 border-b border-amber-800 pb-2">
