@@ -54,29 +54,63 @@ const KIN_NEJIKI_TERRAIN_STATE = {
     isDebugRun: false
 };
 
+// =====================================================
+// 新モード「ガッツファクトリー 〜辺境行〜」のHARD版専用の状態。
+// システム面（地形変化・1セットごとの手持ち全リセット等）は通常の〜辺境行〜と全く同じだが、
+// 敵AIが最初から最強（AIレベル4）で登場し、各セットの7戦目は次のセットで出てくる
+// モンスターのステータス・型を相手が先出ししてくる。
+// KIN_NEJIKI_STATE／KIN_NEJIKI_TERRAIN_STATEとは完全に独立したオブジェクトとして持つことで、
+// 中断データ・ランキング・進行状況が他モードと混ざらないようにする。
+// =====================================================
+const KIN_NEJIKI_TERRAIN_HARD_STATE = {
+    active: false,
+    set: 1,
+    battleInSet: 1,
+    totalWins: 0,
+    playerParty: [],
+    offer: [],
+    selectedIdx: [],
+    pendingSwap: null,
+    nextBattlePrepared: null,
+    taskKillCount: 0,
+    exchangeCount: 0,
+    isDebugRun: false
+};
+
 // --- 現在アクティブなモード（screen-kinnejiki-titleのカルーセルで選択中のモード、
-//     および現在進行中のランのモード）。'classic'＝従来のガッツファクトリー／'terrain'＝新モード。 ---
+//     および現在進行中のランのモード）。
+//     'classic'＝従来のガッツファクトリー／'terrain'＝〜辺境行〜／'terrain_hard'＝〜辺境行〜HARD。 ---
 let KIN_NEJIKI_ACTIVE_MODE = 'classic';
+
+// --- タイトル画面カルーセルでのモード巡回順 ---
+const KIN_NEJIKI_MODE_ORDER = ['classic', 'terrain', 'terrain_hard'];
 
 // --- 現在のモードに対応する状態オブジェクトを返す（Kin Nejiki State の略）。---
 // kinnejiki.js内の大半のロジック（生成・描画・勝敗処理等）はこの関数経由で状態を参照することで、
-// 従来のガッツファクトリーと新モードの両方に共通のコードで対応している。
+// 3つのモードすべてに共通のコードで対応している。
 function KNS() {
-    return KIN_NEJIKI_ACTIVE_MODE === 'terrain' ? KIN_NEJIKI_TERRAIN_STATE : KIN_NEJIKI_STATE;
+    if (KIN_NEJIKI_ACTIVE_MODE === 'terrain') return KIN_NEJIKI_TERRAIN_STATE;
+    if (KIN_NEJIKI_ACTIVE_MODE === 'terrain_hard') return KIN_NEJIKI_TERRAIN_HARD_STATE;
+    return KIN_NEJIKI_STATE;
 }
 
-// --- 新モードの名称（画面表示・トースト・ランキング見出し等で共通利用） ---
+// --- 各モードの名称（画面表示・トースト・ランキング見出し等で共通利用） ---
 const KIN_NEJIKI_TERRAIN_MODE_NAME = 'ガッツファクトリー 〜辺境行〜';
+const KIN_NEJIKI_TERRAIN_HARD_MODE_NAME = 'ガッツファクトリー 〜辺境行〜 HARD';
 
 // --- 現在アクティブなモードの表示名を返す（トースト等、プレーンテキスト表示用） ---
 function kinNejikiModeDisplayName() {
-    return KIN_NEJIKI_ACTIVE_MODE === 'terrain' ? KIN_NEJIKI_TERRAIN_MODE_NAME : 'ガッツファクトリー';
+    if (KIN_NEJIKI_ACTIVE_MODE === 'terrain') return KIN_NEJIKI_TERRAIN_MODE_NAME;
+    if (KIN_NEJIKI_ACTIVE_MODE === 'terrain_hard') return KIN_NEJIKI_TERRAIN_HARD_MODE_NAME;
+    return 'ガッツファクトリー';
 }
 
 // --- 現在アクティブなモードの表示名を返す（見出し等、HTML表示用。
-//     「ガッツファクトリー」と「〜辺境行〜」の間で改行する） ---
+//     「ガッツファクトリー」と「〜辺境行〜（HARD）」の間で改行する） ---
 function kinNejikiModeDisplayNameHtml() {
-    return KIN_NEJIKI_ACTIVE_MODE === 'terrain' ? 'ガッツファクトリー<br>〜辺境行〜' : 'ガッツファクトリー';
+    if (KIN_NEJIKI_ACTIVE_MODE === 'terrain') return 'ガッツファクトリー<br>〜辺境行〜';
+    if (KIN_NEJIKI_ACTIVE_MODE === 'terrain_hard') return 'ガッツファクトリー<br>〜辺境行〜 HARD';
+    return 'ガッツファクトリー';
 }
 
 // =====================================================
@@ -154,7 +188,9 @@ function getKinNejikiBreederName(totalBattleNumber) {
 //   互いに競合しないようにしている。
 // =====================================================
 function kinNejikiSuspendKeyForMode(mode) {
-    return mode === 'terrain' ? 'mfload_kinnejiki_terrain_suspend_v1' : 'mfload_kinnejiki_suspend_v1';
+    if (mode === 'terrain') return 'mfload_kinnejiki_terrain_suspend_v1';
+    if (mode === 'terrain_hard') return 'mfload_kinnejiki_terrain_hard_suspend_v1';
+    return 'mfload_kinnejiki_suspend_v1';
 }
 function kinNejikiSuspendKey() {
     return kinNejikiSuspendKeyForMode(KIN_NEJIKI_ACTIVE_MODE);
@@ -169,7 +205,9 @@ function kinNejikiSuspendKey() {
 //   （負けそうになったらタスクキルして再開する、というやり直しを防ぐための仕様）
 // =====================================================
 function kinNejikiBattleFlagKeyForMode(mode) {
-    return mode === 'terrain' ? 'mfload_kinnejiki_terrain_battle_flag_v1' : 'mfload_kinnejiki_battle_flag_v1';
+    if (mode === 'terrain') return 'mfload_kinnejiki_terrain_battle_flag_v1';
+    if (mode === 'terrain_hard') return 'mfload_kinnejiki_terrain_hard_battle_flag_v1';
+    return 'mfload_kinnejiki_battle_flag_v1';
 }
 function kinNejikiBattleFlagKey() {
     return kinNejikiBattleFlagKeyForMode(KIN_NEJIKI_ACTIVE_MODE);
@@ -194,7 +232,7 @@ function clearKinNejikiBattleFlag() {
 function checkKinNejikiTaskKillOnLoadForMode(mode) {
     const battleFlagKey = kinNejikiBattleFlagKeyForMode(mode);
     const suspendKey = kinNejikiSuspendKeyForMode(mode);
-    const modeLabel = (mode === 'terrain') ? KIN_NEJIKI_TERRAIN_MODE_NAME : 'ガッツファクトリー';
+    const modeLabel = (mode === 'terrain') ? KIN_NEJIKI_TERRAIN_MODE_NAME : (mode === 'terrain_hard') ? KIN_NEJIKI_TERRAIN_HARD_MODE_NAME : 'ガッツファクトリー';
 
     let battleWasInProgress = false;
     try {
@@ -246,6 +284,7 @@ function checkKinNejikiTaskKillOnLoadForMode(mode) {
 function checkKinNejikiTaskKillOnLoad() {
     checkKinNejikiTaskKillOnLoadForMode('classic');
     checkKinNejikiTaskKillOnLoadForMode('terrain');
+    checkKinNejikiTaskKillOnLoadForMode('terrain_hard');
 }
 
 window.addEventListener('load', checkKinNejikiTaskKillOnLoad);
@@ -494,9 +533,13 @@ function generateKinNejikiOffer(setNumber, excludeSpeciesIds, excludeEquipIds, c
 
 // --- 対戦相手チーム（3体）を生成。ボス戦の場合は専用ボス＋帯同2体を返す ---
 // excludeSpeciesIds / excludeEquipIds: 「同じモンスター・同じ装備同士が対面しない」仕様のための除外リスト（省略可）
-function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, excludeEquipIds, totalBattleNumber) {
+// statSetOverride: 指定時、帯同モンスター／通常対戦相手チームの「ステータス・型の強さ」計算にこの値をsetNumberの
+//                  代わりに使う（ボスの選出（bossKey）自体は実際のsetNumberのまま変えない）。
+//                  〜辺境行〜HARDモードの各セット7戦目で、次セットのモンスター相当を先出しさせるための仕組み（省略可）。
+function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, excludeEquipIds, totalBattleNumber, statSetOverride) {
     const excludeSpecies = excludeSpeciesIds || [];
     const excludeEquip = excludeEquipIds || [];
+    const teamStatSet = statSetOverride || setNumber;
 
     if (isNejiki) {
         // set3は「コルトのゴビ」「コルトのポリトカ」のどちらか一方が50%の確率で選ばれて登場する。
@@ -539,14 +582,14 @@ function generateKinNejikiOpponentTeam(setNumber, isNejiki, excludeSpeciesIds, e
         // ※以前は常にセット7相当（最大ステータス・特殊装備・全型解放）で生成してしまっていたため、
         //   セット3のボス戦でも帯同2体だけ最終盤仕様の強さになってしまっていた。
         //   実際のsetNumberを渡すことで、そのセットにふさわしい強さに揃える（セット7はこれまで通り）。
-        const escorts = generateKinNejikiOffer(setNumber, excludeSpecies, excludeEquip, 2, true);
+        const escorts = generateKinNejikiOffer(teamStatSet, excludeSpecies, excludeEquip, 2, true);
         escorts.forEach(m => { if (m) m.ownerName = bossDef.title; });
         return [bossUnit, ...escorts.filter(Boolean)];
     }
 
     const breederName = getKinNejikiBreederName(totalBattleNumber || 1);
     // guaranteeEquip=true：通常の対戦相手チームも必ず何かを装備させる
-    const team = generateKinNejikiOffer(setNumber, excludeSpecies, excludeEquip, 3, true);
+    const team = generateKinNejikiOffer(teamStatSet, excludeSpecies, excludeEquip, 3, true);
     team.forEach(m => { if (m) m.ownerName = breederName; });
     return team;
 }
@@ -971,8 +1014,12 @@ function startKinNejikiEntry() {
 }
 
 // --- タイトル画面（screen-kinnejiki-title）の左右矢印で選択中のモードを切り替える ---
-function cycleKinNejikiTitleMode() {
-    KIN_NEJIKI_ACTIVE_MODE = (KIN_NEJIKI_ACTIVE_MODE === 'terrain') ? 'classic' : 'terrain';
+// direction: 1＝次のモードへ（右矢印）／-1＝前のモードへ（左矢印）。省略時は1。
+function cycleKinNejikiTitleMode(direction) {
+    const dir = direction || 1;
+    const idx = KIN_NEJIKI_MODE_ORDER.indexOf(KIN_NEJIKI_ACTIVE_MODE);
+    const nextIdx = ((idx < 0 ? 0 : idx) + dir + KIN_NEJIKI_MODE_ORDER.length) % KIN_NEJIKI_MODE_ORDER.length;
+    KIN_NEJIKI_ACTIVE_MODE = KIN_NEJIKI_MODE_ORDER[nextIdx];
     renderKinNejikiTitleScreen();
 }
 
@@ -985,13 +1032,16 @@ function renderKinNejikiTitleScreen() {
 
     const rulesEl = document.getElementById('kinnejiki-title-terrain-rule');
     if (rulesEl) {
-        if (KIN_NEJIKI_ACTIVE_MODE === 'terrain') {
+        if (KIN_NEJIKI_ACTIVE_MODE === 'terrain' || KIN_NEJIKI_ACTIVE_MODE === 'terrain_hard') {
             rulesEl.classList.remove('hidden');
             rulesEl.innerHTML =
                 '<span class="text-amber-400 font-bold">■ このモード限定ルール</span><br>' +
                 '🗺️ セットごとに地形が変化：<br>' +
                 '1セット目 通常／2 火山／3 森林／4 海岸／5 砂漠／6・7 毎試合ランダム<br>' +
-                '🔁 1セットごとに手持ちが全リセット！ 6体の中から3体を選び直す（この選出も交換1回分としてカウント）';
+                '🔁 1セットごとに手持ちが全リセット！ 6体の中から3体を選び直す（この選出も交換1回分としてカウント）' +
+                (KIN_NEJIKI_ACTIVE_MODE === 'terrain_hard'
+                    ? '<br><span class="text-red-400 font-bold">🔥 HARD限定：</span>敵AIは最初から最強。各セットの7戦目は、次のセットに出てくるモンスターのステータス・型を相手が先出ししてくる！'
+                    : '');
         } else {
             rulesEl.classList.add('hidden');
             rulesEl.innerHTML = '';
@@ -1259,9 +1309,14 @@ function buildKinNejikiExclusions(ownParty, opponentParty) {
 
 // --- 指定した set/battleInSet/isNejiki に対応するバトル情報一式（相手チーム・表示ラベル等）を組み立てる ---
 function buildKinNejikiBattlePackage(set, battleInSet, isNejiki, excludeSpecies, excludeEquip) {
-    const aiLevel = kinNejikiAiLevelForSet(set);
+    const isTerrainHard = KIN_NEJIKI_ACTIVE_MODE === 'terrain_hard';
+    // HARDモードは敵AIが最初から最強（レベル4）固定。それ以外は従来通りセット数に応じて段階的に強くなる。
+    const aiLevel = isTerrainHard ? 4 : kinNejikiAiLevelForSet(set);
     const totalBattleNumber = (set - 1) * 7 + battleInSet;
-    const opponentTeam = generateKinNejikiOpponentTeam(set, isNejiki, excludeSpecies, excludeEquip, totalBattleNumber);
+    // HARDモードの各セット7戦目のみ、次セット相当のステータス・型を相手に先出しさせる
+    // （「次セットの強さ」を予告的に体験させる、HARD専用の仕様）。
+    const statSetOverride = (isTerrainHard && battleInSet === 7) ? (set + 1) : null;
+    const opponentTeam = generateKinNejikiOpponentTeam(set, isNejiki, excludeSpecies, excludeEquip, totalBattleNumber, statSetOverride);
     const floorLabel = isNejiki
         ? `⚔️ 第${set}セット・ボス戦（通算${totalBattleNumber}戦目）`
         : `⚔️ 第${set}セット ${battleInSet}戦目（通算${totalBattleNumber}戦目）`;
@@ -1409,9 +1464,9 @@ function launchKinNejikiBattleEngine(opponentTeamRaw, floorText, isNejiki, aiLev
     MASMON_BATTLE_STATE.enemySubstituteHits = 0;
     MASMON_BATTLE_STATE.playerFieldStealthRock = false;
     MASMON_BATTLE_STATE.enemyFieldStealthRock = false;
-    // 新モード（地形変化モード）のみ、セット数に応じたバトル背景（地形）を指定する。
+    // 新モード（地形変化モード／そのHARD版）のみ、セット数に応じたバトル背景（地形）を指定する。
     // 従来のガッツファクトリーは常に闘技場（ボーナス無し）のまま。
-    MASMON_BATTLE_STATE.forcedStageKey = (KIN_NEJIKI_ACTIVE_MODE === 'terrain')
+    MASMON_BATTLE_STATE.forcedStageKey = (KIN_NEJIKI_ACTIVE_MODE !== 'classic')
         ? getKinTerrainStageKeyForBattle(KNS().set)
         : null;
     MASMON_BATTLE_STATE.kinNejiki = {
@@ -1448,9 +1503,9 @@ function kinNejikiHandleBattleEnd(isWin) {
         return;
     }
 
-    // 新モード（地形変化モード）は、1セット（7戦）を終えるごとに手持ちを全リセットし、
+    // 新モード（地形変化モード／そのHARD版）は、1セット（7戦）を終えるごとに手持ちを全リセットし、
     // 次セットの地形に応じた6体から再度3体を選び直す（通常の交換画面は経由しない）。
-    const isTerrainSetBoundary = (KIN_NEJIKI_ACTIVE_MODE === 'terrain' && KNS().battleInSet >= 7);
+    const isTerrainSetBoundary = (KIN_NEJIKI_ACTIVE_MODE !== 'classic' && KNS().battleInSet >= 7);
 
     // 「こちらが交換する前に相手のモンスターが決まる」仕様のため、次バトルの対戦相手は
     // 交換画面（手持ち変更）が開く前＝このタイミングで確定させる。
@@ -1790,9 +1845,9 @@ async function kinNejikiFinishRun(cleared) {
 async function saveKinNejikiRanking(wins, cleared, modeOverride) {
     if (typeof initFirebase !== 'function' || !initFirebase()) return;
     const mode = modeOverride || KIN_NEJIKI_ACTIVE_MODE;
-    // 新モード「ガッツファクトリー 〜辺境行〜」は、従来のガッツファクトリーとは
+    // 新モード「ガッツファクトリー 〜辺境行〜」及びそのHARD版は、従来のガッツファクトリーとは
     // 完全に別のランキング（Firebaseパス）に記録する。
-    const rankingPath = (mode === 'terrain') ? 'kinnejiki_terrain_ranking' : 'kinnejiki_ranking';
+    const rankingPath = (mode === 'terrain') ? 'kinnejiki_terrain_ranking' : (mode === 'terrain_hard') ? 'kinnejiki_terrain_hard_ranking' : 'kinnejiki_ranking';
     const pid = getMyPlayerId();
     const name = (typeof GAME_STATE !== 'undefined' && GAME_STATE.playerName) ? GAME_STATE.playerName : 'ブリーダー';
     try {
@@ -1904,7 +1959,7 @@ async function fetchMyKinNejikiMonsterUsageTop(limit = 5) {
 
 async function fetchKinNejikiRanking(limit = 100) {
     if (typeof initFirebase !== 'function' || !initFirebase()) return [];
-    const rankingPath = (KIN_NEJIKI_ACTIVE_MODE === 'terrain') ? 'kinnejiki_terrain_ranking' : 'kinnejiki_ranking';
+    const rankingPath = (KIN_NEJIKI_ACTIVE_MODE === 'terrain') ? 'kinnejiki_terrain_ranking' : (KIN_NEJIKI_ACTIVE_MODE === 'terrain_hard') ? 'kinnejiki_terrain_hard_ranking' : 'kinnejiki_ranking';
     try {
         // orderByChild('bestWins').limitToLast(limit) だと、bestWinsが存在しない/型が
         // 揃っていないデータが混ざった場合に正しく並び替えられず、結果的にほぼ1件しか

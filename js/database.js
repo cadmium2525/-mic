@@ -686,6 +686,8 @@ const SKILLS_DB = {
     // --- ネンドロ系統 ---
     zoom_punch_nendoro: { name: 'ズームパンチ', aura: 'green', cost: 18, type: 'pow', hitRate: 100, force: 1.0, gutsDown: 10, effect: null, desc: '踏み込んで放つ正確な一撃。相手GUTS-10。必中' },
     mach_punch: { name: 'マッハパンチ', aura: 'green', cost: 30, type: 'pow', hitRate: 85, force: 1.8, gutsDown: 15, priority: 1, effect: null, desc: '目にも留まらぬ速さの高速連打。相手GUTS-15。素早さに関わらず、必ず先制して行動できる（先制攻撃）' },
+    // --- モスト専用「マッハパンチ」（専用技）。性能はmach_punchと完全に同一だが、技オーラのみモストの体色に合わせた白に変更している。 ---
+    mach_punch_most: { name: 'マッハパンチ', aura: 'white', cost: 30, type: 'pow', hitRate: 85, force: 1.8, gutsDown: 15, priority: 1, effect: null, desc: '目にも留まらぬ速さの高速連打。相手GUTS-15。素早さに関わらず、必ず先制して行動できる（先制攻撃）' },
     michizure: { name: 'みちづれ', aura: null, cost: 30, type: 'buff_pow', hitRate: 100, force: 0, gutsDown: 0, useEffect: 'michizure_wait', desc: '相手を道連れにする覚悟を決める特殊技。ダメージ・ガッツダウンともに無し。みちづれ待機状態になり、このターン中に相手の攻撃や状態異常で自分のライフが0になった場合、相手のモンスターのライフも0にする。連続で使用すると構えに失敗し、効果が発動しない。' },
     meido_no_miyage: { name: 'めいどのみやげ', aura: 'red', cost: 50, type: 'pow', hitRate: 72, force: 2.9, gutsDown: 25, effect: 'dot_mine', desc: '渾身の力を込めた極悪の一撃。相手GUTS-25。さらに命中した場合、強烈な後遺症で3ターンの間継続ダメージを与える' },
     ganduke: { name: 'がん飛ばし', aura: 'green', cost: 14, type: 'pow', hitRate: 92, force: 0.6, gutsDown: 6, effect: 'evasion_def_down_20', desc: '威圧するような軽い張り手の基本技。相手GUTS-6。さらに命中した場合、相手の回避と丈夫さを20%下げる（3回まで重複可・交代するまで持続）' },
@@ -2541,7 +2543,7 @@ const KIN_NEJIKI_BOSSES = {
         // バトルのたびにいずれか1つの型がランダムで選ばれる。
         molds: [
             ['doku_no_kona', 'drain', 'migawarimochi', 'boss_meteor'],
-            ['boss_laser', 'boss_meteor', 'mach_punch', 'inore_rinne_no_wa_yo']
+            ['boss_laser', 'boss_meteor', 'mach_punch_most', 'inore_rinne_no_wa_yo']
         ],
         skills: ['doku_no_kona', 'drain', 'migawarimochi', 'boss_meteor'] // デバッグツール等でのフォールバック用デフォルト（型①）
     }
