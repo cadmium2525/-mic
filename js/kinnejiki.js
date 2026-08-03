@@ -68,9 +68,15 @@ function KNS() {
 // --- 新モードの名称（画面表示・トースト・ランキング見出し等で共通利用） ---
 const KIN_NEJIKI_TERRAIN_MODE_NAME = 'ガッツファクトリー 〜辺境行〜';
 
-// --- 現在アクティブなモードの表示名を返す ---
+// --- 現在アクティブなモードの表示名を返す（トースト等、プレーンテキスト表示用） ---
 function kinNejikiModeDisplayName() {
     return KIN_NEJIKI_ACTIVE_MODE === 'terrain' ? KIN_NEJIKI_TERRAIN_MODE_NAME : 'ガッツファクトリー';
+}
+
+// --- 現在アクティブなモードの表示名を返す（見出し等、HTML表示用。
+//     「ガッツファクトリー」と「〜辺境行〜」の間で改行する） ---
+function kinNejikiModeDisplayNameHtml() {
+    return KIN_NEJIKI_ACTIVE_MODE === 'terrain' ? 'ガッツファクトリー<br>〜辺境行〜' : 'ガッツファクトリー';
 }
 
 // =====================================================
@@ -975,7 +981,7 @@ function renderKinNejikiTitleScreen() {
     updateKinNejikiResumeButtonVisibility();
 
     const nameEl = document.getElementById('kinnejiki-title-mode-name');
-    if (nameEl) nameEl.textContent = kinNejikiModeDisplayName();
+    if (nameEl) nameEl.innerHTML = kinNejikiModeDisplayNameHtml();
 
     const rulesEl = document.getElementById('kinnejiki-title-terrain-rule');
     if (rulesEl) {
@@ -1751,6 +1757,7 @@ async function kinNejikiFinishRun(cleared) {
     // ランキングへの書き込みが完了しないまま消えてしまう（特に早期敗退時に起きやすい）。
     // そのため画面遷移の前に保存の完了を待つ。
     await saveKinNejikiRanking(finalWins, cleared);
+    if (typeof refreshKinNejikiTerrainNewBadge === 'function') refreshKinNejikiTerrainNewBadge();
     if (KIN_NEJIKI_ACTIVE_MODE === 'classic' && cleared && typeof checkEndlessModeUnlockAndUpdateHomeButton === 'function') {
         // 初クリアの場合、タイトルに戻った時にすぐ「エンドレスモード」ボタンが出るよう即座に再判定する
         // （エンドレスモードの解放条件は従来のガッツファクトリーのクリア記録のみを見るため、
@@ -1818,6 +1825,21 @@ async function saveKinNejikiRanking(wins, cleared, modeOverride) {
 }
 
 // --- アカウント管理画面用：自分のガッツファクトリー記録（プレイ回数・自己ベスト連続勝利数等）を取得する ---
+// --- ホーム画面：ガッツファクトリーのボタンに「〜辺境行〜が未プレイ」の赤丸通知を出す ---
+// 「プレイ済み」の判定は、〜辺境行〜のランキング自己記録（totalRuns）が1回以上あるかどうかで行う
+// （途中で一時セーブしただけではまだ「プレイ済み」にはならず、1回でも挑戦を完了した時点で消える）。
+async function refreshKinNejikiTerrainNewBadge() {
+    const badge = document.getElementById('kinnejiki-terrain-new-badge');
+    if (!badge) return;
+    try {
+        const stats = (typeof fetchMyKinNejikiTerrainStats === 'function') ? await fetchMyKinNejikiTerrainStats() : null;
+        const totalRuns = (stats && stats.totalRuns) || 0;
+        badge.classList.toggle('hidden', totalRuns > 0);
+    } catch (e) {
+        // 取得に失敗した場合は無理に表示状態を変えない（前回の表示状態を維持）
+    }
+}
+
 async function fetchMyKinNejikiStats() {
     if (typeof initFirebase !== 'function' || !initFirebase()) return null;
     try {
@@ -1831,6 +1853,24 @@ async function fetchMyKinNejikiStats() {
         };
     } catch (e) {
         console.error('[ガッツファクトリー] 自己記録取得エラー:', e);
+        return null;
+    }
+}
+
+// --- 実績判定・アカウント画面用：「ガッツファクトリー 〜辺境行〜」の自己記録を取得する ---
+async function fetchMyKinNejikiTerrainStats() {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return null;
+    try {
+        const pid = getMyPlayerId();
+        const snap = await firebaseDb.ref(`kinnejiki_terrain_ranking/${pid}`).once('value');
+        const val = snap.val();
+        return {
+            totalRuns: (val && val.totalRuns) || 0,
+            bestWins: (val && val.bestWins) || 0,
+            bestCleared: !!(val && val.bestCleared)
+        };
+    } catch (e) {
+        console.error('[ガッツファクトリー 〜辺境行〜] 自己記録取得エラー:', e);
         return null;
     }
 }
@@ -1898,7 +1938,7 @@ function renderKinNejikiResultScreen(wins, cleared) {
 
     if (cleared) {
         badge.textContent = '👑';
-        title.textContent = `${kinNejikiModeDisplayName()} 制覇！`;
+        title.innerHTML = `${kinNejikiModeDisplayNameHtml()} 制覇！`;
         title.className = 'text-2xl font-black text-amber-400 pixel-font';
     } else {
         badge.textContent = '🏳️';
@@ -1917,7 +1957,7 @@ function renderKinNejikiResultScreen(wins, cleared) {
 async function showKinNejikiRankingScreen() {
     changeScreen('screen-kinnejiki-ranking');
     const titleEl = document.getElementById('kinnejiki-ranking-title');
-    if (titleEl) titleEl.textContent = `${kinNejikiModeDisplayName()} 通算勝利数ランキング`;
+    if (titleEl) titleEl.innerHTML = `${kinNejikiModeDisplayNameHtml()} 通算勝利数ランキング`;
     const listEl = document.getElementById('kinnejiki-ranking-list');
     if (!listEl) return;
     listEl.innerHTML = '<div class="text-center text-gray-500 text-xs py-8">読み込み中...</div>';

@@ -251,6 +251,7 @@ window.addEventListener('load', () => {
     }
     if (typeof initFirebase === 'function') initFirebase();
     if (typeof checkEndlessModeUnlockAndUpdateHomeButton === 'function') checkEndlessModeUnlockAndUpdateHomeButton();
+    if (typeof refreshKinNejikiTerrainNewBadge === 'function') refreshKinNejikiTerrainNewBadge();
     const versionEl = document.getElementById('title-version-display');
     if (versionEl && typeof GAME_VERSION_INFO !== 'undefined') {
         const dateLabel = (GAME_VERSION_INFO.updatedAt || '').replace(/-/g, '/');

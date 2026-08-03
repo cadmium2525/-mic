@@ -29,6 +29,42 @@ const ACHIEVEMENT_DEFS = [
     { id: 'kin_plays_40', emoji: '🎮', name: '挑戦40回（ガッツファクトリー）', desc: 'ガッツファクトリーに合計40回挑戦する', check: stats => stats.kin.totalRuns >= 40, diamondReward: 600 },
     { id: 'kin_plays_50', emoji: '🎮', name: '挑戦50回（ガッツファクトリー）', desc: 'ガッツファクトリーに合計50回挑戦する', check: stats => stats.kin.totalRuns >= 50, diamondReward: 750 },
 
+    // --- ガッツファクトリー 〜辺境行〜：勝利数マイルストーン ---
+    { id: 'kinterr_win_1', emoji: '🔰', name: '初勝利（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 で1勝する', check: stats => stats.kinTerrain.bestWins >= 1, diamondReward: 1500 },
+    { id: 'kinterr_win_3', emoji: '🗺️', name: '連勝3（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 で3連勝する', check: stats => stats.kinTerrain.bestWins >= 3, diamondReward: 100 },
+    { id: 'kinterr_win_5', emoji: '🗺️', name: '連勝5（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 で5連勝する', check: stats => stats.kinTerrain.bestWins >= 5, diamondReward: 150 },
+    { id: 'kinterr_streak_10', emoji: '🗺️', name: '連勝10（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 で10連勝する', check: stats => stats.kinTerrain.bestWins >= 10, diamondReward: 500 },
+    { id: 'kinterr_win_15', emoji: '🗺️', name: '連勝15（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 で15連勝する', check: stats => stats.kinTerrain.bestWins >= 15, diamondReward: 650 },
+    { id: 'kinterr_win_20', emoji: '🗺️', name: '連勝20（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 で20連勝する', check: stats => stats.kinTerrain.bestWins >= 20, diamondReward: 800 },
+    { id: 'kinterr_streak_25', emoji: '🗺️', name: '連勝25（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 で25連勝する', check: stats => stats.kinTerrain.bestWins >= 25, diamondReward: 1000 },
+    { id: 'kinterr_win_30', emoji: '🗺️', name: '連勝30（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 で30連勝する', check: stats => stats.kinTerrain.bestWins >= 30, diamondReward: 1300 },
+    { id: 'kinterr_win_35', emoji: '🗺️', name: '連勝35（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 で35連勝する', check: stats => stats.kinTerrain.bestWins >= 35, diamondReward: 1600 },
+    { id: 'kinterr_win_40', emoji: '🗺️', name: '連勝40（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 で40連勝する', check: stats => stats.kinTerrain.bestWins >= 40, diamondReward: 2000 },
+    { id: 'kinterr_win_45', emoji: '🗺️', name: '連勝45（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 で45連勝する', check: stats => stats.kinTerrain.bestWins >= 45, diamondReward: 2500 },
+    { id: 'kinterr_streak_49', emoji: '👑', name: '完全制覇（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 を49連勝（全セットクリア）する', check: stats => stats.kinTerrain.bestWins >= 49, diamondReward: 3000 },
+
+    // --- ガッツファクトリー 〜辺境行〜：総プレイ回数マイルストーン ---
+    { id: 'kinterr_plays_10', emoji: '🎒', name: '挑戦10回（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 に合計10回挑戦する', check: stats => stats.kinTerrain.totalRuns >= 10, diamondReward: 150 },
+    { id: 'kinterr_plays_20', emoji: '🎒', name: '挑戦20回（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 に合計20回挑戦する', check: stats => stats.kinTerrain.totalRuns >= 20, diamondReward: 300 },
+    { id: 'kinterr_plays_30', emoji: '🎒', name: '挑戦30回（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 に合計30回挑戦する', check: stats => stats.kinTerrain.totalRuns >= 30, diamondReward: 450 },
+    { id: 'kinterr_plays_40', emoji: '🎒', name: '挑戦40回（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 に合計40回挑戦する', check: stats => stats.kinTerrain.totalRuns >= 40, diamondReward: 600 },
+    { id: 'kinterr_plays_50', emoji: '🎒', name: '挑戦50回（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 に合計50回挑戦する', check: stats => stats.kinTerrain.totalRuns >= 50, diamondReward: 750 },
+
+    // --- PvP（リアルタイム対戦）：総対戦回数マイルストーン ---
+    { id: 'pvp_plays_5', emoji: '⚔️', name: '対戦5回', desc: 'PvP（リアルタイム対戦）に合計5回対戦する', check: stats => stats.pvp.totalGames >= 5, diamondReward: 100 },
+    { id: 'pvp_plays_10', emoji: '⚔️', name: '対戦10回', desc: 'PvP（リアルタイム対戦）に合計10回対戦する', check: stats => stats.pvp.totalGames >= 10, diamondReward: 200 },
+    { id: 'pvp_plays_30', emoji: '⚔️', name: '対戦30回', desc: 'PvP（リアルタイム対戦）に合計30回対戦する', check: stats => stats.pvp.totalGames >= 30, diamondReward: 400 },
+    { id: 'pvp_plays_50', emoji: '⚔️', name: '対戦50回', desc: 'PvP（リアルタイム対戦）に合計50回対戦する', check: stats => stats.pvp.totalGames >= 50, diamondReward: 600 },
+    { id: 'pvp_plays_100', emoji: '⚔️', name: '対戦100回', desc: 'PvP（リアルタイム対戦）に合計100回対戦する', check: stats => stats.pvp.totalGames >= 100, diamondReward: 1000 },
+
+    // --- PvP（リアルタイム対戦）：総勝利数マイルストーン ---
+    { id: 'pvp_win_1', emoji: '🥊', name: '初陣を制す', desc: 'PvP（リアルタイム対戦）で1勝する', check: stats => stats.pvp.totalWins >= 1, diamondReward: 300 },
+    { id: 'pvp_win_5', emoji: '🥊', name: '5勝達成（PvP）', desc: 'PvP（リアルタイム対戦）で合計5勝する', check: stats => stats.pvp.totalWins >= 5, diamondReward: 300 },
+    { id: 'pvp_win_10', emoji: '🥊', name: '10勝達成（PvP）', desc: 'PvP（リアルタイム対戦）で合計10勝する', check: stats => stats.pvp.totalWins >= 10, diamondReward: 500 },
+    { id: 'pvp_win_30', emoji: '🏅', name: '30勝達成（PvP）', desc: 'PvP（リアルタイム対戦）で合計30勝する', check: stats => stats.pvp.totalWins >= 30, diamondReward: 900 },
+    { id: 'pvp_win_50', emoji: '🏅', name: '50勝達成（PvP）', desc: 'PvP（リアルタイム対戦）で合計50勝する', check: stats => stats.pvp.totalWins >= 50, diamondReward: 1300 },
+    { id: 'pvp_win_100', emoji: '🏆', name: '100勝達成（PvP）', desc: 'PvP（リアルタイム対戦）で合計100勝する', check: stats => stats.pvp.totalWins >= 100, diamondReward: 2500 },
+
     // --- エンドレスモード ---
     { id: 'endless_streak_10', emoji: '⭐', name: 'エンドレス10連勝', desc: 'エンドレスモードで10連勝する', check: stats => stats.endless.bestStreak >= 10, diamondReward: 300 },
     { id: 'endless_streak_25', emoji: '🌟', name: 'エンドレス25連勝', desc: 'エンドレスモードで25連勝する', check: stats => stats.endless.bestStreak >= 25, diamondReward: 600 },
@@ -55,9 +91,11 @@ const ACHIEVEMENT_DEFS = [
 
 // --- 実績判定に必要な統計情報をまとめて取得する ---
 async function fetchAchievementStats() {
-    const [kinStats, endlessStats, usageSnapVal] = await Promise.all([
+    const [kinStats, kinTerrainStats, endlessStats, pvpStats, usageSnapVal] = await Promise.all([
         (typeof fetchMyKinNejikiStats === 'function') ? fetchMyKinNejikiStats() : Promise.resolve(null),
+        (typeof fetchMyKinNejikiTerrainStats === 'function') ? fetchMyKinNejikiTerrainStats() : Promise.resolve(null),
         (typeof fetchMyEndlessStats === 'function') ? fetchMyEndlessStats() : Promise.resolve(null),
+        (typeof fetchMyPvpLifetimeStats === 'function') ? fetchMyPvpLifetimeStats() : Promise.resolve(null),
         (async () => {
             if (typeof initFirebase !== 'function' || !initFirebase()) return {};
             try {
@@ -86,8 +124,17 @@ async function fetchAchievementStats() {
             bestCleared: !!(kinStats && kinStats.bestCleared),
             totalRuns: (kinStats && kinStats.totalRuns) || 0
         },
+        kinTerrain: {
+            bestWins: (kinTerrainStats && kinTerrainStats.bestWins) || 0,
+            bestCleared: !!(kinTerrainStats && kinTerrainStats.bestCleared),
+            totalRuns: (kinTerrainStats && kinTerrainStats.totalRuns) || 0
+        },
         endless: {
             bestStreak: (endlessStats && endlessStats.bestStreak) || 0
+        },
+        pvp: {
+            totalGames: (pvpStats && pvpStats.totalGames) || 0,
+            totalWins: (pvpStats && pvpStats.totalWins) || 0
         },
         usedSpeciesCount: Object.keys(usageSnapVal || {}).length,
         monClassUsage

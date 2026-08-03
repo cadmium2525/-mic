@@ -2820,6 +2820,7 @@ function showRealtimeBattleResult(state, isWin, reasonText, isDraw) {
 
     if (typeof AudioManager !== 'undefined') AudioManager.playBGM(isWin ? 'victory' : 'defeat');
     changeScreen('screen-masmon-battle-result');
+    if (typeof checkAndCelebrateNewAchievements === 'function') checkAndCelebrateNewAchievements();
 }
 
 // -----------------------------------------------------

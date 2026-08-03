@@ -142,6 +142,43 @@ async function updatePvpRatingRecord(mode, season, playerId, playerName, delta, 
     });
 }
 
+// =====================================================
+// PvP累計成績（実績判定用）
+// player_ratings はシーズン（暦月）ごとにリセットされる集計のため、
+// 「累計○回対戦／累計○勝」のような実績にはそのまま使えない。
+// そのため、シーズン・個人戦／団体戦の区別なく、生涯累計で加算していく
+// 専用ノード pvp_lifetime_stats/{playerId} = { name, totalGames, totalWins, lastUpdated }
+// を別途持つ。
+// =====================================================
+async function updatePvpLifetimeStats(playerId, playerName, isWin) {
+    const ref = firebaseDb.ref(`pvp_lifetime_stats/${playerId}`);
+    await ref.transaction(current => {
+        const base = current || { name: playerName, totalGames: 0, totalWins: 0 };
+        base.name = playerName || base.name || 'ブリーダー';
+        base.totalGames = (base.totalGames || 0) + 1;
+        if (isWin) base.totalWins = (base.totalWins || 0) + 1;
+        base.lastUpdated = Date.now();
+        return base;
+    });
+}
+
+// --- 実績判定・アカウント画面用：自分のPvP累計成績（生涯合計）を取得する ---
+async function fetchMyPvpLifetimeStats() {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return null;
+    try {
+        const pid = getMyPlayerId();
+        const snap = await firebaseDb.ref(`pvp_lifetime_stats/${pid}`).once('value');
+        const val = snap.val();
+        return {
+            totalGames: (val && val.totalGames) || 0,
+            totalWins: (val && val.totalWins) || 0
+        };
+    } catch (e) {
+        console.error('[PvP累計成績] 取得エラー:', e);
+        return null;
+    }
+}
+
 // --- 対戦履歴を1件保存し、直近50件を超えた古い記録を削除する ---
 async function recordPvpMatchHistory(mode, season, playerId, playerName, oppId, oppName, isWin, reason, ratingBefore, delta) {
     const ref = firebaseDb.ref(`player_match_history/${mode}/${playerId}`);
@@ -220,6 +257,11 @@ async function applyRealtimeMatchRating(roomRef, state) {
         await Promise.all([
             recordPvpMatchHistory(mode, season, ids.player1, names.player1, ids.player2, names.player2, p1Win, reason, p1Start, p1Delta),
             recordPvpMatchHistory(mode, season, ids.player2, names.player2, ids.player1, names.player1, !p1Win, reason, p2Start, p2Delta)
+        ]);
+        // 実績（○回対戦／○勝）判定用の生涯累計成績も、シーズン・個人戦団体戦を問わず加算する
+        await Promise.all([
+            updatePvpLifetimeStats(ids.player1, names.player1, p1Win),
+            updatePvpLifetimeStats(ids.player2, names.player2, !p1Win)
         ]);
     } catch (e) {
         console.error('[PvPレート] 反映エラー:', e);
