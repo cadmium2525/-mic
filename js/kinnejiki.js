@@ -142,7 +142,7 @@ function getKinTerrainStageDisplayName(setNumber) {
 //     この選び直し自体も交換回数（exchangeCount）に1加算される
 //    （renderKinNejikiSelectScreen→confirmKinNejikiPartyの既存仕様をそのまま利用）。 ---
 function terrainStartNewSetSelection() {
-    KNS().offer = generateKinNejikiOffer(KNS().set);
+    KNS().offer = generateKinNejikiOffer(KNS().set, null, null, null, null, null, true);
     KNS().selectedIdx = [];
     const terrainName = getKinTerrainStageDisplayName(KNS().set);
     showToast(`🗺️ 第${KNS().set}セット突入！ 地形:「${terrainName}」 手持ちが全リセットされました。6体から3体を選び直してください。`);
@@ -487,7 +487,7 @@ function generateKinNejikiRentalMonster(speciesId, setNumber, excludeEquipIds, g
         monsterBaseName: tmpl.name,
         emoji: tmpl.emoji,
         speciesId: speciesId,
-        aura: getRandomAuraKey(), // 全モンスターに必ずオーラを付与する
+        aura: tmpl.fixedAura || getRandomAuraKey(), // fixedAura指定の種族（イブリース等）は必ずそのオーラで固定。それ以外は従来通りランダム
         isAwakened: false,
         statusEffect: null,
         difficulty: 'kinnejiki',
@@ -509,12 +509,18 @@ function generateKinNejikiRentalMonster(speciesId, setNumber, excludeEquipIds, g
 // count:             生成する体数（既定6）
 // guaranteeEquip:    trueの場合、生成する全個体を必ず何かしらの装備ありにする（省略時はfalse＝従来通り）
 // forceLatestMoldOnly: trueの場合、各個体の型を「その時点で解放済みの中で最新の型」のみに限定する（省略可）
-function generateKinNejikiOffer(setNumber, excludeSpeciesIds, excludeEquipIds, count, guaranteeEquip, forceLatestMoldOnly) {
+// includeUnlockedSpecies: trueの場合、通常24種に加えてプレイヤーがガチャで入手済みのアンロック種族
+//                         （イブリース等）も抽選対象に含める。プレイヤー自身の候補生成時のみtrueを渡すこと
+//                         （敵／CPU側の生成では省略＝false のままにし、通常24種のみを対象にする）。
+function generateKinNejikiOffer(setNumber, excludeSpeciesIds, excludeEquipIds, count, guaranteeEquip, forceLatestMoldOnly, includeUnlockedSpecies) {
     const n = count || 6;
     const excludeSpecies = excludeSpeciesIds || [];
+    const basePool = includeUnlockedSpecies && typeof getPlayableKinNejikiSpeciesPool === 'function'
+        ? getPlayableKinNejikiSpeciesPool()
+        : KIN_NEJIKI_SPECIES_POOL;
 
-    let candidatePool = KIN_NEJIKI_SPECIES_POOL.filter(sp => !excludeSpecies.includes(sp));
-    if (candidatePool.length < n) candidatePool = KIN_NEJIKI_SPECIES_POOL.slice(); // 除外しすぎて足りない場合の保険
+    let candidatePool = basePool.filter(sp => !excludeSpecies.includes(sp));
+    if (candidatePool.length < n) candidatePool = basePool.slice(); // 除外しすぎて足りない場合の保険
 
     const shuffledSpecies = [...candidatePool].sort(() => Math.random() - 0.5);
     const chosenSpecies = shuffledSpecies.slice(0, n);
@@ -1064,7 +1070,7 @@ function beginKinNejikiRun() {
     KNS().taskKillCount = 0;
     KNS().exchangeCount = 0; // 交換回数は新規ランのたびに必ず0から始まる
 
-    KNS().offer = generateKinNejikiOffer(1);
+    KNS().offer = generateKinNejikiOffer(1, null, null, null, null, null, true);
     renderKinNejikiSelectScreen();
     changeScreen('screen-kinnejiki-select');
 }
@@ -1531,7 +1537,7 @@ function kinNejikiHandleBattleEnd(isWin) {
         // 「倒した相手チーム」だけでなく「現在の自陣パーティ」の種族も除外しないと、
         // 自陣に既にいるモンスターと同じ種族のボーナスモンスターが出てしまい、
         // 交換で選んだ場合にチーム内で同じモンスターが重複してしまう。
-        const bonusCandidates = generateKinNejikiOffer(next.set + 1, exclusions.species, exclusions.equip, bonusSlotCount, true, true);
+        const bonusCandidates = generateKinNejikiOffer(next.set + 1, exclusions.species, exclusions.equip, bonusSlotCount, true, true, true);
         bonusCandidates.forEach(m => {
             if (!m) return;
             m.isBonusSlot = true;

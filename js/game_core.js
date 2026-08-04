@@ -330,6 +330,7 @@ window.addEventListener('load', () => {
         nameInputEl.value = GAME_STATE.playerName;
     }
     if (typeof initFirebase === 'function') initFirebase();
+    if (typeof refreshOwnedUnlockableSpecies === 'function') refreshOwnedUnlockableSpecies();
     if (typeof checkEndlessModeUnlockAndUpdateHomeButton === 'function') checkEndlessModeUnlockAndUpdateHomeButton();
     if (typeof refreshKinNejikiTerrainNewBadge === 'function') refreshKinNejikiTerrainNewBadge();
     const homeNoticeBtn = document.getElementById('home-notice-btn');

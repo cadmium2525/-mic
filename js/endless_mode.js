@@ -376,7 +376,10 @@ function renderEndlessSpeciesOptions() {
     const selectEl = document.getElementById('endless-builder-species');
     if (!selectEl) return;
     selectEl.innerHTML = '<option value="">-- 種族を選択 --</option>';
-    Object.keys(MONSTER_TEMPLATES).forEach(speciesId => {
+    const availableSpecies = (typeof getPlayableKinNejikiSpeciesPool === 'function')
+        ? getPlayableKinNejikiSpeciesPool()
+        : KIN_NEJIKI_SPECIES_POOL;
+    availableSpecies.forEach(speciesId => {
         const tmpl = MONSTER_TEMPLATES[speciesId];
         if (!tmpl) return;
         const opt = document.createElement('option');
@@ -387,11 +390,23 @@ function renderEndlessSpeciesOptions() {
     selectEl.value = ENDLESS_BUILDER_STATE.speciesId || '';
 }
 
+// オーラ選択肢（種族がオーラ固定の場合はそのオーラのみを表示し変更不可にする。それ以外は通常の4色から選ぶ）
 function renderEndlessAuraOptions() {
     const selectEl = document.getElementById('endless-builder-aura');
     if (!selectEl) return;
+    const tmpl = ENDLESS_BUILDER_STATE.speciesId ? MONSTER_TEMPLATES[ENDLESS_BUILDER_STATE.speciesId] : null;
+    if (tmpl && tmpl.fixedAura) {
+        const fixedAura = AURA_TYPES[tmpl.fixedAura];
+        selectEl.innerHTML = `<option value="${tmpl.fixedAura}">${fixedAura.emoji} ${fixedAura.name}（${tmpl.name}専用・固定）</option>`;
+        selectEl.value = tmpl.fixedAura;
+        selectEl.disabled = true;
+        ENDLESS_BUILDER_STATE.aura = tmpl.fixedAura;
+        return;
+    }
+    selectEl.disabled = false;
     selectEl.innerHTML = '<option value="">（オーラなし）</option>';
     Object.values(AURA_TYPES).forEach(aura => {
+        if (aura.exclusive) return; // モスト・イブリース専用オーラは通常選択肢には出さない
         const opt = document.createElement('option');
         opt.value = aura.key;
         opt.textContent = `${aura.emoji} ${aura.name}`;
@@ -441,8 +456,12 @@ function onEndlessSpeciesChange() {
     if (!selectEl || !skillsWrapEl) return;
 
     const speciesId = selectEl.value;
+    const newTmpl = speciesId ? MONSTER_TEMPLATES[speciesId] : null;
     ENDLESS_BUILDER_STATE.speciesId = speciesId || null;
     ENDLESS_BUILDER_STATE.selectedSkills = [];
+    // オーラ固定でない種族に切り替えた場合は、前の種族のオーラ選択を引き継がずリセットする
+    if (!newTmpl || !newTmpl.fixedAura) ENDLESS_BUILDER_STATE.aura = null;
+    renderEndlessAuraOptions();
     skillsWrapEl.innerHTML = '';
     if (!speciesId) return;
 

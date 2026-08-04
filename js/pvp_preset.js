@@ -436,7 +436,10 @@ function renderPvpPresetMonsterEditorScreen() {
     if (speciesContainer) {
         speciesContainer.innerHTML = '';
         const usedSpecies = getPvpPresetUsedSpecies(PVP_PRESET_STATE.editingMonsterIndex);
-        KIN_NEJIKI_SPECIES_POOL.forEach(speciesId => {
+        const availableSpecies = (typeof getPlayableKinNejikiSpeciesPool === 'function')
+            ? getPlayableKinNejikiSpeciesPool()
+            : KIN_NEJIKI_SPECIES_POOL;
+        availableSpecies.forEach(speciesId => {
             const tmpl = MONSTER_TEMPLATES[speciesId];
             if (!tmpl) return;
             const isSelected = m.speciesId === speciesId;
@@ -569,22 +572,31 @@ function renderPvpPresetMonsterEditorScreen() {
         });
     }
 
-    // ⑤ オーラ一覧
+    // ⑤ オーラ一覧（イブリース等、オーラが固定の種族は選択肢を出さず固定表示にする）
     const auraContainer = document.getElementById('pvp-preset-monster-aura-list');
     if (auraContainer) {
         auraContainer.innerHTML = '';
-        Object.values(AURA_TYPES).forEach(aura => {
-            if (aura.exclusive) return; // モスト専用オーラ等は通常のPvP編成では選べないようにする
-            const isSelected = m.aura === aura.key;
-            const btn = document.createElement('div');
-            btn.className = `flex flex-col items-center justify-center p-2 rounded-lg border cursor-pointer active:scale-95 transition-all ${isSelected ? 'bg-amber-900/60 border-amber-400' : 'bg-[#16202b] border-amber-900/30'}`;
-            btn.onclick = () => selectPvpPresetMonsterAura(aura.key);
-            btn.innerHTML = `
-                <span class="text-xl">${aura.emoji}</span>
-                <span class="text-[9px] font-bold text-gray-300 mt-0.5">${aura.name}${isSelected ? ' ✅' : ''}</span>
-            `;
-            auraContainer.appendChild(btn);
-        });
+        if (tmpl && tmpl.fixedAura) {
+            const fixedAura = AURA_TYPES[tmpl.fixedAura];
+            auraContainer.innerHTML = `
+                <div class="col-span-full flex items-center justify-center space-x-2 p-2 rounded-lg border border-amber-700 bg-amber-900/30">
+                    <span class="text-xl">${fixedAura.emoji}</span>
+                    <span class="text-[10px] font-bold text-amber-200">${fixedAura.name}オーラ固定（${tmpl.name}専用）</span>
+                </div>`;
+        } else {
+            Object.values(AURA_TYPES).forEach(aura => {
+                if (aura.exclusive) return; // モスト専用オーラ等は通常のPvP編成では選べないようにする
+                const isSelected = m.aura === aura.key;
+                const btn = document.createElement('div');
+                btn.className = `flex flex-col items-center justify-center p-2 rounded-lg border cursor-pointer active:scale-95 transition-all ${isSelected ? 'bg-amber-900/60 border-amber-400' : 'bg-[#16202b] border-amber-900/30'}`;
+                btn.onclick = () => selectPvpPresetMonsterAura(aura.key);
+                btn.innerHTML = `
+                    <span class="text-xl">${aura.emoji}</span>
+                    <span class="text-[9px] font-bold text-gray-300 mt-0.5">${aura.name}${isSelected ? ' ✅' : ''}</span>
+                `;
+                auraContainer.appendChild(btn);
+            });
+        }
     }
 
     updatePvpPresetMonsterConfirmButton();
@@ -601,6 +613,9 @@ function selectPvpPresetMonsterSpecies(speciesId) {
     m.speciesId = speciesId;
     m.skills = []; // 種族が変わると技候補も変わるため選択済みの技はリセットする
     m.statType = null; // 種族が変わるとタイプ（ちから型/かしこさ型）の対象も変わるためリセットする
+    // イブリース等、オーラが固定の種族を選んだ場合は、そのオーラに自動で固定する
+    const newTmpl = MONSTER_TEMPLATES[speciesId];
+    if (newTmpl && newTmpl.fixedAura) m.aura = newTmpl.fixedAura;
     renderPvpPresetMonsterEditorScreen();
 }
 

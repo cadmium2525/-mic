@@ -103,6 +103,43 @@ const GACHA_PU_MONSTERS = [
     { speciesId: 'iblis', auraKey: 'black', weight: 2, label: 'PU' } // イブリース（黒オーラ固定）ピックアップ中
 ];
 
+// =====================================================
+// アンロック制モンスター（イブリース等）
+// 通常の24種（KIN_NEJIKI_SPECIES_POOL）と異なり、実際にガチャで入手して初めて
+// ガッツファクトリー／PvP／エンドレスモードで使用できるようになる特別な種族。
+// 未所持のプレイヤーの手元では選択候補に出現しない。
+// =====================================================
+const GACHA_UNLOCKABLE_SPECIES = [
+    { speciesId: 'iblis', auraKey: 'black' }
+];
+
+// 所持済みのアンロック種族ID一覧のキャッシュ（起動時・ガチャ後に更新される）
+let GACHA_OWNED_UNLOCKABLE_SPECIES_IDS = [];
+
+// --- 所持中のアンロック種族一覧をFirebaseから取得してキャッシュを更新する ---
+async function refreshOwnedUnlockableSpecies() {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return;
+    try {
+        const pid = getMyPlayerId();
+        const snap = await firebaseDb.ref(`player_inventory/${pid}/monsters`).once('value');
+        const monsterCounts = snap.val() || {};
+        GACHA_OWNED_UNLOCKABLE_SPECIES_IDS = GACHA_UNLOCKABLE_SPECIES
+            .filter(entry => (monsterCounts[`${entry.speciesId}_${entry.auraKey}`] || 0) > 0)
+            .map(entry => entry.speciesId);
+    } catch (e) {
+        console.error('[ガチャ] アンロック種族の所持確認エラー:', e);
+    }
+}
+
+// --- プレイヤーが実際に使用できる種族プール（通常24種＋所持済みのアンロック種族）を返す ---
+// ガッツファクトリー・PvP・エンドレスモードで「プレイヤー自身が使う」モンスターの候補生成にのみ使う。
+// 敵（CPU）側の生成には引き続きKIN_NEJIKI_SPECIES_POOLをそのまま使う（イブリース等は出現しない）。
+function getPlayableKinNejikiSpeciesPool() {
+    return GACHA_OWNED_UNLOCKABLE_SPECIES_IDS.length
+        ? KIN_NEJIKI_SPECIES_POOL.concat(GACHA_OWNED_UNLOCKABLE_SPECIES_IDS)
+        : KIN_NEJIKI_SPECIES_POOL;
+}
+
 function rollRandomGachaMonster() {
     const normalPool = KIN_NEJIKI_SPECIES_POOL;
     const puTotalWeight = GACHA_PU_MONSTERS.reduce((sum, m) => sum + m.weight, 0);
@@ -422,6 +459,15 @@ async function startGachaPullFlow(disc) {
 
     await playGachaSpinAnimation(disc, hasStarThree);
     await Promise.all(results.map(r => recordGachaResultOwnership(r).then(info => { r.isNew = info.isNew; })));
+
+    // 今回のガチャでアンロック制モンスター（イブリース等）を新規入手した場合、
+    // 即座にガッツファクトリー等で使用できるようキャッシュを更新しておく
+    const unlockedNewSpecies = results.some(r => r.kind === 'monster' && r.isNew &&
+        GACHA_UNLOCKABLE_SPECIES.some(u => u.speciesId === r.speciesId && u.auraKey === r.auraKey));
+    if (unlockedNewSpecies && typeof refreshOwnedUnlockableSpecies === 'function') {
+        await refreshOwnedUnlockableSpecies();
+    }
+
     renderGachaRevealPanel(results);
 }
 

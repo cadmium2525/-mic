@@ -2079,6 +2079,10 @@ const KIN_NEJIKI_SKILL_POOL = {
     ghost:     ['piko_hammer', 'taiatari', 'ohpunch', 'combination', 'odokasu', 'dokuro_beam', 'bikkuri_dokuro', 'card', 'ohki_otoshimono', 'ghost_flash', 'michizure', 'noroi', 'doron'],
     gel:       ['tsukisashi', 'kushizashi', 'mana_drain', 'muchi', 'g_cube', 'gel_press', 'hae_tataki', 'parabola_beam', 'cho_parabola_beam', 'koma_attack', 'taihou', 'gel_copter'],
     ark:       ['waga_hitomi', 'sekai_wo_yurase', 'tobe_shinritsu_no_yaiba', 'shinkou_yo_kegare_wo_harae', 'ima_koso_shin_naru_mezame', 'aoki_ibara_yo_toga_wo_ugate', 'sabaki_no_hikari_yo_kudare', 'shuuen_ni_sukui_wo_ataeyo', 'shiten_no_tsurugi_yo_oritate', 'seiya_no_kane_yo_narihibike', 'inore_rinne_no_wa_yo', 'ten_no_jihi_yo_shimesareyo'],
+    // イブリース：型自体はアークと共通（MONSTER_MOLDS['イブリース']はアークの型をそのまま参照）だが、
+    // 「今こそ真なる目醒め」「終焉に救いを与えよ」の2つだけは、findSkillKeyByNameがこのプールを
+    // 優先的に見るため、黒オーラ版キー（*_kuro）に自動的に置き換わる（他の技はアークと共通のまま）。
+    iblis:     ['waga_hitomi', 'sekai_wo_yurase', 'tobe_shinritsu_no_yaiba', 'shinkou_yo_kegare_wo_harae', 'ima_koso_shin_naru_mezame_kuro', 'aoki_ibara_yo_toga_wo_ugate', 'sabaki_no_hikari_yo_kudare', 'shuuen_ni_sukui_wo_ataeyo_kuro', 'shiten_no_tsurugi_yo_oritate', 'seiya_no_kane_yo_narihibike', 'inore_rinne_no_wa_yo', 'ten_no_jihi_yo_shimesareyo'],
     illumine:  ['plasma', 'shield_bash', 'straight_punch', 'venom_edge', 'assassin_claw', 'morning_star', 'arcana_flare', 'assault_arrow', 'buster_sword', 'ars_magna', 'blade_dance', 'requiem_end', 'mirage_claw', 'crimson_nova'],
     liger:     ['liger_hikkaki', 'liger_kamitsuki', 'body_slam', 'raigeki', 'one_two', 'reikidan', 'kagegeki', 'cho_raigeki', 'kuuchu_kaiten_attack', 'combination_liger', 'liger_raijinken', 'rakurai_kyoumei'],
     pixie:     ['pixie_harite', 'pixie_thunder', 'pixie_ray', 'pixie_lightning', 'pixie_megaray', 'pixie_nagekiss', 'pixie_highkick', 'pixie_van', 'pixie_gigaray', 'pixie_healraid', 'pixie_bigbang', 'pixie_astralray'],
@@ -2429,6 +2433,12 @@ const MONSTER_MOLDS = {
         { skills: ['まきびし', 'みがわりの術', 'ライジングレイヴ', '剣舞'], equipment: '癒しの若葉' },
     ]
 };
+
+// --- イブリースの型は、アークの型をそのまま踏襲する ---
+// 技構成・装備の抽選テーブルは完全にアークと共通。
+// 「今こそ真なる目醒め」「終焉に救いを与えよ」という名前の技だけは、下のKIN_NEJIKI_SKILL_POOL['iblis']で
+// 黒オーラ版のキー（*_kuro）を優先解決させることで、実際に選ばれる技だけが自動的に黒オーラになる。
+MONSTER_MOLDS['イブリース'] = MONSTER_MOLDS['アーク'];
 
 // --- モンスター名から種族IDを逆引きする ---
 function findSpeciesIdByMonsterName(name) {

@@ -201,10 +201,13 @@
                         <i class="fa-solid fa-swords"></i>
                         <span>PvP対戦（レンタルモンスター）</span>
                     </button>
-                    <button onclick="openGachaScreen()" class="fantasy-btn w-full py-2.5 bg-gradient-to-r from-fuchsia-700 to-purple-800 hover:from-fuchsia-600 hover:to-purple-700 text-white font-bold rounded-xl text-sm shadow border-fuchsia-900 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
-                        <i class="fa-solid fa-gem"></i>
-                        <span>祈りの神殿（ガチャ）</span>
-                    </button>
+                    <div class="relative">
+                        <button onclick="openGachaScreen()" class="fantasy-btn w-full py-2.5 bg-gradient-to-r from-fuchsia-700 to-purple-800 hover:from-fuchsia-600 hover:to-purple-700 text-white font-bold rounded-xl text-sm shadow border-fuchsia-900 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
+                            <i class="fa-solid fa-gem"></i>
+                            <span>祈りの神殿（ガチャ）</span>
+                        </button>
+                        <span class="absolute -top-2.5 right-1 px-2 py-0.5 rounded-full bg-amber-400 text-purple-900 text-[9px] font-black shadow-md border border-amber-200 animate-bounce pointer-events-none whitespace-nowrap">✨イブリースPU中！</span>
+                    </div>
                     <button onclick="openMyRoomScreen()" class="fantasy-btn w-full py-2.5 bg-gradient-to-r from-orange-700 to-amber-800 hover:from-orange-600 hover:to-amber-700 text-white font-bold rounded-xl text-sm shadow border-orange-900 transition-all active:scale-95 pixel-font flex items-center justify-center space-x-2">
                         <i class="fa-solid fa-house"></i>
                         <span>マイルーム</span>
