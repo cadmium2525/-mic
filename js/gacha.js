@@ -4,7 +4,8 @@
 // ・円盤石を指でドラッグし、中央やや下の台座（設置スポット）に配置すると演出開始
 // ・演出：円盤石が最初はゆっくり回転→次第に高速回転→フラッシュ
 //   （★3が1体でも含まれる場合は虹色フラッシュ）→結果発表
-// ・排出：★1/★2＝家具（観賞用）、★3＝モンスター（観賞用・オーラ色違いあり）
+// ・排出：★1/★2＝家具（観賞用）、★3＝モンスター（オーラ色違いあり。イブリース等の一部種族は
+//   実際に入手するとガッツファクトリー／PvP／エンドレスモードでも使用できるようになる）
 // ・11連には★3確定の天井あり
 // ・★3モンスターが被った場合は「モンスターのカケラ」が貯まり、後日カケラ交換所で
 //   好きな★3モンスターと交換できる（交換所はフェーズ3の管理画面と合わせて実装予定）
@@ -222,6 +223,7 @@ function openGachaScreen() {
     setGachaPullMode(GACHA_STATE.pullCount || 1);
     resetGachaAltar();
     if (typeof refreshDiamondBalanceDisplays === 'function') refreshDiamondBalanceDisplays();
+    refreshGachaPityAndTicketDisplay();
     changeScreen('screen-gacha');
     setupGachaDiscDragHandlers();
 }
@@ -230,8 +232,64 @@ function closeGachaScreen() {
     changeScreen('screen-title');
 }
 
+// --- 天井進捗（通算連数）とPU交換チケット所持数の表示を更新する ---
+async function refreshGachaPityAndTicketDisplay() {
+    if (typeof fetchMyGachaTotalPullCount !== 'function' || typeof fetchMyGachaPuTickets !== 'function') return;
+    const [totalPulls, ticketCount] = await Promise.all([fetchMyGachaTotalPullCount(), fetchMyGachaPuTickets()]);
+
+    const pityCountEl = document.getElementById('gacha-pity-count');
+    if (pityCountEl) pityCountEl.textContent = totalPulls % GACHA_PITY_THRESHOLD;
+
+    const puTmpl = (GACHA_PU_MONSTERS[0] && MONSTER_TEMPLATES[GACHA_PU_MONSTERS[0].speciesId]) || null;
+    const labelEl = document.getElementById('gacha-pu-ticket-label');
+    if (labelEl) labelEl.textContent = puTmpl ? `${puTmpl.name}交換チケット` : 'PU交換チケット';
+
+    const countEl = document.getElementById('gacha-pu-ticket-count');
+    if (countEl) countEl.textContent = ticketCount;
+
+    const btn = document.getElementById('gacha-pu-ticket-btn');
+    if (btn) {
+        const canRedeem = ticketCount > 0 && !!puTmpl;
+        btn.disabled = !canRedeem;
+        btn.classList.toggle('opacity-40', !canRedeem);
+    }
+}
+
+// --- PU交換チケットを1枚消費して、現在ピックアップ中のモンスターと確定交換する ---
+async function redeemGachaPuTicket() {
+    if (GACHA_STATE.animating) return;
+    const puMon = GACHA_PU_MONSTERS[0];
+    if (!puMon) {
+        if (typeof showToast === 'function') showToast('現在ピックアップ中のモンスターがいません。');
+        return;
+    }
+    GACHA_STATE.animating = true;
+    try {
+        const spend = await spendGachaPuTicket();
+        if (!spend.success) {
+            if (typeof showToast === 'function') showToast('🎫 交換チケットがありません。');
+            return;
+        }
+
+        const tmpl = MONSTER_TEMPLATES[puMon.speciesId];
+        const result = { rarity: 3, kind: 'monster', speciesId: puMon.speciesId, name: tmpl.name, emoji: tmpl.emoji, auraKey: puMon.auraKey, isPickup: true, isTicketExchange: true };
+        const info = await recordGachaResultOwnership(result);
+        result.isNew = info.isNew;
+
+        if (info.isNew && GACHA_UNLOCKABLE_SPECIES.some(u => u.speciesId === result.speciesId && u.auraKey === result.auraKey) &&
+            typeof refreshOwnedUnlockableSpecies === 'function') {
+            await refreshOwnedUnlockableSpecies();
+        }
+
+        await refreshGachaPityAndTicketDisplay();
+        renderGachaRevealPanel([result]);
+    } finally {
+        GACHA_STATE.animating = false;
+    }
+}
+
 // =====================================================
-// 排出率確認モーダル
+// 提供割合確認モーダル
 // =====================================================
 function openGachaRateModal() {
     const body = document.getElementById('gacha-rate-modal-body');
@@ -258,7 +316,7 @@ function openGachaRateModal() {
 
         body.innerHTML = `
             <div>
-                <p class="text-amber-300 font-bold mb-1">■ レアリティ別排出率</p>
+                <p class="text-amber-300 font-bold mb-1">■ レアリティ別提供割合</p>
                 <div class="space-y-1">
                     ${GACHA_RARITY_TABLE.map(r => `
                         <div class="flex items-center justify-between">
@@ -277,7 +335,7 @@ function openGachaRateModal() {
                     </div>
                 </div>
             </div>
-            <p class="text-gray-500 text-[9px]">※★3内で被った場合は「モンスターのカケラ」を獲得できます。11連には★3確定の天井があります。</p>
+            <p class="text-gray-500 text-[9px]">※★3内で被った場合は「モンスターのカケラ」を獲得できます。11連には★3確定の天井があります。また、通算${GACHA_PITY_THRESHOLD}連（天井）ごとに、その時点でピックアップ中のモンスターと確定交換できる交換チケットを1枚獲得できます。</p>
         `;
     }
     const modal = document.getElementById('gacha-rate-modal');
@@ -466,6 +524,19 @@ async function startGachaPullFlow(disc) {
         GACHA_UNLOCKABLE_SPECIES.some(u => u.speciesId === r.speciesId && u.auraKey === r.auraKey));
     if (unlockedNewSpecies && typeof refreshOwnedUnlockableSpecies === 'function') {
         await refreshOwnedUnlockableSpecies();
+    }
+
+    // 天井カウントを加算。跨いだ分だけPU交換チケットが自動付与される
+    if (typeof advanceGachaPityCounter === 'function') {
+        const pity = await advanceGachaPityCounter(count);
+        if (pity.ticketsGranted > 0) {
+            const puTmpl = (GACHA_PU_MONSTERS[0] && MONSTER_TEMPLATES[GACHA_PU_MONSTERS[0].speciesId]) || null;
+            const ticketLabel = puTmpl ? `${puTmpl.name}交換チケット` : 'PU交換チケット';
+            if (typeof showToast === 'function') {
+                showToast(`🎫 通算${GACHA_PITY_THRESHOLD}連達成！「${ticketLabel}」を${pity.ticketsGranted}枚獲得しました！`);
+            }
+        }
+        refreshGachaPityAndTicketDisplay();
     }
 
     renderGachaRevealPanel(results);

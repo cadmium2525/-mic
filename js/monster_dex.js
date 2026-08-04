@@ -52,7 +52,11 @@ function renderMonsterDexList() {
 
     const searchTerm = (MONSTER_DEX_STATE.search || '').toLowerCase();
     const monClassFilter = MONSTER_DEX_STATE.monClass || 'all';
-    const filteredSpecies = KIN_NEJIKI_SPECIES_POOL.filter(speciesId => {
+    // 通常24種に加え、ガチャ限定のアンロック種族（イブリース等）も図鑑には常に掲載する（参照専用のため未所持でも閲覧可）
+    const dexSpeciesPool = (typeof GACHA_UNLOCKABLE_SPECIES !== 'undefined')
+        ? KIN_NEJIKI_SPECIES_POOL.concat(GACHA_UNLOCKABLE_SPECIES.map(u => u.speciesId))
+        : KIN_NEJIKI_SPECIES_POOL;
+    const filteredSpecies = dexSpeciesPool.filter(speciesId => {
         const tmpl = MONSTER_TEMPLATES[speciesId];
         if (!tmpl) return false;
         if (monClassFilter !== 'all' && tmpl.monClass !== monClassFilter) return false;

@@ -233,6 +233,8 @@ function playImaKosoShinNaruMezameMotion(side) {
     }, duration * 0.5);
 }
 registerCustomSkillMotion('ima_koso_shin_naru_mezame', playImaKosoShinNaruMezameMotion, 'アーク');
+// イブリース専用（黒オーラ版）の「今こそ真なる目醒め」も、アークと全く同じモーションを使う
+registerCustomSkillMotion('ima_koso_shin_naru_mezame_kuro', playImaKosoShinNaruMezameMotion, 'イブリース');
 
 // --- 蒼き荊よ咎を穿て：蒼い茨が地から生えて相手を貫く ---
 function playAokiIbaraMotion(side) {
@@ -346,6 +348,8 @@ function playShuuenNiSukuiMotion(side) {
     }, chant.duration);
 }
 registerCustomSkillMotion('shuuen_ni_sukui_wo_ataeyo', playShuuenNiSukuiMotion, 'アーク');
+// イブリース専用（黒オーラ版）の「終焉に救いを与えよ」も、アークと全く同じモーションを使う
+registerCustomSkillMotion('shuuen_ni_sukui_wo_ataeyo_kuro', playShuuenNiSukuiMotion, 'イブリース');
 
 // --- 熾天の剣よ降り立て：天上から巨大な光の剣が突き刺さる ---
 function playShitenNoTsurugiMotion(side) {

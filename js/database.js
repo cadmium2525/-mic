@@ -396,7 +396,7 @@ const MONSTER_TEMPLATES = {
         monClass: 'spirit',
         name: 'イブリース',
         emoji: '🖤',
-        desc: '堕ちた裁きの天使と伝わる、漆黒の翼を持つモンスター。アークと同じ系譜に属しながら、白ではなく黒き裁きの力に目覚めている。かしこさ・命中はアークをも上回るが、ライフ・丈夫さはさらに低い。',
+        desc: '【アーク種×ジョーカー種】堕ちた裁きの天使と伝わる、漆黒の翼を持つモンスター。アークと同じ系譜に属しながら、白ではなく黒き裁きの力に目覚めている。かしこさ・命中はアークをも上回るが、ライフ・丈夫さはさらに低い。',
         stats: { maxLife: 185, life: 185, pow: 45, int: 128, hit: 72, spd: 36, def: 18, gutsSpeed: 14 },
         // 通常のガチャ抽選（4色ランダム）には参加せず、常にこのオーラで固定される
         fixedAura: 'black',
@@ -462,7 +462,8 @@ const MOVE_SPEED_RANK_BY_TEMPLATE = {
     mochi: 'D', suezo: 'F', dino: 'D', monolith: 'F', plant: 'F', kyubi: 'B',
     ham: 'D', arrowhead: 'C', nendoro: 'F', henger: 'D', durahan: 'D', golem: 'F',
     kawazumo: 'F', hinotori: 'B', gari: 'D', metalner: 'B', kijin: 'C', ghost: 'A',
-    gel: 'D', ark: 'A', illumine: 'A', liger: 'B', pixie: 'A', zan: 'A'
+    gel: 'D', ark: 'A', illumine: 'A', liger: 'B', pixie: 'A', zan: 'A',
+    iblis: 'C'
 };
 
 // 各テンプレートの stats に moveSpeedRank / moveSpeed（数値）を書き込む

@@ -1936,6 +1936,24 @@ async function fetchMyKinNejikiTerrainStats() {
     }
 }
 
+// --- 実績判定・アカウント画面用：「ガッツファクトリー 〜辺境行〜HARD」の自己記録を取得する ---
+async function fetchMyKinNejikiTerrainHardStats() {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return null;
+    try {
+        const pid = getMyPlayerId();
+        const snap = await firebaseDb.ref(`kinnejiki_terrain_hard_ranking/${pid}`).once('value');
+        const val = snap.val();
+        return {
+            totalRuns: (val && val.totalRuns) || 0,
+            bestWins: (val && val.bestWins) || 0,
+            bestCleared: !!(val && val.bestCleared)
+        };
+    } catch (e) {
+        console.error('[ガッツファクトリー 〜辺境行〜HARD] 自己記録取得エラー:', e);
+        return null;
+    }
+}
+
 // --- アカウント管理画面用：自分のモンスター使用率トップNを取得する ---
 async function fetchMyKinNejikiMonsterUsageTop(limit = 5) {
     if (typeof initFirebase !== 'function' || !initFirebase()) return [];

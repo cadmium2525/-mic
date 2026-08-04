@@ -50,6 +50,27 @@ const ACHIEVEMENT_DEFS = [
     { id: 'kinterr_plays_40', emoji: '🎒', name: '挑戦40回（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 に合計40回挑戦する', check: stats => stats.kinTerrain.totalRuns >= 40, diamondReward: 600 },
     { id: 'kinterr_plays_50', emoji: '🎒', name: '挑戦50回（〜辺境行〜）', desc: 'ガッツファクトリー 〜辺境行〜 に合計50回挑戦する', check: stats => stats.kinTerrain.totalRuns >= 50, diamondReward: 750 },
 
+    // --- ガッツファクトリー 〜辺境行〜HARD：勝利数マイルストーン ---
+    { id: 'kinterrhard_win_1', emoji: '🔰', name: '初勝利（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD で1勝する', check: stats => stats.kinTerrainHard.bestWins >= 1, diamondReward: 2000 },
+    { id: 'kinterrhard_win_3', emoji: '🔥', name: '連勝3（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD で3連勝する', check: stats => stats.kinTerrainHard.bestWins >= 3, diamondReward: 150 },
+    { id: 'kinterrhard_win_5', emoji: '🔥', name: '連勝5（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD で5連勝する', check: stats => stats.kinTerrainHard.bestWins >= 5, diamondReward: 250 },
+    { id: 'kinterrhard_streak_10', emoji: '🔥', name: '連勝10（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD で10連勝する', check: stats => stats.kinTerrainHard.bestWins >= 10, diamondReward: 700 },
+    { id: 'kinterrhard_win_15', emoji: '🔥', name: '連勝15（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD で15連勝する', check: stats => stats.kinTerrainHard.bestWins >= 15, diamondReward: 900 },
+    { id: 'kinterrhard_win_20', emoji: '🔥', name: '連勝20（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD で20連勝する', check: stats => stats.kinTerrainHard.bestWins >= 20, diamondReward: 1100 },
+    { id: 'kinterrhard_streak_25', emoji: '🔥', name: '連勝25（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD で25連勝する', check: stats => stats.kinTerrainHard.bestWins >= 25, diamondReward: 1400 },
+    { id: 'kinterrhard_win_30', emoji: '🔥', name: '連勝30（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD で30連勝する', check: stats => stats.kinTerrainHard.bestWins >= 30, diamondReward: 1700 },
+    { id: 'kinterrhard_win_35', emoji: '🔥', name: '連勝35（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD で35連勝する', check: stats => stats.kinTerrainHard.bestWins >= 35, diamondReward: 2100 },
+    { id: 'kinterrhard_win_40', emoji: '🔥', name: '連勝40（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD で40連勝する', check: stats => stats.kinTerrainHard.bestWins >= 40, diamondReward: 2600 },
+    { id: 'kinterrhard_win_45', emoji: '🔥', name: '連勝45（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD で45連勝する', check: stats => stats.kinTerrainHard.bestWins >= 45, diamondReward: 3200 },
+    { id: 'kinterrhard_streak_49', emoji: '👑', name: '完全制覇（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD を49連勝（全セットクリア）する', check: stats => stats.kinTerrainHard.bestWins >= 49, diamondReward: 4000 },
+
+    // --- ガッツファクトリー 〜辺境行〜HARD：総プレイ回数マイルストーン ---
+    { id: 'kinterrhard_plays_10', emoji: '🎒', name: '挑戦10回（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD に合計10回挑戦する', check: stats => stats.kinTerrainHard.totalRuns >= 10, diamondReward: 200 },
+    { id: 'kinterrhard_plays_20', emoji: '🎒', name: '挑戦20回（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD に合計20回挑戦する', check: stats => stats.kinTerrainHard.totalRuns >= 20, diamondReward: 400 },
+    { id: 'kinterrhard_plays_30', emoji: '🎒', name: '挑戦30回（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD に合計30回挑戦する', check: stats => stats.kinTerrainHard.totalRuns >= 30, diamondReward: 600 },
+    { id: 'kinterrhard_plays_40', emoji: '🎒', name: '挑戦40回（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD に合計40回挑戦する', check: stats => stats.kinTerrainHard.totalRuns >= 40, diamondReward: 800 },
+    { id: 'kinterrhard_plays_50', emoji: '🎒', name: '挑戦50回（〜辺境行〜HARD）', desc: 'ガッツファクトリー 〜辺境行〜HARD に合計50回挑戦する', check: stats => stats.kinTerrainHard.totalRuns >= 50, diamondReward: 1000 },
+
     // --- PvP（リアルタイム対戦）：総対戦回数マイルストーン ---
     { id: 'pvp_plays_5', emoji: '⚔️', name: '対戦5回', desc: 'PvP（リアルタイム対戦）に合計5回対戦する', check: stats => stats.pvp.totalGames >= 5, diamondReward: 100 },
     { id: 'pvp_plays_10', emoji: '⚔️', name: '対戦10回', desc: 'PvP（リアルタイム対戦）に合計10回対戦する', check: stats => stats.pvp.totalGames >= 10, diamondReward: 200 },
@@ -91,9 +112,10 @@ const ACHIEVEMENT_DEFS = [
 
 // --- 実績判定に必要な統計情報をまとめて取得する ---
 async function fetchAchievementStats() {
-    const [kinStats, kinTerrainStats, endlessStats, pvpStats, usageSnapVal] = await Promise.all([
+    const [kinStats, kinTerrainStats, kinTerrainHardStats, endlessStats, pvpStats, usageSnapVal] = await Promise.all([
         (typeof fetchMyKinNejikiStats === 'function') ? fetchMyKinNejikiStats() : Promise.resolve(null),
         (typeof fetchMyKinNejikiTerrainStats === 'function') ? fetchMyKinNejikiTerrainStats() : Promise.resolve(null),
+        (typeof fetchMyKinNejikiTerrainHardStats === 'function') ? fetchMyKinNejikiTerrainHardStats() : Promise.resolve(null),
         (typeof fetchMyEndlessStats === 'function') ? fetchMyEndlessStats() : Promise.resolve(null),
         (typeof fetchMyPvpLifetimeStats === 'function') ? fetchMyPvpLifetimeStats() : Promise.resolve(null),
         (async () => {
@@ -128,6 +150,11 @@ async function fetchAchievementStats() {
             bestWins: (kinTerrainStats && kinTerrainStats.bestWins) || 0,
             bestCleared: !!(kinTerrainStats && kinTerrainStats.bestCleared),
             totalRuns: (kinTerrainStats && kinTerrainStats.totalRuns) || 0
+        },
+        kinTerrainHard: {
+            bestWins: (kinTerrainHardStats && kinTerrainHardStats.bestWins) || 0,
+            bestCleared: !!(kinTerrainHardStats && kinTerrainHardStats.bestCleared),
+            totalRuns: (kinTerrainHardStats && kinTerrainHardStats.totalRuns) || 0
         },
         endless: {
             bestStreak: (endlessStats && endlessStats.bestStreak) || 0

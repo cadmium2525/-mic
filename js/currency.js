@@ -184,7 +184,94 @@ async function spendMyRoomTicket() {
     }
 }
 
-// --- 実績のダイヤ報酬「受領済みリスト」（サーバー側で管理。端末を変えても二重付与されない） ---
+// --- ガチャの「天井」用累計連数カウント ---
+// GACHA_PITY_THRESHOLD連（現在110連）ごとに「PU交換チケット」を1枚獲得する。
+const GACHA_PITY_THRESHOLD = 110;
+
+// 今回引いた回数（pullCount）を累計連数に加算し、天井を跨いだ分だけチケットを付与する。
+// 戻り値：{ ticketsGranted, totalPulls }
+async function advanceGachaPityCounter(pullCount) {
+    if (!pullCount || pullCount <= 0) return { ticketsGranted: 0, totalPulls: 0 };
+    if (typeof initFirebase !== 'function' || !initFirebase()) return { ticketsGranted: 0, totalPulls: 0 };
+    try {
+        const pid = getMyPlayerId();
+        const ref = firebaseDb.ref(`player_currency/${pid}/gachaTotalPullCount`);
+        let oldTotal = 0;
+        const result = await ref.transaction(current => {
+            oldTotal = current || 0;
+            return oldTotal + pullCount;
+        });
+        const newTotal = (result && result.snapshot) ? result.snapshot.val() : (oldTotal + pullCount);
+        // 1回の11連でも天井を複数回跨ぐ可能性を考慮し、差分から獲得枚数を算出する
+        const ticketsGranted = Math.floor(newTotal / GACHA_PITY_THRESHOLD) - Math.floor(oldTotal / GACHA_PITY_THRESHOLD);
+        if (ticketsGranted > 0) await awardGachaPuTickets(ticketsGranted);
+        return { ticketsGranted, totalPulls: newTotal };
+    } catch (e) {
+        console.error('[ガチャ天井] カウント加算エラー:', e);
+        return { ticketsGranted: 0, totalPulls: 0 };
+    }
+}
+
+async function fetchMyGachaTotalPullCount() {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return 0;
+    try {
+        const pid = getMyPlayerId();
+        const snap = await firebaseDb.ref(`player_currency/${pid}/gachaTotalPullCount`).once('value');
+        return snap.val() || 0;
+    } catch (e) {
+        console.error('[ガチャ天井] 累計連数取得エラー:', e);
+        return 0;
+    }
+}
+
+// --- PU交換チケット（天井到達で獲得。その時点でピックアップ中のモンスターと確定交換できる） ---
+async function awardGachaPuTickets(amount) {
+    if (!amount || amount <= 0) return null;
+    if (typeof initFirebase !== 'function' || !initFirebase()) return null;
+    try {
+        const pid = getMyPlayerId();
+        const ref = firebaseDb.ref(`player_currency/${pid}/gachaPuTickets`);
+        const result = await ref.transaction(current => (current || 0) + amount);
+        return result && result.committed ? result.snapshot.val() : null;
+    } catch (e) {
+        console.error('[PU交換チケット] 加算エラー:', e);
+        return null;
+    }
+}
+
+async function fetchMyGachaPuTickets() {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return 0;
+    try {
+        const pid = getMyPlayerId();
+        const snap = await firebaseDb.ref(`player_currency/${pid}/gachaPuTickets`).once('value');
+        return snap.val() || 0;
+    } catch (e) {
+        console.error('[PU交換チケット] 取得エラー:', e);
+        return 0;
+    }
+}
+
+// --- PU交換チケットを1枚消費する（残数が無い場合はsuccess:falseを返す） ---
+async function spendGachaPuTicket() {
+    if (typeof initFirebase !== 'function' || !initFirebase()) return { success: false };
+    let insufficientTickets = false;
+    try {
+        const pid = getMyPlayerId();
+        const ref = firebaseDb.ref(`player_currency/${pid}/gachaPuTickets`);
+        const result = await ref.transaction(current => {
+            const count = current || 0;
+            if (count < 1) { insufficientTickets = true; return count; }
+            insufficientTickets = false;
+            return count - 1;
+        });
+        return { success: !insufficientTickets, balance: result && result.snapshot ? result.snapshot.val() : null };
+    } catch (e) {
+        console.error('[PU交換チケット] 消費エラー:', e);
+        return { success: false };
+    }
+}
+
+
 async function fetchClaimedAchievementDiamondIds() {
     if (typeof initFirebase !== 'function' || !initFirebase()) return {};
     try {
