@@ -17,6 +17,12 @@ const GAME_VERSION_INFO = { version: 'ver1.0.5', updatedAt: '2026-08-04' };
 //     未読の新しいお知らせがあればホーム画面の📜アイコンに赤丸通知を出す。 ---
 const GAME_UPDATE_NOTICES = [
     {
+        id: 'iblis_gacha_2026_08_04',
+        date: '2026-08-04',
+        title: '新モンスター「イブリース」実装＆黒オーラ登場',
+        body: '祈りの神殿（ガチャ）に新モンスター「イブリース」が新規実装され、只今ピックアップ中です！ アーク種の中で新たな「黒オーラ」を担当し、白オーラとはお互いに対してのみ特別に有利（ステータス1.1倍・与ダメージ1.5倍）な間柄。ガチャ画面右上の「排出率」ボタンから排出割合も確認できます。攻略情報局のオーラ解説も更新しました。'
+    },
+    {
         id: 'terrain_hard_2026_08_04',
         date: '2026-08-04',
         title: 'ガッツファクトリー 〜辺境行〜 HARD 実装',
@@ -119,6 +125,12 @@ const GAME_STATE = {
 const MONSTER_VISUAL_AURA_TINT_STRENGTH = 0.6;
 const MONSTER_VISUAL_AURA_TINT_BLEND_MODE = 'color';
 
+// --- 色マスクを被せず、専用イラストをそのまま表示する種族名の一覧 ---
+// 今後ガチャで実装する「〇〇種の中の〇オーラ担当」モンスター（イブリースなど）は、
+// 既にそのオーラ色で描かれた専用アートを持つため、他の24種のようにオーラ色を重ねて着色する必要がない。
+// 該当する種族名をここに追加するだけで、renderMonsterVisual側の色マスク処理をスキップできる。
+const MONSTER_VISUAL_NO_AURA_TINT_NAMES = new Set(['イブリース']);
+
 // --- モンスター画像読み込みヘルパー関数 ---
 // isPartner: プレイヤー側（自分のパーティ）のモンスターを描画する場合はtrue。
 //   画像素材は基本的に右向きで用意されているため、敵側（isPartner=false）表示時のみ
@@ -176,8 +188,10 @@ function renderMonsterVisual(containerEl, name, emoji, isAwakened = false, isPar
         containerEl.insertBefore(imgEl, containerEl.firstChild);
 
         // オーラ着色オーバーレイ（同じ画像をマスクにして、絵柄部分だけに色を重ねる）
+        // ただし、専用アートで既に特定のオーラ色に描かれている種族（イブリース等）には重ねない。
         const aura = auraKey ? AURA_TYPES[auraKey] : null;
-        if (aura && aura.hex && MONSTER_VISUAL_AURA_TINT_STRENGTH > 0) {
+        const skipAuraTint = MONSTER_VISUAL_NO_AURA_TINT_NAMES.has(cleanName);
+        if (aura && aura.hex && MONSTER_VISUAL_AURA_TINT_STRENGTH > 0 && !skipAuraTint) {
             const tintEl = document.createElement('div');
             tintEl.className = `monster-visual-aura-tint w-full h-full max-h-24 max-w-24 mx-auto${flipClass}`;
             tintEl.style.position = 'absolute';

@@ -11,8 +11,17 @@ const AURA_TYPES = {
     blue:   { key: 'blue',   name: '青',  emoji: '🔵', colorClass: 'bg-blue-500',   textClass: 'text-blue-400',   beats: 'red',    hex: '#3b82f6' },
     // 「白」はモスト専用の特別なオーラ。赤緑黄青の三竦みには参加しない（有利・不利どちらにもならない）ため beats は null。
     // getRandomAuraKey() の通常抽選や、PvP編成でのオーラ選択には出てこないよう exclusive:true で除外している。
-    white:  { key: 'white',  name: '白',  emoji: '⚪', colorClass: 'bg-gray-200',   textClass: 'text-gray-200',   beats: null,     hex: '#e5e7eb', exclusive: true }
+    white:  { key: 'white',  name: '白',  emoji: '⚪', colorClass: 'bg-gray-200',   textClass: 'text-gray-200',   beats: null,     hex: '#e5e7eb', exclusive: true },
+    // 「黒」はイブリース専用の特別なオーラ。白と同様、赤緑黄青の三竦みには参加しない。
+    // 白・黒同士だけはお互いに対してのみ特別に有利（isAuraAdvantageousで個別に判定）という、
+    // 三竦みとは独立した1対1の相思相性を持つ。
+    black:  { key: 'black',  name: '黒',  emoji: '⚫', colorClass: 'bg-gray-800',   textClass: 'text-gray-400',   beats: null,     hex: '#111827', exclusive: true }
 };
+
+// --- 白オーラと黒オーラの、互いに対してのみ成立する特別な相性ペアかどうかを判定する ---
+function isWhiteBlackAuraPair(auraKeyA, auraKeyB) {
+    return (auraKeyA === 'white' && auraKeyB === 'black') || (auraKeyA === 'black' && auraKeyB === 'white');
+}
 
 // --- 技名の一覧を、各技のオーラ色が一目でわかる形式（オーラ絵文字＋技名）の文字列で返す共通ヘルパー ---
 // レンタルモンスターの選出画面・交代候補一覧など、技のオーラを一目で確認したい場面で使う。
@@ -31,6 +40,8 @@ function buildSkillListWithAuraText(skillKeys) {
 // --- 攻撃側オーラが防御側オーラに対して有利かどうかを判定する ---
 function isAuraAdvantageous(attackerAuraKey, defenderAuraKey) {
     if (!attackerAuraKey || !defenderAuraKey) return false;
+    // 白と黒はお互いに対してのみ有利（双方向とも有利になる、特別な1対1の相性）
+    if (isWhiteBlackAuraPair(attackerAuraKey, defenderAuraKey)) return true;
     const attackerAura = AURA_TYPES[attackerAuraKey];
     return !!attackerAura && attackerAura.beats === defenderAuraKey;
 }
@@ -152,6 +163,9 @@ const SKILL_AURA_SELF_MATCH_DAMAGE_MULTIPLIER = 1.5;
 const SKILL_AURA_ADVANTAGE_DAMAGE_MULTIPLIER = 2.0;
 // ⑤技オーラが相手のオーラに対して不利な場合の与ダメージ倍率
 const SKILL_AURA_DISADVANTAGE_DAMAGE_MULTIPLIER = 0.5;
+// ⑥白オーラ⇔黒オーラの技オーラ相性は、他の三すくみと異なり双方向とも「有利」扱いになる特別なペアで、
+//   倍率も③④⑤とは別に1.5倍固定とする（例：黒オーラの技を白オーラの相手に当てても、その逆でも1.5倍）。
+const AURA_WHITEBLACK_DAMAGE_MULTIPLIER = 1.5;
 
 // --- ①②：自身(self)から見て相手(opponent)に対するオーラ／モン類の有利判定を元に、
 //     「自身の全ステータス」に掛ける倍率をまとめて返す（該当なしなら1、両方該当なら乗算で重複適用）。
@@ -186,7 +200,12 @@ function getSkillAuraDamageBonus(attacker, defender, sk) {
 
     // ④⑤技オーラ vs 相手オーラの相性（相手が無属性技なら判定しない相手側モンスターのオーラとは別物なので注意）
     if (defender.aura) {
-        if (isAuraAdvantageous(skillAura, defender.aura)) {
+        if (isWhiteBlackAuraPair(skillAura, defender.aura)) {
+            // ⑥白と黒は双方向とも「有利」扱い。倍率は他の三すくみ(2.0/0.5)とは異なり1.5倍固定。
+            result.multiplier *= AURA_WHITEBLACK_DAMAGE_MULTIPLIER;
+            result.messages.push(` (技オーラ相性${AURA_TYPES[skillAura].emoji}⇔${AURA_TYPES[defender.aura].emoji}×${AURA_WHITEBLACK_DAMAGE_MULTIPLIER})`);
+            result.advantage = true;
+        } else if (isAuraAdvantageous(skillAura, defender.aura)) {
             result.multiplier *= SKILL_AURA_ADVANTAGE_DAMAGE_MULTIPLIER;
             result.messages.push(` (技オーラ相性${AURA_TYPES[skillAura].emoji}→${AURA_TYPES[defender.aura].emoji}×${SKILL_AURA_ADVANTAGE_DAMAGE_MULTIPLIER})`);
             result.advantage = true;
@@ -367,6 +386,22 @@ const MONSTER_TEMPLATES = {
         emoji: '😇',
         desc: '天より遣わされたと伝わる裁きの天使モンスター。かしこさが桁外れに高く、光と裁きを纏った荘厳な詠唱技の数々で相手を圧倒するが、ちから・丈夫さはかなり低い。',
         stats: { maxLife: 195, life: 195, pow: 45, int: 108, hit: 52, spd: 36, def: 28, gutsSpeed: 14 }
+    },
+    // --- イブリース：アーク種の中で「黒オーラ」を担当する専用モンスター（ガチャ限定・PU） ---
+    // 基礎ステータスはアークをベースに、ライフ-10／かしこさ+20／命中+20／丈夫さ-10 の調整を加えている。
+    // アークと違い専用イラストを持つため、renderMonsterVisual側でオーラ着色（色マスク）を被せない
+    // 対象として名前を登録している（MONSTER_VISUAL_NO_AURA_TINT_NAMES を参照）。
+    iblis: {
+        id: 'iblis',
+        monClass: 'spirit',
+        name: 'イブリース',
+        emoji: '🖤',
+        desc: '堕ちた裁きの天使と伝わる、漆黒の翼を持つモンスター。アークと同じ系譜に属しながら、白ではなく黒き裁きの力に目覚めている。かしこさ・命中はアークをも上回るが、ライフ・丈夫さはさらに低い。',
+        stats: { maxLife: 185, life: 185, pow: 45, int: 128, hit: 72, spd: 36, def: 18, gutsSpeed: 14 },
+        // 通常のガチャ抽選（4色ランダム）には参加せず、常にこのオーラで固定される
+        fixedAura: 'black',
+        // 固有技（中身はアークの同名技と同一で、技オーラのみ黒仕様）
+        exclusiveSkills: ['shuuen_ni_sukui_wo_ataeyo_kuro', 'ima_koso_shin_naru_mezame_kuro']
     },
     illumine: {
         id: 'illumine',
@@ -829,6 +864,11 @@ const SKILLS_DB = {
     seiya_no_kane_yo_narihibike: { name: '聖夜の鐘よ鳴響け', aura: 'green', cost: 43, type: 'int', hitRate: 79, force: 2.35, gutsDown: 20, critBonus: 0.11, effect: 'confuse_30', desc: '荘厳な鐘の音を鳴り響かせ精神を揺さぶる。相手GUTS-20。さらに命中した場合、30%の確率で相手を混乱状態にする（混乱中は毎ターン40%の確率で意味不明になり行動できなくなり、30%の確率で混乱が解除される）' },
     inore_rinne_no_wa_yo: { name: '祈れ輪廻の環よ', aura: 'blue', cost: 45, type: 'int', hitRate: 93, force: 2.6, gutsDown: 20, critBonus: 0.11, effect: 'shield_self_20pct', desc: '輪廻転生の環を呼び覚まし絶大な力を叩きつける。相手GUTS-20。さらに命中した場合、自身の最大ライフの20%に相当するシールドを展開する' },
     ten_no_jihi_yo_shimesareyo: { name: '天の慈悲よ示されよ', aura: 'blue', cost: 50, type: 'int', hitRate: 92, force: 2.7, gutsDown: 20, critBonus: 0.07, effect: 'perma_dmg_up_20', desc: '天の慈悲そのものを解き放つ、この上ない最大の切り札。相手GUTS-20。さらに命中した場合、自身が今後与えるダメージが永続的に20%アップする' },
+
+    // --- イブリース専用（黒オーラ）固有技 ---
+    // アークの「今こそ真なる目醒め」「終焉に救いを与えよ」と性能・効果は完全に同一。技オーラのみ黒に変更している。
+    ima_koso_shin_naru_mezame_kuro: { name: '今こそ真なる目醒め', aura: 'black', cost: 26, type: 'int', hitRate: 79, force: 1.45, gutsDown: 16, critBonus: 0.11, effect: 'selfcrit_up_3', desc: '眠っていた真なる力を解き放つ覚醒の一撃。相手GUTS-16。さらに命中した場合、研ぎ澄まされた感覚で自身のクリティカル率が25%アップする（3回まで重複可・交代するまで持続）' },
+    shuuen_ni_sukui_wo_ataeyo_kuro: { name: '終焉に救いを与えよ', aura: 'black', cost: 35, type: 'int', hitRate: 85, force: 2.3, gutsDown: 16, critBonus: 0.04, effect: 'self_heal_15pct', desc: '終わりゆく者にすら救済を与える圧倒的な一撃。相手GUTS-16。さらに命中した場合、救済の奇跡により自身のライフを15%回復する' },
 
     // --- イルミネ系統 ---
     plasma: { name: 'プラズマ', aura: null, cost: 13, type: 'pow', hitRate: 100, force: 0.15, gutsDown: 3, critBonus: 0.06, effect: 'grant_double_hit_next', desc: '体内で生成した電光を放つ、回避を完全に無視して【必中】する基本技。相手GUTS-3。さらに命中した場合、自身が次に繰り出す技を2回攻撃扱いにする（命中判定は1回のみだが、命中時のダメージ・追加効果の抽選を2回分まとめて処理する）' },

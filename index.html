@@ -1278,7 +1278,9 @@
                         <i class="fa-solid fa-arrow-left"></i><span>タイトルへ</span>
                     </button>
                     <h2 class="text-sm font-black text-amber-300 pixel-font">🔮 祈りの神殿</h2>
-                    <div class="w-14"></div>
+                    <button onclick="openGachaRateModal()" class="text-amber-400 text-[10px] font-bold flex items-center space-x-1 w-14 justify-end">
+                        <span>排出率</span><i class="fa-solid fa-circle-info"></i>
+                    </button>
                 </div>
 
                 <!-- 神殿ビジュアル（背景・台座・ドラッグする円盤石） -->
@@ -1508,6 +1510,19 @@
                             交換する
                         </button>
                         <button onclick="closeKakeraExchangeModal()" class="w-full py-2 bg-[#1a120b] hover:bg-[#150b07] text-gray-300 font-bold rounded-xl text-xs transition-all border border-gray-700">
+                            閉じる
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 排出率確認モーダル（ガチャ画面右上「排出率」ボタンから開く） -->
+            <div id="gacha-rate-modal" class="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50 hidden" onclick="closeGachaRateModal()">
+                <div class="bg-[#2a1b15] w-full max-w-xs rounded-2xl border-2 border-amber-600 shadow-2xl flex flex-col max-h-[85vh]" onclick="event.stopPropagation()">
+                    <h4 class="text-sm font-black text-white pixel-font border-b border-amber-800 px-4 pt-4 pb-2 flex-shrink-0">📊 排出率</h4>
+                    <div id="gacha-rate-modal-body" class="px-4 py-3 overflow-y-auto flex-1 space-y-3 text-[10px] text-gray-300 leading-relaxed"></div>
+                    <div class="px-4 pb-4 pt-1 flex-shrink-0">
+                        <button onclick="closeGachaRateModal()" class="w-full py-2 bg-[#1a120b] hover:bg-[#150b07] text-gray-300 font-bold rounded-xl text-xs transition-all border border-gray-700">
                             閉じる
                         </button>
                     </div>

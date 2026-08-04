@@ -95,9 +95,30 @@ function rollGachaRarity() {
     return 1;
 }
 
+// --- ★3モンスター：ピックアップ（PU）中のモンスター一覧 ---
+// 通常の24種（KIN_NEJIKI_SPECIES_POOL、オーラは4色ランダム）とは別枠で、
+// 期間限定でオーラ固定・排出率アップの対象になっているモンスターをここに追加していく。
+// weight: 通常24種を「1種あたり重み1」とした場合の相対的な重み（大きいほど出やすい）。
+const GACHA_PU_MONSTERS = [
+    { speciesId: 'iblis', auraKey: 'black', weight: 2, label: 'PU' } // イブリース（黒オーラ固定）ピックアップ中
+];
+
 function rollRandomGachaMonster() {
-    const pool = KIN_NEJIKI_SPECIES_POOL;
-    const speciesId = pool[Math.floor(Math.random() * pool.length)];
+    const normalPool = KIN_NEJIKI_SPECIES_POOL;
+    const puTotalWeight = GACHA_PU_MONSTERS.reduce((sum, m) => sum + m.weight, 0);
+    const totalWeight = normalPool.length + puTotalWeight;
+
+    let r = Math.random() * totalWeight;
+    for (const puMon of GACHA_PU_MONSTERS) {
+        if (r < puMon.weight) {
+            const tmpl = MONSTER_TEMPLATES[puMon.speciesId];
+            return { rarity: 3, kind: 'monster', speciesId: puMon.speciesId, name: tmpl.name, emoji: tmpl.emoji, auraKey: puMon.auraKey, isPickup: true };
+        }
+        r -= puMon.weight;
+    }
+
+    const idx = Math.min(normalPool.length - 1, Math.floor(r));
+    const speciesId = normalPool[idx];
     const tmpl = MONSTER_TEMPLATES[speciesId];
     return {
         rarity: 3,
@@ -170,6 +191,65 @@ function openGachaScreen() {
 
 function closeGachaScreen() {
     changeScreen('screen-title');
+}
+
+// =====================================================
+// 排出率確認モーダル
+// =====================================================
+function openGachaRateModal() {
+    const body = document.getElementById('gacha-rate-modal-body');
+    if (body) {
+        const normalPool = KIN_NEJIKI_SPECIES_POOL;
+        const puTotalWeight = GACHA_PU_MONSTERS.reduce((sum, m) => sum + m.weight, 0);
+        const totalWeight = normalPool.length + puTotalWeight;
+        const rarity3Rate = GACHA_RARITY_TABLE.find(r => r.rarity === 3).weight;
+
+        const puRowsHtml = GACHA_PU_MONSTERS.map(m => {
+            const tmpl = MONSTER_TEMPLATES[m.speciesId];
+            const aura = AURA_TYPES[m.auraKey];
+            const shareWithinR3 = (m.weight / totalWeight) * 100;
+            const overallRate = (rarity3Rate * shareWithinR3 / 100);
+            return `
+                <div class="flex items-center justify-between bg-amber-900/20 border border-amber-700/50 rounded-lg px-2 py-1.5">
+                    <span class="font-bold text-amber-200">${m.label ? `✨${m.label} ` : ''}${tmpl.emoji} ${tmpl.name}（${aura.emoji}${aura.name}固定）</span>
+                    <span class="text-amber-300 font-black">${overallRate.toFixed(3)}%</span>
+                </div>`;
+        }).join('');
+
+        const normalShareWithinR3 = (1 / totalWeight) * 100;
+        const normalOverallRate = (rarity3Rate * normalShareWithinR3 / 100);
+
+        body.innerHTML = `
+            <div>
+                <p class="text-amber-300 font-bold mb-1">■ レアリティ別排出率</p>
+                <div class="space-y-1">
+                    ${GACHA_RARITY_TABLE.map(r => `
+                        <div class="flex items-center justify-between">
+                            <span>${GACHA_RARITY_LABEL[r.rarity]}${r.rarity === 3 ? '（モンスター確定）' : '（家具）'}</span>
+                            <span class="font-bold text-white">${r.weight}%</span>
+                        </div>`).join('')}
+                </div>
+            </div>
+            <div>
+                <p class="text-amber-300 font-bold mb-1">■ ★3の内訳（モンスター）</p>
+                <div class="space-y-1">
+                    ${puRowsHtml}
+                    <div class="flex items-center justify-between bg-[#1a120b] rounded-lg px-2 py-1.5">
+                        <span>上記以外の24種（各種・オーラ4色ランダム）</span>
+                        <span class="text-white font-bold">各${normalOverallRate.toFixed(3)}%</span>
+                    </div>
+                </div>
+            </div>
+            <p class="text-gray-500 text-[9px]">※★3内で被った場合は「モンスターのカケラ」を獲得できます。11連には★3確定の天井があります。</p>
+        `;
+    }
+    const modal = document.getElementById('gacha-rate-modal');
+    if (modal) modal.classList.remove('hidden');
+}
+
+function closeGachaRateModal() {
+    const modal = document.getElementById('gacha-rate-modal');
+    if (modal) modal.classList.add('hidden');
 }
 
 function setGachaPullMode(count) {
@@ -412,6 +492,9 @@ function renderGachaRevealPanel(results) {
             badgeHtml = r.isNew
                 ? '<span class="text-[8px] font-black text-emerald-300">NEW!</span>'
                 : '<span class="text-[8px] font-black text-fuchsia-300">🔁 カケラ+1</span>';
+            if (r.isPickup) {
+                badgeHtml = '<span class="text-[8px] font-black text-amber-300">✨PU</span> ' + badgeHtml;
+            }
         }
 
         card.innerHTML = `
