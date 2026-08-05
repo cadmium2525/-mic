@@ -578,7 +578,7 @@ function playGachaFlash(hasStarThree) {
         if (typeof AudioManager !== 'undefined' && AudioManager.playSE) {
             AudioManager.playSE(hasStarThree ? 'gacha_flash_rare' : 'gacha_flash');
         }
-        const flashDuration = hasStarThree ? 1100 : 600;
+        const flashDuration = hasStarThree ? 1150 : 600;
         setTimeout(() => {
             flash.className = 'absolute inset-0 pointer-events-none opacity-0 z-30';
             resolve();
@@ -592,47 +592,152 @@ function playGachaFlash(hasStarThree) {
 const GACHA_RARITY_LABEL = { 1: '★1', 2: '★2', 3: '★3' };
 const GACHA_RARITY_BORDER = { 1: 'border-gray-500', 2: 'border-sky-400', 3: 'border-fuchsia-400' };
 
-function renderGachaRevealPanel(results) {
+// --- 1枚分のカードをgridに追加して描画する（renderGachaRevealPanelから呼ばれる下請け関数） ---
+function appendGachaRevealCard(grid, r, i) {
+    const card = document.createElement('div');
+    card.className = `bg-[#1a120b] border-2 ${GACHA_RARITY_BORDER[r.rarity]} rounded-xl p-2 flex flex-col items-center text-center gacha-reveal-card`;
+
+    const visualId = `gacha-reveal-visual-${i}`;
+    let badgeHtml = '';
+    if (r.kind === 'monster') {
+        badgeHtml = r.isNew
+            ? '<span class="text-[8px] font-black text-emerald-300">NEW!</span>'
+            : '<span class="text-[8px] font-black text-fuchsia-300">🔁 カケラ+1</span>';
+        if (r.isPickup) {
+            badgeHtml = '<span class="text-[8px] font-black text-amber-300">✨PU</span> ' + badgeHtml;
+        }
+    }
+
+    card.innerHTML = `
+        <span class="text-[9px] font-black ${r.rarity === 3 ? 'text-fuchsia-300' : r.rarity === 2 ? 'text-sky-300' : 'text-gray-400'}">${GACHA_RARITY_LABEL[r.rarity]}</span>
+        <div id="${visualId}" class="w-12 h-12 flex items-center justify-center text-3xl my-1"></div>
+        <span class="text-[9px] text-amber-100 font-bold leading-tight">${r.name}</span>
+        ${badgeHtml}
+    `;
+    grid.appendChild(card);
+
+    const visualEl = card.querySelector(`#${CSS.escape(visualId)}`);
+    if (r.kind === 'monster' && typeof renderMonsterVisual === 'function') {
+        renderMonsterVisual(visualEl, r.name, r.emoji, false, true, r.auraKey);
+    } else if (visualEl) {
+        const def = GACHA_FURNITURE_POOL.find(f => f.id === r.id);
+        renderFurnitureIcon(visualEl, def || r, { imgClassName: 'w-full h-full object-contain drop-shadow' });
+    }
+}
+
+const gachaSleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// --- 結果を1件ずつ順番に表示していく。PUモンスターを「初めて」引き当てた瞬間だけ、
+//     その場で詳細お披露目モーダルを挟んで一時停止し、閉じたら残りの発表を続行する。 ---
+async function renderGachaRevealPanel(results) {
     const panel = document.getElementById('gacha-reveal-panel');
     const grid = document.getElementById('gacha-reveal-grid');
     if (!panel || !grid) return;
 
     grid.innerHTML = '';
-    results.forEach((r, i) => {
-        const card = document.createElement('div');
-        card.className = `bg-[#1a120b] border-2 ${GACHA_RARITY_BORDER[r.rarity]} rounded-xl p-2 flex flex-col items-center text-center gacha-reveal-card`;
-        card.style.animationDelay = `${i * 70}ms`;
+    panel.classList.remove('hidden');
+    panel.classList.add('flex');
 
-        const visualId = `gacha-reveal-visual-${i}`;
-        let badgeHtml = '';
-        if (r.kind === 'monster') {
-            badgeHtml = r.isNew
-                ? '<span class="text-[8px] font-black text-emerald-300">NEW!</span>'
-                : '<span class="text-[8px] font-black text-fuchsia-300">🔁 カケラ+1</span>';
-            if (r.isPickup) {
-                badgeHtml = '<span class="text-[8px] font-black text-amber-300">✨PU</span> ' + badgeHtml;
+    for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        appendGachaRevealCard(grid, r, i);
+
+        if (r.kind === 'monster' && r.isPickup && r.isNew) {
+            // カード自体のフェードインを一瞬見せてから、詳細モーダルへ
+            await gachaSleep(320);
+            await openGachaPuDetailModalAndWait(r);
+        } else {
+            await gachaSleep(70);
+        }
+    }
+}
+
+// =====================================================
+// PU初回排出：詳細お披露目モーダル
+// =====================================================
+let gachaPuDetailModalResolve = null;
+
+function openGachaPuDetailModalAndWait(result) {
+    return new Promise(resolve => {
+        gachaPuDetailModalResolve = resolve;
+
+        const tmpl = MONSTER_TEMPLATES[result.speciesId];
+        if (!tmpl) { resolve(); return; }
+
+        const nameEl = document.getElementById('gacha-pu-detail-name');
+        if (nameEl) nameEl.textContent = tmpl.name;
+
+        const visualEl = document.getElementById('gacha-pu-detail-visual');
+        if (visualEl && typeof renderMonsterVisual === 'function') {
+            renderMonsterVisual(visualEl, tmpl.name, tmpl.emoji, false, true, result.auraKey);
+        }
+
+        const aura = AURA_TYPES[result.auraKey];
+        const monClassInfo = MON_CLASS_TYPES[tmpl.monClass] || null;
+        const badgesEl = document.getElementById('gacha-pu-detail-badges');
+        if (badgesEl) {
+            badgesEl.innerHTML = [
+                '<span class="text-[9px] font-black text-amber-300 bg-amber-900/40 border border-amber-600 rounded-full px-2 py-0.5">✨PU</span>',
+                aura ? `<span class="text-[9px] font-bold text-gray-200 bg-[#1a120b] border border-gray-700 rounded-full px-2 py-0.5">${aura.emoji}${aura.name}オーラ</span>` : '',
+                monClassInfo ? `<span class="text-[9px] font-bold text-gray-200 bg-[#1a120b] border border-gray-700 rounded-full px-2 py-0.5">${monClassInfo.emoji}${monClassInfo.name}</span>` : ''
+            ].join('');
+        }
+
+        const s = tmpl.stats;
+        const statsEl = document.getElementById('gacha-pu-detail-stats');
+        if (statsEl && s) {
+            statsEl.innerHTML = `
+                <div class="bg-[#1a120b] rounded px-1.5 py-1">HP: <span class="font-bold text-emerald-400">${s.maxLife}</span></div>
+                <div class="bg-[#1a120b] rounded px-1.5 py-1">ちから: <span class="font-bold text-red-400">${s.pow}</span></div>
+                <div class="bg-[#1a120b] rounded px-1.5 py-1">かしこさ: <span class="font-bold text-purple-400">${s.int}</span></div>
+                <div class="bg-[#1a120b] rounded px-1.5 py-1">命中: <span class="font-bold text-yellow-400">${s.hit}</span></div>
+                <div class="bg-[#1a120b] rounded px-1.5 py-1">回避: <span class="font-bold text-sky-400">${s.spd}</span></div>
+                <div class="bg-[#1a120b] rounded px-1.5 py-1">丈夫さ: <span class="font-bold text-orange-400">${s.def}</span></div>
+                <div class="bg-[#1a120b] rounded px-1.5 py-1 col-span-2">移動速度: <span class="font-bold text-cyan-400">${s.moveSpeedRank || 'D'}ランク</span></div>
+            `;
+        }
+
+        const descEl = document.getElementById('gacha-pu-detail-desc');
+        if (descEl) descEl.textContent = tmpl.desc || '';
+
+        const skillsEl = document.getElementById('gacha-pu-detail-skills');
+        if (skillsEl) {
+            const exclusiveSkills = tmpl.exclusiveSkills || [];
+            if (exclusiveSkills.length) {
+                const note = `<p class="text-[9px] text-amber-300 font-bold">■ 固有技</p>`;
+                const cards = exclusiveSkills.map(skKey => {
+                    const sk = SKILLS_DB[skKey];
+                    if (!sk) return '';
+                    const skAura = sk.aura && AURA_TYPES[sk.aura] ? AURA_TYPES[sk.aura] : null;
+                    return `
+                        <div class="bg-[#1a120b] border border-amber-900/50 rounded-lg p-2">
+                            <div class="flex items-center justify-between">
+                                <span class="text-[10px] font-bold text-amber-100">${sk.name}</span>
+                                ${skAura ? `<span class="text-[9px] font-bold" style="color:${skAura.hex}">${skAura.emoji}${skAura.name}オーラ</span>` : ''}
+                            </div>
+                            <p class="text-[9px] text-gray-400 mt-0.5 leading-relaxed">${sk.desc}</p>
+                        </div>`;
+                }).join('');
+                skillsEl.innerHTML = note + cards;
+            } else {
+                skillsEl.innerHTML = '';
             }
         }
 
-        card.innerHTML = `
-            <span class="text-[9px] font-black ${r.rarity === 3 ? 'text-fuchsia-300' : r.rarity === 2 ? 'text-sky-300' : 'text-gray-400'}">${GACHA_RARITY_LABEL[r.rarity]}</span>
-            <div id="${visualId}" class="w-12 h-12 flex items-center justify-center text-3xl my-1"></div>
-            <span class="text-[9px] text-amber-100 font-bold leading-tight">${r.name}</span>
-            ${badgeHtml}
-        `;
-        grid.appendChild(card);
-
-        const visualEl = card.querySelector(`#${CSS.escape(visualId)}`);
-        if (r.kind === 'monster' && typeof renderMonsterVisual === 'function') {
-            renderMonsterVisual(visualEl, r.name, r.emoji, false, true, r.auraKey);
-        } else if (visualEl) {
-            const def = GACHA_FURNITURE_POOL.find(f => f.id === r.id);
-            renderFurnitureIcon(visualEl, def || r, { imgClassName: 'w-full h-full object-contain drop-shadow' });
-        }
+        const modal = document.getElementById('gacha-pu-detail-modal');
+        if (modal) modal.classList.remove('hidden');
+        if (typeof AudioManager !== 'undefined' && AudioManager.playSE) AudioManager.playSE('gacha_flash_rare');
     });
+}
 
-    panel.classList.remove('hidden');
-    panel.classList.add('flex');
+function closeGachaPuDetailModal() {
+    const modal = document.getElementById('gacha-pu-detail-modal');
+    if (modal) modal.classList.add('hidden');
+    if (gachaPuDetailModalResolve) {
+        const resolve = gachaPuDetailModalResolve;
+        gachaPuDetailModalResolve = null;
+        resolve();
+    }
 }
 
 // =====================================================
