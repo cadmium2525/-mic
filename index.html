@@ -173,7 +173,9 @@
                 </div>
 
                 <!-- 起動演出：「PRESS START」点滅表示（画面中央やや下・タップ/キー入力でホームメニューを展開） -->
-                <p id="title-press-start" class="absolute left-1/2 top-[58%] -translate-x-1/2 -translate-y-1/2 z-20 text-amber-200 font-black text-base tracking-[0.3em] pixel-font select-none" style="opacity:0;">PRESS START</p>
+                <!-- pointer-events-none：タップ判定はdocument全体で拾っているため、この要素自体はクリックを拾う必要がなく、
+                     フェードアウト後も透明なまま居座って下のボタンのクリックを妨げないようにする -->
+                <p id="title-press-start" class="absolute left-1/2 top-[58%] -translate-x-1/2 -translate-y-1/2 z-20 text-amber-200 font-black text-base tracking-[0.3em] pixel-font select-none pointer-events-none" style="opacity:0;">PRESS START</p>
 
                 <div class="space-y-2 mt-2 relative z-10">
                     <!-- プレイヤー名入力 -->
